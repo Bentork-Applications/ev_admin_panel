@@ -18,7 +18,7 @@ export default function AdminLogin() {
     }
 
     try {
-      const response = await fetch("http://localhost:8080/api/admin/login", {
+      const response = await fetch("http://dev.bentork.com:8080/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

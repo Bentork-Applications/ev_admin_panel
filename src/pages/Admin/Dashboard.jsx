@@ -30,7 +30,7 @@ export default function Dashboard({ onLogout }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const baseUrl = "http://localhost:8080/api";
+  const baseUrl = "http://dev.bentork.com:8080/api";
 
   const [dashboardCards, setDashboardCards] = useState([
     { title: "Total Users", value: "...", value1: "Fetching data...", icon: VectorIcon },
