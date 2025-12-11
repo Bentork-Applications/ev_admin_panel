@@ -47,15 +47,15 @@ export default function AdminLogin() {
     }
   };
 
-  const handleDefaultLogin = async (e) => {
-      if(emailValue === 'admin@gmail.com' || passwordValue === 'admin') {
-        alert('Login Successfuly')
-        navigate('/dashboard')
-        return;
-      }
+  // const handleDefaultLogin = async (e) => {
+  //     if(emailValue === 'admin@gmail.com' || passwordValue === 'admin') {
+  //       alert('Login Successfuly')
+  //       navigate('/dashboard')
+  //       return;
+  //     }
 
-      navigate('/login')
-    };
+  //     navigate('/login')
+  //   };
 
   return (
     <>
@@ -198,7 +198,7 @@ export default function AdminLogin() {
           <h2 className="login-title">Login</h2>
           <p className="login-sub">Enter your registered credentials to get started!</p>
 
-          <form onSubmit={handleDefaultLogin} className="login-form">
+          <form onSubmit={handleLogin} className="login-form">
             <input
               type="text"
               placeholder="Email ID or Mobile Number"

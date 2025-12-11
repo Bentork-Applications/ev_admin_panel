@@ -72,12 +72,12 @@ function Charger({baseUrl}) {
       });
       setChargerRecoards([]);
 
-      // const token = localStorage.getItem('token')
-      // if(!token){
-      //   console.error('Token not found, redirecting to login')
-      //   navigate('/')
-      //   return;
-      // }
+      const token = localStorage.getItem('token')
+      if(!token){
+        console.error('Token not found, redirecting to login')
+        navigate('/')
+        return;
+      }
 
       const headers = {
         'Authorization' : `Bearer ${token}`,

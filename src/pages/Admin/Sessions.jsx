@@ -41,12 +41,12 @@ function Sessions({baseUrl}) {
       });
       setSessions([]);
 
-      // const token = localStorage.getItem("token");
-      // if (!token) {
-      //   console.error("No token found, redirecting to login.");
-      //   navigate("/");
-      //   return;
-      // }
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No token found, redirecting to login.");
+        navigate("/");
+        return;
+      }
 
       const headers = {
         'Authorization': `Bearer ${token}`,

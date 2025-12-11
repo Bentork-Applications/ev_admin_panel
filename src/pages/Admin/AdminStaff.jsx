@@ -38,11 +38,11 @@ function AdminStaff({ baseUrl }) {
       setLoading(true);
       setError(null);
 
-      // const token = localStorage.getItem("token");
-      // if (!token) {
-      //   navigate("/");
-      //   return;
-      // }
+      const token = localStorage.getItem("token");
+      if (!token) {
+        navigate("/");
+        return;
+      }
 
       const headers = { 
         'Authorization': `Bearer ${token}`,

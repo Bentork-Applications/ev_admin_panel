@@ -20,13 +20,13 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl }) {  
     const fetchStations = async () => {
       setIsLoadingStation(true);
 
-      // const token = localStorage.getItem('token');
-      // if(!token){
-      //   console.error('Authentication error')
-      //   setError('Authentication Failed, please login again');
-      //   setIsLoadingStation(false);
-      //   return;
-      // }
+      const token = localStorage.getItem('token');
+      if(!token){
+        console.error('Authentication error')
+        setError('Authentication Failed, please login again');
+        setIsLoadingStation(false);
+        return;
+      }
 
       try{
         const response = await fetch(`${baseUrl}/stations/all`, {
