@@ -11,8 +11,7 @@ export default function ChargerTable() {
       type: "DC",
       rate: "$8.50",
       chargeMode: "Fast",
-      status: "Available",
-      availability: "Online",
+      status: "Online",
     },
     {
       id: "123456",
@@ -22,8 +21,17 @@ export default function ChargerTable() {
       type: "AC",
       rate: "$8.50",
       chargeMode: "Standard",
-      status: "Available",
-      availability: "Offline",
+      status: "Offline",
+    },
+    {
+      id: "123456",
+      stationId: "Text Goes Here",
+      ocpp: "OCPP-03",
+      connector: "CCS2",
+      type: "DC",
+      rate: "$8.50",
+      chargeMode: "Ultra Fast",
+      status: "Busy",
     },
   ];
 
@@ -43,13 +51,42 @@ export default function ChargerTable() {
     fontWeight: 500,
   });
 
-  const getAvailabilityStyle = (availability) => ({
-    background: availability === "Online" ? "#dcfce7" : "#fee2e2",
-    color: availability === "Online" ? "#166534" : "#b91c1c",
-    borderRadius: "20px",
-    padding: "4px 12px",
-    fontWeight: 500,
-  });
+  const getAvailabilityStyle = (availability) => {
+    if (availability === "Online") {
+      return {
+        background: "#dcfce7",
+        color: "#166534",
+        borderRadius: "20px",
+        padding: "4px 12px",
+        fontWeight: 500,
+      };
+    } else if (availability === "Busy") {
+      return {
+        background: "#fef3c7",
+        color: "#d97706",
+        borderRadius: "20px",
+        padding: "4px 12px",
+        fontWeight: 500,
+      };
+    } else if (availability === "Faulted") {
+      return {
+        background: "#fee2e2",
+        color: "#991b1b",
+        borderRadius: "20px",
+        padding: "4px 12px",
+        fontWeight: 500,
+        border: "1px solid #f87171",
+      };
+    } else {
+      return {
+        background: "#fee2e2",
+        color: "#b91c1c",
+        borderRadius: "20px",
+        padding: "4px 12px",
+        fontWeight: 500,
+      };
+    }
+  };
 
   return (
     <div
@@ -83,7 +120,6 @@ export default function ChargerTable() {
             <th style={thStyle}>Rate</th>
             <th style={thStyle}>Charge Mode</th>
             <th style={thStyle}>Status</th>
-            <th style={thStyle}>Availability</th>
             <th style={thStyle}>Action</th>
           </tr>
         </thead>
@@ -116,16 +152,16 @@ export default function ChargerTable() {
                   {row.chargeMode}
                 </span>
               </td>
-              <td style={tdStyle}>{row.status}</td>
               <td style={tdStyle}>
-                <span style={getAvailabilityStyle(row.availability)}>
-                  {row.availability}
+                <span style={getAvailabilityStyle(row.status)}>
+                  {row.status}
                 </span>
               </td>
               <td style={{ ...tdStyle, display: "flex", gap: "10px" }}>
                 <Pencil size={18} style={{ cursor: "pointer" }} />
                 <Trash2 size={18} style={{ cursor: "pointer" }} />
               </td>
+
             </tr>
           ))}
         </tbody>

@@ -28,7 +28,7 @@ export default function App() {
           <Route
             path="/dashboard/*"
             // element={token ? <Dashboard /> : <Navigate to="/login" replace />}
-            element={<Dashboard/>}
+            element={<Dashboard />}
           />
         </Routes>
       </Suspense>

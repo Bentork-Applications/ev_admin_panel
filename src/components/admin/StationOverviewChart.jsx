@@ -29,7 +29,7 @@ export default function StationOverviewChart() {
         borderRadius: "8px",
         padding: "20px",
         width: "100%",
-        maxWidth: "900px",
+        maxWidth: "100%",
         margin: "20px auto",
         boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
       }}

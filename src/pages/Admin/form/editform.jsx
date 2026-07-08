@@ -4,11 +4,12 @@ import Bottomnav from "../../../components/admin/Bottomnav";
 
 const ACCENT = "#7c3aed";
 
-function EditForm({ plan, onClose, onSave, baseUrl }) {
+
+function EditForm({ plan, onClose, onSave, baseUrl, existingPlans = [] }) {
   const [formData, setFormData] = useState({
     id: plan?.id || null,
     planName: plan?.planName || "",
-    description: plan?.description || "",
+    description: plan?.description?.replace(/^\[C:\d+\]\s*/, "") || "",
     durationMin: plan?.durationMin || null,
     rate: plan?.rate || null,
     walletDeduction: plan?.walletDeduction || null,
@@ -25,8 +26,8 @@ function EditForm({ plan, onClose, onSave, baseUrl }) {
       ...prev,
       [name]:
         name === "durationMin" ||
-        name === "rate" ||
-        name === "walletDeduction"
+          name === "rate" ||
+          name === "walletDeduction"
           ? value === "" ? null : Number(value) // convert to number or null
           : value,
     }));
@@ -35,7 +36,6 @@ function EditForm({ plan, onClose, onSave, baseUrl }) {
   const handleSubmit = () => setShowModal(true);
 
   const confirmSubmit = async () => {
-
     if (!formData.chargerType || formData.chargerType === "") {
       alert("Please select a charger type (AC or DC)");
       setShowModal(false);
@@ -45,36 +45,41 @@ function EditForm({ plan, onClose, onSave, baseUrl }) {
     try {
       const token = localStorage.getItem("token");
 
+      // Re-apply prefix if it existed
+      const originalPrefix = plan.description?.match(/^\[C:\d+\]/)?.[0] || "";
+      const descriptionToSave = originalPrefix ? `${originalPrefix} ${formData.description}` : formData.description;
+
       const endpoint = "/plans/update";
       const fullUrl = `${baseUrl}${endpoint}/${formData.id}`;
 
       const res = await fetch(fullUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            planName: formData.planName,
-            description: formData.description,
-            durationMin: formData.durationMin,
-            rate: formData.rate,
-            walletDeduction: formData.walletDeduction,
-            chargerType: formData.chargerType,
-          }),
-        }
-      );
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          planName: formData.planName,
+          description: descriptionToSave,
+          durationMin: formData.durationMin,
+          rate: formData.rate,
+          walletDeduction: formData.walletDeduction,
+          chargerType: formData.chargerType,
+        }),
+      });
 
       if (res.ok) {
         let updated;
         try {
           updated = await res.json();
         } catch {
-          updated = formData; // fallback if no JSON returned
+          updated = {
+            ...formData,
+            description: descriptionToSave,
+          }; // fallback if no JSON returned
         }
 
         if (onSave) onSave(updated);
-
         if (onClose) onClose();
       } else {
         console.error("Failed to update plan:", await res.text());
@@ -95,66 +100,119 @@ function EditForm({ plan, onClose, onSave, baseUrl }) {
       }}
     >
       <div style={{ flex: 1, padding: "40px 56px" }}>
-        <h2 style={{ fontWeight: 600, fontSize: "24px", marginBottom: "30px" }}>
+        <h2 style={{ fontWeight: 600, fontSize: "24px", marginBottom: "30px", fontFamily: "lexend, sans-serif" }}>
           Edit Plan
         </h2>
 
-        {/* Form */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "28px",
-            maxWidth: "800px",
-          }}
-        >
-          <FloatingInput
-            label="Plan Name"
-            name="planName"
-            value={formData.planName}
-            onChange={handleChange}
-          />
-          <FloatingInput
-            label="Description"
-            name="description"
-            value={formData.description}
-            onChange={handleChange}
-          />
-          <FloatingInput
-            label="Duration (Minutes)"
-            name="durationMin"
-            value={formData.durationMin ?? ""}
-            onChange={handleChange}
-            type="number"
-          />
-          <FloatingInput
-            label="Rate (₹/kWh)"
-            name="rate"
-            value={formData.rate ?? ""}
-            onChange={handleChange}
-            type="number"
-          />
-          <FloatingInput
-            label="Wallet Deduction (₹/min)"
-            name="walletDeduction"
-            value={formData.walletDeduction ?? ""}
-            onChange={handleChange}
-            type="number"
-          />
-           <FloatingSelect
+        <div style={{ display: "flex", gap: "40px", flexWrap: "wrap", alignItems: "flex-start" }}>
+          {/* Left Column: Form */}
+          <div
+            style={{
+              flex: "2 1 500px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "28px",
+            }}
+          >
+            <FloatingInput
+              label="Plan Name"
+              name="planName"
+              value={formData.planName}
+              onChange={handleChange}
+            />
+            <FloatingInput
+              label="Description"
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+            />
+            <FloatingInput
+              label="Duration (Minutes)"
+              name="durationMin"
+              value={formData.durationMin ?? ""}
+              onChange={handleChange}
+              type="number"
+            />
+            <FloatingInput
+              label="Rate (₹/kWh)"
+              name="rate"
+              value={formData.rate ?? ""}
+              onChange={handleChange}
+              type="number"
+            />
+            <FloatingInput
+              label="Wallet Deduction (₹/min)"
+              name="walletDeduction"
+              value={formData.walletDeduction ?? ""}
+              onChange={handleChange}
+              type="number"
+            />
+            <FloatingSelect
               label="Charger Type"
               name="chargerType"
               value={formData.chargerType}
               onChange={handleChange}
             >
-              <option value="">Select a type</option>
               <option value="AC">AC</option>
               <option value="DC">DC</option>
             </FloatingSelect>
-        </div>
+          </div>
 
-        <div style={{ textAlign: "center", marginTop: "40px" }}>
-          <img src={planSvg} alt="Plan Illustration" style={{ maxWidth: "300px" }} />
+          {/* Right Column: Other Plans & Illustration */}
+          <div
+            style={{
+              flex: "1 1 300px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "24px",
+            }}
+          >
+            {/* Other Plans */}
+            <div
+              style={{
+                background: "#FFF",
+                padding: "24px",
+                borderRadius: "16px",
+                border: "0.2px solid #E0E0E0",
+                maxHeight: "350px",
+                overflowY: "auto",
+              }}
+            >
+              <h3 style={{ fontSize: "16px", fontWeight: "600", margin: "0 0 16px 0", color: "#333", fontFamily: "lexend, sans-serif" }}>
+                Existing Plans for this Charger
+              </h3>
+              {existingPlans.length === 0 ? (
+                <p style={{ fontSize: "14px", color: "#666", margin: 0 }}>
+                  No other plans configured for this charger.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {existingPlans.map((ep) => (
+                    <div
+                      key={ep.id}
+                      style={{
+                        background: "#F9F9F9",
+                        padding: "12px",
+                        borderRadius: "8px",
+                        border: "0.2px solid #E0E0E0",
+                      }}
+                    >
+                      <p style={{ margin: 0, fontWeight: "600", fontSize: "13px", fontFamily: "lexend, sans-serif" }}>
+                        {ep.planName}
+                      </p>
+                      <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#666" }}>
+                        ₹{ep.rate}/kWh • {ep.durationMin} mins • {ep.chargerType}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: "10px" }}>
+              <img src={planSvg} alt="Plan Illustration" style={{ maxWidth: "250px" }} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -280,7 +338,6 @@ function FloatingInput({ label, name, value, onChange, type = "text" }) {
 
 function FloatingSelect({ label, name, value, onChange, children }) {
   const [focused, setFocused] = useState(false);
-  const hasValue = value && value !== "";
   return (
     <div style={{ position: "relative", width: "100%" }}>
       <label

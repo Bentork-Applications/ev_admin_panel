@@ -55,7 +55,7 @@ function FloatingInput({ label, as = 'input', children, ...props }) {
   );
 }
 
-function Footer({ onBack, onSubmit, isSubmitting }) {
+function Footer({ onBack, onSubmit, isSubmitting, label = 'Register Card' }) {
   return (
     <div style={{ padding: '16px 40px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: '500' }}>
@@ -72,18 +72,20 @@ function Footer({ onBack, onSubmit, isSubmitting }) {
           opacity: isSubmitting ? 0.6 : 1,
         }}
       >
-        {isSubmitting ? "Registering..." : "Register Card"}
+        {isSubmitting ? "Processing..." : label}
       </button>
     </div>
   );
 }
 
-function RegisterCard({ onClose, onCardRegistered, baseUrl }){
+function RegisterCard({ onClose, onCardRegistered, baseUrl, application }){
+  const isFromApplication = !!application;
+
   const [formData, setFormData] = useState({
-    id: "",
-    name: "",
-    email: "",
-    contact: "",
+    id: application?.userId || application?.user?.id || "",
+    name: application?.fullName || application?.user?.name || "",
+    email: application?.email || application?.user?.email || "",
+    contact: application?.mobile || application?.user?.mobile || "",
     cardId: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -130,8 +132,12 @@ function RegisterCard({ onClose, onCardRegistered, baseUrl }){
 
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.email || !formData.cardId) {
-      alert("Please fill in the Name, Email, and Card ID fields.");
+    if (!formData.cardId) {
+      alert("Please enter the Card ID / RFID Tag.");
+      return;
+    }
+    if (!isFromApplication && (!formData.name || !formData.email)) {
+      alert("Please fill in the Name and Email fields.");
       return;
     }
     setIsSubmitting(true);
@@ -144,32 +150,73 @@ function RegisterCard({ onClose, onCardRegistered, baseUrl }){
         return;
     }
 
-    const payload = {
-        cardNumber: formData.cardId,
-        userId: formData.id,
-    };
-
     try {
-      const response = await fetch(`${baseUrl}/rfid-card/register`, {
-        method: "POST",
-        headers: { 
-            "Content-Type": "application/json", 
-            Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify(payload),
-      });
+      if (isFromApplication) {
+        // ── APPROVE APPLICATION FLOW ──
+        const approveRes = await fetch(`${baseUrl}/rfid-applications/${application.id}/approve`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ cardNumber: formData.cardId }),
+        });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || "Failed to register the card.");
+        if (!approveRes.ok) {
+          const err = await approveRes.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to approve the application.");
+        }
+
+        const approvedAppData = await approveRes.json();
+        const cardId = approvedAppData?.assignedCard?.id;
+
+        if (cardId) {
+          // Immediately set the card status to Inactive (false) to keep it Inactive by default
+          await fetch(`${baseUrl}/rfid-card/${cardId}/status`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ active: false }),
+          });
+        }
+
+        // Send user notification
+        const userId = formData.id || application?.userId || application?.user?.id;
+        if (userId) {
+          await fetch(`${baseUrl}/notifications/user/${userId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              title: "RFID Card Approved! 🎉",
+              message: `Your RFID card request has been approved. Your Card Tag ID is: ${formData.cardId}. It will be dispatched to your address shortly.`,
+              type: "RFID",
+            }),
+          });
+        }
+
+        alert("Application approved and card assigned successfully!");
+      } else {
+        // ── MANUAL REGISTER FLOW ──
+        const payload = {
+          cardNumber: formData.cardId,
+          userId: formData.id,
+        };
+
+        const response = await fetch(`${baseUrl}/rfid-card/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to register the card.");
+        }
+
+        alert("Card registered successfully!");
       }
 
-      alert("Card registered successfully!");
       onCardRegistered();
 
     } catch (err) {
-      console.error("Error registering card:", err);
-      alert("Submission Error: " + err.message);
+      console.error("Error:", err);
+      alert("Error: " + err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -180,51 +227,73 @@ function RegisterCard({ onClose, onCardRegistered, baseUrl }){
       
       {/* Header */}
       <div style={{ padding: '24px 40px 0' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '600', margin: 0 }}>Register Card</h2>
+        <h2 style={{ fontSize: '24px', fontWeight: '600', margin: 0 }}>
+          {isFromApplication ? 'Process Card Request' : 'Register Card'}
+        </h2>
         <p style={{ fontSize: '14px', color: '#6B7280', margin: '4px 0 20px' }}>
-          Register a new RFID card for a user
+          {isFromApplication
+            ? `Approving request from ${formData.name || 'user'} — enter a unique Card ID to assign`
+            : 'Register a new RFID card for a user'}
         </p>
         <hr style={{ border: 'none', borderTop: '1px solid #E5E7EB' }} />
       </div>
+
+      {/* Application banner */}
+      {isFromApplication && (
+        <div style={{ margin: '16px 40px 0', padding: '12px 16px', background: '#FEF3C7', borderRadius: '10px', border: '1px solid #FCD34D', fontSize: '13px', color: '#92400E' }}>
+          <strong>Shipping Address:</strong> {application.address || '—'}
+        </div>
+      )}
 
       {/* Form Fields */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 40px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-            <div style={{ flex: 1 }}>
-              <FloatingInput label="Email Address" name="email" type="email" value={formData.email} onChange={handleChange} />
+          {!isFromApplication && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+              <div style={{ flex: 1 }}>
+                <FloatingInput label="Email Address" name="email" type="email" value={formData.email} onChange={handleChange} />
+              </div>
+              <button
+                onClick={handleGetDetails}
+                disabled={isFetchingDetails}
+                style={{
+                  height: '46px',
+                  padding: '0 20px',
+                  backgroundColor: '#F3F4F6',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  opacity: isFetchingDetails ? 0.6 : 1,
+                  marginleft: '50px',
+                  marginRight: '-25px',
+                }}
+              >
+                {isFetchingDetails ? 'Fetching...' : 'Get Details'}
+              </button>
             </div>
-            <button
-              onClick={handleGetDetails}
-              disabled={isFetchingDetails}
-              style={{
-                height: '46px',
-                padding: '0 20px',
-                backgroundColor: '#F3F4F6',
-                border: '1px solid #D1D5DB',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                opacity: isFetchingDetails ? 0.6 : 1,
-                marginleft: '50px',
-                marginRight: '-25px',
-              }}
-            >
-              {isFetchingDetails ? 'Fetching...' : 'Get Details'}
-            </button>
-          </div>
+          )}
 
-          <FloatingInput label="Full Name" name="name" value={formData.name} onChange={handleChange} />
-          <FloatingInput label="Contact Number" name="contact" type="tel" value={formData.contact} onChange={handleChange} />
+          {isFromApplication && (
+            <FloatingInput label="Email Address" name="email" type="email" value={formData.email} onChange={handleChange} disabled />
+          )}
+
+          <FloatingInput label="Full Name" name="name" value={formData.name} onChange={handleChange} disabled={isFromApplication} />
+          <FloatingInput label="Contact Number" name="contact" type="tel" value={formData.contact} onChange={handleChange} disabled={isFromApplication} />
           <FloatingInput label="Card ID / RFID Tag" name="cardId" value={formData.cardId} onChange={handleChange} />
         </div>
       </div>
 
       {/* Footer with Buttons */}
-      <Footer onBack={onClose} onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+      <Footer
+        onBack={onClose}
+        onSubmit={handleSubmit}
+        isSubmitting={isSubmitting}
+        label={isFromApplication ? 'Approve & Assign Card' : 'Register Card'}
+      />
     </div>
   );
 };
