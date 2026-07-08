@@ -1,9 +1,8 @@
-name: Deploy Admin
+name: Deploy Admin Panel
 
 on:
   push:
     branches: [ "main" ]
-    paths: [ "admin-frontend/**" ]
 
 jobs:
   deploy:
@@ -11,31 +10,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Node
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      - name: Install dependencies
-        run: |
-          cd admin-frontend
-          npm install
-
       - name: Build
         run: |
-          cd admin-frontend
+          npm install
           npm run build
         env:
           VITE_API_URL: ${{ secrets.ADMIN_API_URL }}
           VITE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.ADMIN_GOOGLE_WEB_CLIENT_ID }}
-
-      - name: Sync to S3
-        uses: jakejarvis/s3-sync-action@master
-        with:
-          args: --acl public-read --delete
-        env:
-          AWS_S3_BUCKET: ev-admin-ui-2025
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          SOURCE_DIR: 'admin-frontend/dist' 
-          
