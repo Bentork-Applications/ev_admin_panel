@@ -831,7 +831,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
         {/* Advanced Filters */}
         <div className="filters-section">
           <div className="filter-group">
-            <label>Date Filter</label>
+            <label>Date Range</label>
             <select
               className="filter-select"
               value={dateFilter}
@@ -847,7 +847,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
           {!isDealer && (
             <>
               <div className="filter-group">
-                <label>Status Filter</label>
+                <label>Status</label>
                 <select
                   className="filter-select"
                   value={statusFilter}
@@ -862,7 +862,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
               </div>
 
               <div className="filter-group">
-                <label>Submitter Type</label>
+                <label>User Type</label>
                 <select
                   className="filter-select"
                   value={typeFilter}
@@ -880,7 +880,6 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
         {/* Records Table */}
         <div className="records-section">
           <div className="records-header">
-            <h3>{isDealer ? "My Raised Requests" : "All Support Requests"}</h3>
           </div>
 
           {loading ? (
@@ -901,11 +900,11 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
                     <th>ID</th>
                     <th>Customer Name</th>
                     <th>Product</th>
-                    <th>Created Date</th>
-                    {!isDealer && <th>Submitter Type</th>}
+                    <th>Date Created</th>
+                    {!isDealer && <th>User Type</th>}
                     {!isDealer && <th>Submitter Email</th>}
                     <th>Status</th>
-                    <th>Action</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1115,7 +1114,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
                   </div>
                 )}
                 <div className="detail-item">
-                  <span className="detail-item-label">Created Date</span>
+                  <span className="detail-item-label">Date Created</span>
                   <span className="detail-item-value">{formatDate(selectedRequest.createdAt)}</span>
                 </div>
                 <div className="detail-item">
@@ -1123,7 +1122,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
                   <span className="detail-item-value">{selectedRequest.submitterEmail}</span>
                 </div>
                 <div className="detail-item">
-                  <span className="detail-item-label">Submitter Type</span>
+                  <span className="detail-item-label">User Type</span>
                   <span className="detail-item-value">
                     <span className={`type-badge ${selectedRequest.customerType === "DEALER" ? "type-dealer" : "type-user"}`}>
                       {selectedRequest.customerType === "DEALER" ? "DEALER" : "END USER"}
@@ -1139,7 +1138,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
 
               {/* Visual Status Tracker Stepper */}
               <div className="stepper-container">
-                <div className="stepper-header">Status Progress Tracker</div>
+                <div className="stepper-header">Ticket Progress</div>
                 <div className="stepper">
                   {/* Progress Line */}
                   <div
@@ -1237,7 +1236,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
                   fontWeight: 600,
                   fontSize: 14
                 }}>
-                  <span>✓</span> Support Request is Resolved & Completed
+                  <span>✓</span> Support request resolved.
                 </div>
               )}
 
