@@ -7,6 +7,9 @@ const getAuthHeaders = () => ({
   "Content-Type": "application/json",
 });
 
+
+
+
 const EMPTY_FORM = { name: "", email: "", mobile: "", password: "", confirmPassword: "" };
 
 // ─── Frontend Mock State Helper ───────────────────────────────────────────────
@@ -346,12 +349,12 @@ export default function Dealers({ baseUrl = import.meta.env.VITE_API_URL }) {
       const data = await res.json();
       const allAdmins = Array.isArray(data) ? data : [];
       let dealersList = allAdmins.filter(a => a.role === "DEALER" || a.role === "dealer");
-      
+
       // Apply frontend patches
       const patches = getDealerPatches();
       dealersList = dealersList.filter(d => !patches.deleted.includes(d.id));
       dealersList = dealersList.map(d => patches.updated[d.id] ? { ...d, ...patches.updated[d.id] } : d);
-      
+
       setDealers(dealersList);
     } catch (err) {
       console.error(err);

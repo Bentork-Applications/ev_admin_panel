@@ -763,7 +763,7 @@ function Charger({ baseUrl, userRole }) {
                 setEditingCharger(null);
                 setIsModelOpen(true);
               }}>
-                <span style={{ fontSize: "16px" }}>+</span> Add Charger
+                Add Charger
               </button>
               <button className="manage-btn">Manage</button>
             </div>
@@ -806,7 +806,7 @@ function Charger({ baseUrl, userRole }) {
                       </div>
                     </th>
                   ))}
-                  {!isDealer && <th className="table-th" style={{ textAlign: "center" }}>Action</th>}
+                  {!isDealer && <th className="table-th" style={{ textAlign: "center" }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>

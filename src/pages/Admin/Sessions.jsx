@@ -137,9 +137,9 @@ function Sessions({ baseUrl, userRole }) {
     const sessionId = session.id;
     setStoppingId(sessionId);
     setConfirmModal({ show: false, session: null });
-    
+
     let stopToken = localStorage.getItem("token");
-    
+
     // Attempt to get the session owner's email to fetch their token
     const userEmail = session.user?.email;
     if (userEmail) {
@@ -533,8 +533,8 @@ function Sessions({ baseUrl, userRole }) {
       {/* Header */}
       <div className="sessions-header">
         <div>
-          <h2 className="sessions-title">Sessions</h2>
-          <p className="sessions-subtitle">Monitor charging activities and history</p>
+          <h2 className="sessions-title">Session History</h2>
+          <p className="sessions-subtitle">Monitor charging activity and session history.</p>
         </div>
       </div>
 
@@ -543,7 +543,7 @@ function Sessions({ baseUrl, userRole }) {
         <Card title="Total Sessions" value={summaryData.totalSessions} icon={totalIcon} />
         <Card title="Active Sessions" value={summaryData.activeSessions} icon={activeIcon} />
         <Card title="Average Uptime" value={summaryData.averageUptime} icon={uptimeIcon} />
-        <Card title="Error Today" value={summaryData.errorToday} icon={errorIcon} />
+        <Card title="Errors Today" value={summaryData.errorToday} icon={errorIcon} />
       </div>
 
       {/* Trend Chart */}

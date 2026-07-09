@@ -10,6 +10,9 @@ import AdminIcon from "../../assets/icons/admin.svg";
 import UserIcon from "../../assets/icons/users.svg";
 
 
+
+
+
 // Pages
 const Stations = React.lazy(() => import("./Stations"));
 const Charger = React.lazy(() => import("./Charger"));
@@ -106,7 +109,7 @@ export default function Dashboard({ onLogout }) {
           const email = payload.sub;
           const stored = localStorage.getItem("staff_page_access_" + email);
           if (stored) allowed = JSON.parse(stored);
-        } catch (e) {}
+        } catch (e) { }
       }
       const cards = [];
       if (allowed.includes("batteries")) {
@@ -233,7 +236,7 @@ export default function Dashboard({ onLogout }) {
         try {
           let claims = [];
           let batteries = [];
-          
+
           const promises = [];
           if (allowedPages.includes("warranty-claims")) {
             promises.push(

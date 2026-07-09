@@ -561,9 +561,9 @@ function Stations({ baseUrl, userRole }) {
         <div className="summary-cards-grid">
 
           <Card title="Total Stations" value={summaryData.totalStations} icon={totalIcon} subtext="+2 from last month" />
-          <Card title="Active Stations" value={summaryData.activeStations} icon={activeIcon} subtext="+75 operational" />
+          <Card title="Active Stations" value={summaryData.activeStations} icon={activeIcon} subtext="Active Now" />
           <Card title="Average Uptime" value={summaryData.averageUptime} icon={uptimeIcon} subtext="-1.8% from last week" />
-          <Card title="Errors" value={summaryData.errorToday} icon={errorIcon} subtext="+1 from last month" />
+          <Card title="Faulty Stations" value={summaryData.errorToday} icon={errorIcon} subtext="+1 from last month" />
         </div>
 
 
