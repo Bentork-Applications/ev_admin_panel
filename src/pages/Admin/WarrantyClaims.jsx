@@ -470,7 +470,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
 
       <div className="claims-container">
         <div className="header-row">
-          <h2>Warranty Claims Workspace</h2>
+          <h2>Warranty Claims</h2>
         </div>
 
         <div className="tabs-header">
@@ -523,7 +523,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                     <th>Invoice Number</th>
                     <th>Submitter Email</th>
                     <th>Status</th>
-                    <th>Created At</th>
+                    <th>Date Created</th>
                     <th>Action</th>
                   </tr>
                 </thead>

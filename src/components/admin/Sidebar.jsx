@@ -109,7 +109,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
         { name: "Charger & QR Management", icon: chargerIcon, path: "/dashboard/charger", roles: ["ADMIN", "DEALER"] },
         { name: "Slot Management", icon: slotIcon, path: "/dashboard/slot", roles: ["ADMIN"] },
         { name: "Slot Bookings", icon: sessionsIcon, path: "/dashboard/slot-bookings", roles: ["ADMIN"] },
-        { name: "Sessions / Bookings", icon: sessionsIcon, path: "/dashboard/sessions", roles: ["ADMIN", "DEALER"] }
+        { name: "Session History", icon: sessionsIcon, path: "/dashboard/sessions", roles: ["ADMIN", "DEALER"] }
       ]
     },
     {

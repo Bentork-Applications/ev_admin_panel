@@ -780,7 +780,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                 className={`modal-tab ${registerMode === "series" ? "active" : ""}`}
                 onClick={() => { setRegisterMode("series"); setFormError(null); }}
               >
-                Series Expansion
+                Bulk Registration
               </div>
             </div>
 
@@ -813,7 +813,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                   />
                 </div>
                 <div className="form-group full-width">
-                  <label>Product Details</label>
+                  <label>Product Description</label>
                   <input
                     type="text"
                     name="productDetails"
@@ -884,7 +884,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                   />
                 </div>
                 <div className="form-group">
-                  <label>No. of Years</label>
+                  <label>Warranty Duration (Years)</label>
                   <input
                     type="number"
                     name="warrantyYears"
@@ -950,7 +950,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                   />
                 </div>
                 <div className="form-group full-width">
-                  <label>Product Details</label>
+                  <label>Product Description</label>
                   <input
                     type="text"
                     value={editFormData.productDetails}
@@ -990,7 +990,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                   />
                 </div>
                 <div className="form-group">
-                  <label>No. of Years</label>
+                  <label>Warranty Duration (Years)</label>
                   <input
                     type="number"
                     min="1"

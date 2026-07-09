@@ -370,7 +370,7 @@ export default function Dashboard({ onLogout }) {
     { name: "Warranty Claims", path: "warranty-claims", roles: ["ADMIN", "ADMIN_STAFF"] },
     { name: "Stations & Locations", path: "stations", roles: ["ADMIN", "DEALER"] },
     { name: "Charger & QR Management", path: "charger", roles: ["ADMIN", "DEALER"] },
-    { name: "Sessions / Bookings", path: "sessions", roles: ["ADMIN", "DEALER"] },
+    { name: "Session History", path: "sessions", roles: ["ADMIN", "DEALER"] },
     { name: "Slot Management", path: "slot", roles: ["ADMIN"] },
     { name: "Slot Bookings", path: "slot-bookings", roles: ["ADMIN"] },
     { name: "Users & RFID Cards", path: "users", roles: ["ADMIN"] },
@@ -475,12 +475,7 @@ export default function Dashboard({ onLogout }) {
                             energy={!isDealer ? getCardValue("Units Consumed") : null}
                           />
                         </div>
-                        {!isDealer && (
-                          <div className="map-container">
-                            <h3 className="map-title">Station Overview</h3>
-                            <p className="map-description">Map shows status of the stations like Active, Idle, Offline/Faulty, etc.</p>
-                          </div>
-                        )}
+
                       </div>
                     )}
                   </div>
