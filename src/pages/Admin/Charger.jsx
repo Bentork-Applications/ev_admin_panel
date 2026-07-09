@@ -67,12 +67,28 @@ export const getChargerStatus = (charger) => {
 
   const statusStr = charger.status ? String(charger.status).toLowerCase().trim() : "";
 
-  // Faulted: status matches fault or error - priority over WebSocket connection
+  // 1. Prioritize explicit status from backend database if present and recognized
   if (statusStr === "faulted" || statusStr === "error") {
     return "Faulted";
   }
+  if (
+    statusStr === "busy" ||
+    statusStr === "occupied" ||
+    statusStr === "charging" ||
+    statusStr === "preparing" ||
+    statusStr === "finishing" ||
+    statusStr === "reserved"
+  ) {
+    return "Busy";
+  }
+  if (statusStr === "available" || statusStr === "online") {
+    return "Online";
+  }
+  if (statusStr === "offline" || statusStr === "unavailable") {
+    return "Offline";
+  }
 
-  // Use live WebSocket connection status if available
+  // 2. Fall back to live WebSocket connection status if available
   if (charger.wsConnected !== undefined) {
     if (charger.wsConnected === true || charger.wsConnected === "true" || charger.wsConnected === 1 || charger.wsConnected === "1") {
       const isOccupied = charger.occupied === true || 
@@ -89,7 +105,7 @@ export const getChargerStatus = (charger) => {
     }
   }
 
-  // Parse occupied boolean state
+  // 3. Fall back to parsed occupied/available boolean flags
   const isOccupied = charger.occupied === true || 
                      charger.occupied === "true" || 
                      charger.isOccupied === true || 
@@ -99,7 +115,6 @@ export const getChargerStatus = (charger) => {
                      charger.isOccupied === 1 ||
                      charger.isOccupied === "1";
 
-  // Parse availability boolean state
   const isAvailable = charger.availability === true || 
                       charger.availability === "true" || 
                       charger.isAvailability === true || 
@@ -117,25 +132,13 @@ export const getChargerStatus = (charger) => {
                       charger.isAvailable === 1 ||
                       charger.isAvailable === "1";
 
-  // Busy: explicitly occupied or status matches a busy condition
-  if (
-    isOccupied ||
-    statusStr === "busy" ||
-    statusStr === "occupied" ||
-    statusStr === "charging" ||
-    statusStr === "preparing" ||
-    statusStr === "finishing" ||
-    statusStr === "reserved"
-  ) {
+  if (isOccupied) {
     return "Busy";
   }
-
-  // Online: explicitly available or status indicates online/available
-  if (isAvailable || statusStr === "available" || statusStr === "online") {
+  if (isAvailable) {
     return "Online";
   }
 
-  // Default fallback
   return "Offline";
 };
 
