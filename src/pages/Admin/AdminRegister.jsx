@@ -30,6 +30,8 @@ export default function AdminRegister() {
       return alert("Passwords do not match!");
     }
 
+
+
     setIsLoading(true);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
