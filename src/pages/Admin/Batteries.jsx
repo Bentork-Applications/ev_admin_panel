@@ -9,7 +9,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     const start = new Date(b.warrantyStartDate);
     const end = new Date(b.warrantyEndDate);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
-    
+
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     const years = Math.round(diffDays / 365);
@@ -54,6 +54,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     warrantyStartDate: "",
     warrantyEndDate: "",
     warrantyYears: "1",
+    selectedMadeProduct: "",
+    customMadeProduct: "",
   });
 
   const [deletedIds, setDeletedIds] = useState(() => {
@@ -169,6 +171,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       warrantyStartDate: "",
       warrantyEndDate: "",
       warrantyYears: "1",
+      selectedMadeProduct: "",
+      customMadeProduct: "",
     });
     setRegisterMode("single");
     setShowModal(true);
@@ -201,9 +205,16 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     setFormError(null);
 
     const token = localStorage.getItem("token");
+    const madeProductVal = formData.selectedMadeProduct === "Other"
+      ? formData.customMadeProduct
+      : formData.selectedMadeProduct;
+    const combinedDetails = madeProductVal
+      ? `${madeProductVal} - ${formData.productDetails}`
+      : formData.productDetails;
+
     const payload = {
       customerName: formData.customerName,
-      productDetails: formData.productDetails,
+      productDetails: combinedDetails,
       invoiceNumber: formData.invoiceNumber,
       barcode: formData.barcode,
       warrantyStartDate: formData.warrantyStartDate || null,
@@ -316,7 +327,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const getBatteryCategory = (b) => {
     if (b.productCategory) return b.productCategory;
     if (b.category) return b.category;
-    
+
     const details = (b.productDetails || "").toLowerCase();
     if (details.includes("solar")) {
       return "Solar Batteries";
@@ -544,7 +555,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           color: #444;
           font-weight: 500;
         }
-        .form-group input {
+        .form-group input,
+        .form-group select {
           width: 100%;
           padding: 10px 12px;
           border: 1px solid #ddd;
@@ -553,8 +565,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           font-size: 14px;
           box-sizing: border-box;
           font-family: inherit;
+          background: #fff;
         }
-        .form-group input:focus {
+        .form-group input:focus,
+        .form-group select:focus {
           border-color: #111;
         }
         .form-actions {
@@ -812,6 +826,36 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                     required
                   />
                 </div>
+                <div className="form-group full-width">
+                  <label>Product</label>
+                  <select
+                    name="selectedMadeProduct"
+                    value={formData.selectedMadeProduct || ""}
+                    onChange={handleFormChange}
+                    required
+                  >
+                    <option value="" disabled>Select Made Product</option>
+                    <option value="Solar Batteries">Solar Batteries</option>
+                    <option value="EV Batteries">EV Batteries</option>
+                    <option value="Batteries">Batteries</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {formData.selectedMadeProduct === "Other" && (
+                  <div className="form-group full-width">
+                    <label>Battery Name</label>
+                    <input
+                      type="text"
+                      name="customMadeProduct"
+                      placeholder="Enter battery name"
+                      value={formData.customMadeProduct}
+                      onChange={handleFormChange}
+                      required
+                    />
+                  </div>
+                )}
+
                 <div className="form-group full-width">
                   <label>Product Description</label>
                   <input

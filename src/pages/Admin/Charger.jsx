@@ -347,6 +347,7 @@ function Charger({ baseUrl, userRole }) {
         chargeMode: charger.chargeMode,
         rate: charger.rate !== "" ? parseFloat(charger.rate) : 0,
         platformFeePerKwh: charger.platformFeePerKwh !== "" ? parseFloat(charger.platformFeePerKwh) : 0,
+        pstPercent: charger.pstPercent !== undefined && charger.pstPercent !== null ? parseFloat(charger.pstPercent) : 0,
         isOccupied: charger.occupied === true || charger.occupied === "true" || charger.isOccupied === true || charger.isOccupied === "true",
         availability: newAvailability
       };
@@ -782,7 +783,7 @@ function Charger({ baseUrl, userRole }) {
             <table className="charger-table">
               <thead>
                 <tr>
-                  {["ID", "Station ID", "OCPP ID", "Connector", "Type", "Rate", "Charge Mode", "Status"].map((h, i) => (
+                  {["ID", "Station ID", "OCPP ID", "Connector", "Type", "Rate", "PST (%)", "Charge Mode", "Status"].map((h, i) => (
                     <th
                       key={i}
                       className="table-th"
@@ -838,6 +839,7 @@ function Charger({ baseUrl, userRole }) {
                         </span>
                       </td>
                       <td className="table-td">₹{charger.rate || "8.50"}</td>
+                      <td className="table-td">{charger.pstPercent != null ? `${charger.pstPercent}%` : '0%'}</td>
                       <td className="table-td">
                         <span className={`charge-mode-badge ${isFast ? 'mode-fast' : 'mode-standard'}`}>
                           {charger.chargeMode || 'Standard'}

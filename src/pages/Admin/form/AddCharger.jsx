@@ -12,6 +12,7 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
         chargeMode: "",
         rate: 15,
         platformFeePerKwh: 0,
+        pstPercent: 0,
         isOccupied: false,
         availability: true
       };
@@ -23,7 +24,8 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
     return {
       ...initialData,
       isOccupied: isOccupiedVal,
-      availability: availabilityVal
+      availability: availabilityVal,
+      pstPercent: initialData.pstPercent !== undefined && initialData.pstPercent !== null ? initialData.pstPercent : 0
     };
   };
 
@@ -126,6 +128,7 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
         chargeMode: form.chargeMode,
         rate: form.rate !== "" ? parseFloat(form.rate) : 0,
         platformFeePerKwh: form.platformFeePerKwh !== "" ? parseFloat(form.platformFeePerKwh) : 0,
+        pstPercent: form.pstPercent !== "" ? parseFloat(form.pstPercent) : 0,
         isOccupied: form.isOccupied,
         availability: form.availability
       }
@@ -282,6 +285,22 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
             />
           </div>
 
+          <div style={styles.field}>
+            <label style={styles.label}>PST (%)</label>
+            <input
+              type="number"
+              name="pstPercent"
+              value={form.pstPercent}
+              onChange={handleChange}
+              placeholder="e.g., 12.5"
+              style={styles.input}
+              min="0"
+              step="0.01"
+            />
+          </div>
+        </div>
+
+        <div style={styles.row}>
           <div style={styles.field}>
             <label style={styles.label}>Charge Mode</label>
             <select
