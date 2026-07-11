@@ -46,6 +46,8 @@ export default function Topbar({ onMenuClick, onLogout }) {
 
           <img src={settings} alt="Settings" className="icon-img" />
 
+
+
           <div
             className="profile-box"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -139,6 +141,8 @@ export default function Topbar({ onMenuClick, onLogout }) {
           height: 24px;
           cursor: pointer;
         }
+
+
 
         .profile-box {
           display: flex;

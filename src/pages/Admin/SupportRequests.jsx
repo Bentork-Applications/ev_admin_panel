@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
+  const navigate = useNavigate();
+  const location = useLocation();
   const isDealer = userRole === "DEALER" || localStorage.getItem("userRole") === "DEALER";
 
   // Data states
@@ -12,6 +15,14 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
 
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  useEffect(() => {
+    if (location.state?.openCreateModal && isDealer) {
+      setShowCreateModal(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, isDealer, navigate, location.pathname]);
+
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
 

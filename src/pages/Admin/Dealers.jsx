@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getAuthHeaders = () => ({
@@ -330,11 +330,19 @@ function DeleteModal({ dealer, baseUrl, onClose, onSuccess }) {
 // ─── Main Dealers Page ────────────────────────────────────────────────────────
 export default function Dealers({ baseUrl = import.meta.env.VITE_API_URL }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [dealers, setDealers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState(null); // { type: "add"|"edit"|"delete"|"assign", dealer? }
+
+  useEffect(() => {
+    if (location.state?.openAddModal) {
+      setModal({ type: "add" });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, navigate, location.pathname]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
 

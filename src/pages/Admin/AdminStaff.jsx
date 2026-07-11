@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import StaffSummaryCards from "../../components/card/StaffSummaryCards";
 import editIcon from "../../assets/icons/stafficon/edit.svg";
 import AddStaffForm from "./form/AddStaffForm";
@@ -195,11 +195,19 @@ function PageAccessDropdown({ staff }) {
 
 function AdminStaff({ baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [staffData, setStaffData] = useState([]);
   const [summaryStats, setSummaryStats] = useState({ admins: 0, dealers: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(null);
+
+  useEffect(() => {
+    if (location.state?.openAddForm) {
+      setIsFormOpen("add");
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, navigate, location.pathname]);
   const [editingStaff, setEditingStaff] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const getStaffStatus = (staff) => {

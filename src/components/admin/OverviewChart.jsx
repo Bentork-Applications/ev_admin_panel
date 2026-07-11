@@ -39,15 +39,31 @@ const OverviewChart = ({ users, revenue, sessions, energy }) => {
       }}
     >
       {/* Title */}
-      <h2
-        style={{
-          fontSize: "18px",
-          fontWeight: "600",
-          marginBottom: "16px",
-        }}
-      >
-        Overview
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h2
+          style={{
+            fontSize: "18px",
+            fontWeight: "600",
+            color: "#111827",
+            margin: 0
+          }}
+        >
+          Overview
+        </h2>
+        <select style={{
+          padding: "6px 12px",
+          borderRadius: "6px",
+          border: "1px solid #E5E7EB",
+          background: "#fff",
+          fontSize: "12px",
+          color: "#374151",
+          fontWeight: "500",
+          outline: "none",
+          cursor: "pointer"
+        }}>
+          <option>Last 7 Days (Jul 4-10)</option>
+        </select>
+      </div>
 
       {/* Chart */}
       <ResponsiveContainer width="100%" height={280}>
@@ -61,32 +77,32 @@ const OverviewChart = ({ users, revenue, sessions, energy }) => {
           <Line
             type="monotone"
             dataKey="Users"
-            stroke="#6366f1"
-            strokeWidth={2}
+            stroke="#27C786"
+            strokeWidth={2.5}
             dot={false}
           />
 
           <Line
             type="monotone"
             dataKey="Revenue"
-            stroke="#f87171"
-            strokeWidth={2}
+            stroke="#111827"
+            strokeWidth={2.5}
             dot={false}
           />
 
           <Line
             type="monotone"
             dataKey="Sessions"
-            stroke="#22c55e"
-            strokeWidth={2}
+            stroke="#6B7280"
+            strokeWidth={2.5}
             dot={false}
           />
 
           <Line
             type="monotone"
             dataKey="Units"
-            stroke="#0ea5e9"
-            strokeWidth={2}
+            stroke="#05B86B"
+            strokeWidth={2.5}
             dot={false}
           />
         </LineChart>

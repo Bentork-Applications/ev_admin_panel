@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 // import AddStation from "./form/AddStation";
 
 import totalIcon from "../../assets/icons/stationicon/Vector.svg";
@@ -31,6 +31,7 @@ const Modal = ({ children, onClose }) => (
 
 function Stations({ baseUrl, userRole }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const isDealer = userRole === "DEALER";
 
   const [stations, setStations] = useState([]);
@@ -46,6 +47,13 @@ function Stations({ baseUrl, userRole }) {
   const [selectedStation, setSelectedStation] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    if (location.state?.openAddModal && !isDealer) {
+      setIsModalOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, isDealer, navigate, location.pathname]);
 
   useEffect(() => {
     const fetchStationData = async () => {
