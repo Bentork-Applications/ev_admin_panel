@@ -76,6 +76,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  const [viewDetailsTarget, setViewDetailsTarget] = useState(null);
   const [editFormData, setEditFormData] = useState({
     customerName: "",
     productDetails: "",
@@ -91,6 +93,14 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
   useEffect(() => {
     fetchBatteries();
+
+    const handleDocumentClick = () => {
+      setActiveMenuId(null);
+    };
+    document.addEventListener("click", handleDocumentClick);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+    };
   }, []);
 
   const handleOpenEdit = (b) => {
@@ -382,9 +392,137 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const activeWarranties = activeBatteries.filter(b => b.warrantyActive).length;
   const expiredWarranties = totalBatteries - activeWarranties;
 
+  const exportToPDF = () => {
+    if (filteredBatteries.length === 0) {
+      alert("No data to export");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow popups to export PDF");
+      return;
+    }
+
+    const tableRowsHtml = filteredBatteries.map(b => `
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold;">${b.displaySerialNumber || ''}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.customerName || '-'}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.productDetails || '-'}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.invoiceNumber || '-'}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.barcode || '-'}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.warrantyStartDate} to ${b.warrantyEndDate}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+          <span style="padding: 4px 8px; border-radius: 9999px; font-size: 11px; font-weight: bold; ${b.warrantyActive ? 'background: #DEF7EC; color: #03543F;' : 'background: #FDE8E8; color: #9B1C1C;'
+      }">
+            ${b.warrantyActive ? 'Active' : 'Expired'}
+          </span>
+        </td>
+      </tr>
+    `).join("");
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Battery Inventory Export</title>
+          <style>
+            body { font-family: 'Lexend', sans-serif; padding: 20px; color: #111827; }
+            h2 { margin-bottom: 4px; font-size: 24px; }
+            p { margin: 0 0 20px 0; color: #6B7280; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; }
+            th { text-align: left; padding: 12px 10px; background: #F9FAFB; border-bottom: 2px solid #E5E7EB; color: #4B5563; font-size: 12px; }
+            td { font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <h2>Battery Inventory Report</h2>
+          <p>Generated on: ${new Date().toLocaleString()}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Serial Number</th>
+                <th>Customer Name</th>
+                <th>Product Details</th>
+                <th>Invoice Number</th>
+                <th>Barcode</th>
+                <th>Warranty Period</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRowsHtml}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const exportToExcel = () => {
+    if (filteredBatteries.length === 0) {
+      alert("No data to export");
+      return;
+    }
+
+    const headers = [
+      "Serial Number",
+      "Customer Name",
+      "Product Details",
+      "Invoice Number",
+      "Barcode",
+      "Warranty Period",
+      "Status"
+    ];
+
+    const rows = filteredBatteries.map(b => [
+      `"${b.displaySerialNumber || ''}"`,
+      `"${b.customerName || '-'}"`,
+      `"${b.productDetails || '-'}"`,
+      `"${b.invoiceNumber || '-'}"`,
+      `"${b.barcode || '-'}"`,
+      `"${b.warrantyStartDate} to ${b.warrantyEndDate}"`,
+      `"${b.warrantyActive ? 'Active' : 'Expired'}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `battery_inventory_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div style={{ width: "100%", background: "#f1f1f1", minHeight: "100vh", fontFamily: "'Lexend', sans-serif", padding: "24px", boxSizing: "border-box" }}>
+    <div className="batteries-page-wrapper">
       <style>{`
+        @keyframes fadeInPage {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .batteries-page-wrapper {
+          animation: fadeInPage 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          width: 100%;
+          min-height: 100vh;
+          font-family: 'Lexend', sans-serif;
+          padding: 24px;
+          box-sizing: border-box;
+          background: #F9FAFB;
+        }
         .batteries-container {
           max-width: 1200px;
           margin: 0 auto;
@@ -393,13 +531,35 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 24px;
+          margin-bottom: 28px;
         }
         .header-left h2 {
-          font-size: 24px;
-          font-weight: 600;
-          color: #1a1a1a;
+          font-size: 28px;
+          font-weight: 700;
+          color: #111827;
           margin: 0;
+        }
+        .register-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 22px;
+          background: #111827;
+          color: white;
+          border: none;
+          border-radius: 9999px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .register-btn:hover {
+          background: #374151;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 16px rgba(17, 24, 39, 0.15);
+        }
+        .register-btn:active {
+          transform: translateY(0);
         }
         .maint-btn {
           padding: 10px 20px;
@@ -418,49 +578,318 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         .stats-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
-          gap: 20px;
-          margin-bottom: 24px;
+          gap: 24px;
+          margin-bottom: 32px;
+        }
+        @media (max-width: 1024px) {
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (max-width: 640px) {
+          .stats-grid {
+            grid-template-columns: 1fr;
+          }
         }
         .stat-card {
-          background: #fff;
-          border-radius: 16px;
-          padding: 24px;
-          border: 1px solid #eee;
+          background: #ffffff;
+          border: 1px solid #E5E7EB;
+          border-radius: 12px;
+          padding: 20px 24px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          min-height: 110px;
+          transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
+          box-sizing: border-box;
+        }
+        .stat-card:hover {
+          transform: translateY(-4px) scale(1.01);
+          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.05);
+          border-color: #27C786;
+        }
+        .stat-card-left {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        .stat-icon-circle {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: rgba(39, 199, 134, 0.08);
+          border: 1px solid rgba(39, 199, 134, 0.15);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .stat-icon-svg {
+          width: 22px;
+          height: 22px;
+          color: #0ca678;
+        }
+        .stat-info-group {
           display: flex;
           flex-direction: column;
-          justify-content: space-between;
-          height: 120px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }
-        .stat-label {
-          font-size: 14px;
-          color: #666;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+        .stat-label-text {
+          font-size: 13px;
+          color: #6B7280;
+          font-weight: 500;
+          margin: 0 0 4px 0;
         }
-        .stat-value {
-          font-size: 32px;
+        .stat-value-text {
+          font-size: 28px;
           font-weight: 700;
-          color: #111;
-          margin-top: 8px;
+          color: #111827;
+          line-height: 1.2;
+          margin: 0;
+        }
+        .stat-sub-text {
+          font-size: 11px;
+          color: #0ca678;
+          margin-top: 4px;
+          font-weight: 500;
+        }
+        .stat-card-arrow {
+          color: #0ca678;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.3s ease;
+          margin-left: auto;
+          opacity: 0.8;
+        }
+        .stat-card:hover .stat-card-arrow {
+          transform: translateX(3px) translateY(-3px);
+          opacity: 1;
         }
         .records-section {
-          background: #fff;
-          border-radius: 24px;
+          background: #ffffff;
+          border-radius: 16px;
           padding: 24px;
-          border: 1px solid #eee;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
         }
-        .search-bar {
+        .search-bar-wrapper {
+          position: relative;
           width: 100%;
-          padding: 12px 16px;
-          border: 1px solid #ddd;
-          border-radius: 12px;
-          margin-bottom: 20px;
+          margin-bottom: 24px;
+        }
+        .search-icon-left {
+          position: absolute;
+          left: 18px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #27C786;
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .search-bar-enhanced {
+          width: 100%;
+          padding: 12px 48px 12px 48px;
+          border: 1px solid #E5E7EB;
+          border-radius: 9999px;
           font-size: 14px;
           outline: none;
           font-family: inherit;
+          box-sizing: border-box;
+          background: #ffffff;
+          transition: all 0.3s ease;
+          color: #111827;
+        }
+        .search-bar-enhanced::placeholder {
+          color: #9CA3AF;
+          opacity: 1;
+        }
+        .search-bar-enhanced:focus {
+          border-color: #27C786;
+          box-shadow: 0 0 0 3px rgba(39, 199, 134, 0.15);
+        }
+        .search-clear-btn {
+          position: absolute;
+          right: 18px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          color: #9CA3AF;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4px;
+          border-radius: 50%;
+          transition: all 0.2s;
+        }
+        .search-clear-btn:hover {
+          background: #F3F4F6;
+          color: #111827;
+        }
+        .filters-row {
+          display: flex;
+          gap: 16px;
+          align-items: flex-end;
+          margin-bottom: 24px;
+          flex-wrap: wrap;
+        }
+        .filters-container {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 16px;
+          flex: 1;
+          min-width: 280px;
+        }
+        @media (max-width: 640px) {
+          .filters-container {
+            grid-template-columns: 1fr;
+          }
+        }
+        .filter-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .filter-label {
+          font-size: 13px;
+          font-weight: 600;
+          color: #111827;
+        }
+        .filter-select-wrapper {
+          position: relative;
+          width: 100%;
+        }
+        .filter-select {
+          appearance: none;
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          width: 100%;
+          height: 46px;
+          padding: 12px 40px 12px 16px;
+          border: 1px solid #E5E7EB;
+          border-radius: 8px;
+          font-size: 14px;
+          outline: none;
+          background: #ffffff;
+          font-family: inherit;
+          cursor: pointer;
+          box-sizing: border-box;
+          transition: all 0.3s ease;
+        }
+        .filter-select:hover {
+          border-color: #27C786;
+        }
+        .filter-select:focus {
+          border-color: #27C786;
+          box-shadow: 0 0 0 3px rgba(39, 199, 134, 0.15);
+        }
+        .select-caret {
+          position: absolute;
+          right: 16px;
+          top: 50%;
+          transform: translateY(-50%);
+          pointer-events: none;
+          color: #6B7280;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.3s ease;
+        }
+        .filter-select:focus ~ .select-caret {
+          transform: translateY(-50%) rotate(180deg);
+        }
+        .clear-filters-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 10px 18px;
+          background: #ffffff;
+          border: 1px solid #E5E7EB;
+          color: #374151;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          height: 46px;
+          box-sizing: border-box;
+          transition: all 0.2s ease-in-out;
+          white-space: nowrap;
+        }
+        .clear-filters-btn:hover {
+          background: #F9FAFB;
+          border-color: #D1D5DB;
+          color: #111827;
+        }
+        .section-divider {
+          border-top: 1px solid #E5E7EB;
+          margin: 8px 0 24px 0;
+        }
+        .table-action-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .table-title-count {
+          font-size: 14px;
+          color: #4B5563;
+          font-weight: 500;
+        }
+        .export-group {
+          display: flex;
+          gap: 8px;
+        }
+        .export-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 14px;
+          font-size: 13px;
+          font-weight: 500;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          border: 1px solid #E5E7EB;
+          background: #ffffff;
+          color: #374151;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          box-sizing: border-box;
+        }
+        .export-icon {
+          transition: color 0.3s ease;
+          flex-shrink: 0;
+        }
+        .pdf-icon {
+          color: #EF4444;
+        }
+        .excel-icon {
+          color: #10B981;
+        }
+        .export-btn:hover {
+          background: #111827;
+          color: #ffffff;
+          border-color: #111827;
+          transform: scale(1.03);
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .export-btn:hover .export-icon {
+          color: #ffffff;
+        }
+        .table-wrapper {
+          overflow-x: auto;
+          overflow-y: auto;
+          max-height: 500px;
+          border-radius: 12px;
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+          background: #ffffff;
         }
         .records-table {
           width: 100%;
@@ -469,32 +898,170 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         }
         .records-table th {
           text-align: left;
-          padding: 12px 16px;
-          color: #666;
-          font-weight: 500;
+          padding: 14px 16px;
+          color: #4B5563;
+          font-weight: 600;
           font-size: 13px;
-          border-bottom: 1px solid #f0f0f0;
+          border-bottom: 1px solid #E5E7EB;
+          background: #F9FAFB;
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          box-shadow: inset 0 -1px 0 #E5E7EB;
+        }
+        .records-table tr {
+          cursor: pointer;
+        }
+        .records-table tr td {
+          transition: background-color 0.3s ease;
+        }
+        .records-table tr:nth-child(odd) td {
+          background-color: #ffffff;
+        }
+        .records-table tr:nth-child(even) td {
+          background-color: #F9FAFB;
+        }
+        .records-table tr td:first-child {
+          border-left: 3px solid transparent;
+          transition: border-left-color 0.3s ease, background-color 0.3s ease;
+        }
+        .records-table tr:hover td {
+          background-color: #F0FDF4 !important;
+        }
+        .records-table tr:hover td:first-child {
+          border-left-color: #27C786;
         }
         .records-table td {
           padding: 16px;
           font-size: 14px;
-          color: #333;
-          border-bottom: 1px solid #f0f0f0;
+          color: #111827;
+          border-bottom: 1px solid #E5E7EB;
+        }
+        .records-table tr:last-child td {
+          border-bottom: none;
         }
         .status-badge {
-          display: inline-block;
+          display: inline-flex;
+          align-items: center;
           padding: 4px 12px;
-          border-radius: 20px;
+          border-radius: 9999px;
           font-size: 12px;
           font-weight: 500;
         } 
         .status-active {
-          background: #e6fcf5;
-          color: #0ca678;
+          background: #DEF7EC;
+          color: #03543F;
         }
         .status-expired {
-          background: #fff5f5;
-          color: #f03e3e;
+          background: #FDE8E8;
+          color: #9B1C1C;
+        }
+        .kebab-menu-container {
+          position: relative;
+          display: inline-block;
+        }
+        .kebab-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          border: 1px solid #E5E7EB;
+          background: #ffffff;
+          color: #4B5563;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .kebab-btn:hover {
+          background: #F3F4F6;
+          color: #111827;
+          border-color: #D1D5DB;
+        }
+        .kebab-dropdown {
+          position: absolute;
+          right: 0;
+          top: 100%;
+          margin-top: 4px;
+          background: #ffffff;
+          border: 1px solid #E5E7EB;
+          border-radius: 8px;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+          z-index: 50;
+          min-width: 160px;
+          display: flex;
+          flex-direction: column;
+          padding: 4px;
+        }
+        .kebab-dropdown button {
+          background: none;
+          border: none;
+          text-align: left;
+          padding: 8px 12px;
+          font-size: 13px;
+          color: #374151;
+          cursor: pointer;
+          border-radius: 6px;
+          transition: background 0.15s;
+          font-family: inherit;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .kebab-dropdown button:hover {
+          background: #F3F4F6;
+          color: #111827;
+        }
+        .kebab-dropdown button.delete-item {
+          color: #EF4444;
+        }
+        .kebab-dropdown button.delete-item:hover {
+          background: #FEE2E2;
+          color: #DC2626;
+        }
+        .empty-state-container {
+          text-align: center;
+          padding: 60px 24px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background: #ffffff;
+        }
+        .empty-state-icon {
+          margin-bottom: 16px;
+          background: #F3F4F6;
+          padding: 16px;
+          border-radius: 50%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: #9CA3AF;
+        }
+        .empty-state-title {
+          font-size: 18px;
+          font-weight: 600;
+          color: #111827;
+          margin: 0 0 6px 0;
+        }
+        .empty-state-subtitle {
+          font-size: 14px;
+          color: #6B7280;
+          margin: 0 0 16px 0;
+        }
+        .skeleton-line {
+          background: #E5E7EB;
+          border-radius: 4px;
+          height: 16px;
+          width: 100%;
+        }
+        .skeleton-shimmer {
+          background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+          background-size: 200% 100%;
+          animation: skeleton-shimmer-animation 1.5s infinite linear;
+        }
+        @keyframes skeleton-shimmer-animation {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
         }
         .modal-overlay {
           position: fixed;
@@ -597,102 +1164,207 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           <div className="header-left">
             <h2>Battery Inventory</h2>
           </div>
-          <button className="maint-btn" onClick={handleOpenModal}>Register Batteries</button>
+          <button className="register-btn" onClick={handleOpenModal}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Register Battery
+          </button>
         </div>
 
         <div className="stats-grid">
           <div className="stat-card">
-            <span className="stat-label">Total Inventory <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="9" y1="2" x2="9" y2="22" /><line x1="15" y1="2" x2="15" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /></svg></span>
-            <span className="stat-value">{totalBatteries}</span>
+            <div className="stat-card-left">
+              <div className="stat-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="stat-icon-svg">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+              </div>
+              <div className="stat-info-group">
+                <span className="stat-label-text">Total Inventory</span>
+                <span className="stat-value-text"><AnimatedNumber value={totalBatteries} /></span>
+                <span className="stat-sub-text">Text goes here</span>
+              </div>
+            </div>
+            <div className="stat-card-arrow">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="7" y1="17" x2="17" y2="7"></line>
+                <polyline points="7 7 17 7 17 17"></polyline>
+              </svg>
+            </div>
           </div>
+
           <div className="stat-card">
-            <span className="stat-label">Active Warranty <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></span>
-            <span className="stat-value" style={{ color: "#0ca678" }}>{activeWarranties}</span>
+            <div className="stat-card-left">
+              <div className="stat-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="stat-icon-svg">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+              </div>
+              <div className="stat-info-group">
+                <span className="stat-label-text">Active Warranty</span>
+                <span className="stat-value-text"><AnimatedNumber value={activeWarranties} /></span>
+                <span className="stat-sub-text">Text goes here</span>
+              </div>
+            </div>
+            <div className="stat-card-arrow">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="7" y1="17" x2="17" y2="7"></line>
+                <polyline points="7 7 17 7 17 17"></polyline>
+              </svg>
+            </div>
           </div>
+
           <div className="stat-card">
-            <span className="stat-label">Expired Warranty <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></span>
-            <span className="stat-value" style={{ color: "#f03e3e" }}>{expiredWarranties}</span>
+            <div className="stat-card-left">
+              <div className="stat-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="stat-icon-svg">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+              </div>
+              <div className="stat-info-group">
+                <span className="stat-label-text">Expired Warranty</span>
+                <span className="stat-value-text"><AnimatedNumber value={expiredWarranties} /></span>
+                <span className="stat-sub-text">Text goes here</span>
+              </div>
+            </div>
+            <div className="stat-card-arrow">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="7" y1="17" x2="17" y2="7"></line>
+                <polyline points="7 7 17 7 17 17"></polyline>
+              </svg>
+            </div>
           </div>
         </div>
 
         <div className="records-section">
-          <input
-            type="text"
-            placeholder="Search by Serial Number, Customer Name, Invoice, Barcode..."
-            className="search-bar"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <div className="search-bar-wrapper">
+            <div className="search-icon-left">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Search Serial Number, Customer Name, Invoice, Barcode"
+              className="search-bar-enhanced"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button type="button" className="search-clear-btn" onClick={() => setSearchQuery("")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            )}
+          </div>
 
-          <div style={{ display: "flex", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "1 1 200px" }}>
-              <label style={{ fontSize: "12px", fontWeight: "600", color: "#555" }}>Battery Registered From</label>
-              <select
-                className="filter-select"
-                value={warrantyYearFilter}
-                onChange={(e) => setWarrantyYearFilter(e.target.value)}
-                style={{
-                  padding: "12px 16px",
-                  border: "1px solid #ddd",
-                  borderRadius: "12px",
-                  fontSize: "14px",
-                  outline: "none",
-                  background: "#fff",
-                  fontFamily: "inherit",
-                  cursor: "pointer",
-                  width: "100%",
-                  height: "46px",
-                  boxSizing: "border-box"
-                }}
-              >
-                <option value="All">All Warranty Years</option>
-                {warrantyYearOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+          <div className="filters-row">
+            <div className="filters-container">
+              <div className="filter-group">
+                <label className="filter-label">Battery Registered From</label>
+                <div className="filter-select-wrapper">
+                  <select
+                    className="filter-select"
+                    value={warrantyYearFilter}
+                    onChange={(e) => setWarrantyYearFilter(e.target.value)}
+                  >
+                    <option value="All">All Warranty Years</option>
+                    {warrantyYearOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <div className="select-caret">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="filter-group">
+                <label className="filter-label">Product Category</label>
+                <div className="filter-select-wrapper">
+                  <select
+                    className="filter-select"
+                    value={productCategoryFilter}
+                    onChange={(e) => setProductCategoryFilter(e.target.value)}
+                  >
+                    <option value="All">All Product Categories</option>
+                    {productCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <div className="select-caret">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "1 1 200px" }}>
-              <label style={{ fontSize: "12px", fontWeight: "600", color: "#555" }}>Product Category</label>
-              <select
-                className="filter-select"
-                value={productCategoryFilter}
-                onChange={(e) => setProductCategoryFilter(e.target.value)}
-                style={{
-                  padding: "12px 16px",
-                  border: "1px solid #ddd",
-                  borderRadius: "12px",
-                  fontSize: "14px",
-                  outline: "none",
-                  background: "#fff",
-                  fontFamily: "inherit",
-                  cursor: "pointer",
-                  width: "100%",
-                  height: "46px",
-                  boxSizing: "border-box"
+            {(warrantyYearFilter !== "All" || productCategoryFilter !== "All" || searchQuery !== "") && (
+              <button
+                type="button"
+                className="clear-filters-btn"
+                onClick={() => {
+                  setWarrantyYearFilter("All");
+                  setProductCategoryFilter("All");
+                  setSearchQuery("");
                 }}
               >
-                <option value="All">All Product Categories</option>
-                {productCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                  <path d="M21 3v5h-5"></path>
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                  <path d="M3 21v-5h5"></path>
+                </svg>
+                Clear Filters
+              </button>
+            )}
+          </div>
+
+          <div className="section-divider"></div>
+
+          <div className="table-action-header">
+            <span className="table-title-count">{filteredBatteries.length} Records Found</span>
+            <div className="export-group">
+              <button type="button" className="export-btn" onClick={exportToPDF}>
+                <svg className="export-icon pdf-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                Export PDF
+              </button>
+              <button type="button" className="export-btn" onClick={exportToExcel}>
+                <svg className="export-icon excel-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="9" y1="3" x2="9" y2="21"></line>
+                  <line x1="15" y1="3" x2="15" y2="21"></line>
+                  <line x1="3" y1="9" x2="21" y2="9"></line>
+                  <line x1="3" y1="15" x2="21" y2="15"></line>
+                </svg>
+                Export Excel
+              </button>
             </div>
           </div>
 
           {loading ? (
-            <div style={{ textAlign: "center", padding: "40px" }}>
-              <div style={{ display: 'inline-block', width: 24, height: 24, border: '3px solid #e2e8f0', borderTopColor: '#111', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: 12 }}></div>
-              <div style={{ color: '#64748b' }}>Loading battery records...</div>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
-          ) : error ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#ef4444' }}>
-              <div>{error}</div>
-              <button className="maint-btn" onClick={fetchBatteries} style={{ marginTop: 12 }}>Retry</button>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-wrapper">
               <table className="records-table">
                 <thead>
                   <tr>
@@ -703,7 +1375,43 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                     <th>Barcode</th>
                     <th>Warranty Period</th>
                     <th>Status</th>
-                    <th>Actions</th>
+                    <th style={{ width: '60px' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5].map((idx) => (
+                    <tr key={idx}>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '80px', height: '16px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '110px', height: '16px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '140px', height: '16px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '90px', height: '16px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '90px', height: '16px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '130px', height: '16px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '70px', height: '22px', borderRadius: '9999px' }}></div></td>
+                      <td><div className="skeleton-line skeleton-shimmer" style={{ width: '28px', height: '28px', borderRadius: '50%' }}></div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : error ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#ef4444' }}>
+              <div>{error}</div>
+              <button className="maint-btn" onClick={fetchBatteries} style={{ marginTop: 12 }}>Retry</button>
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="records-table">
+                <thead>
+                  <tr>
+                    <th>Serial Number</th>
+                    <th>Customer Name</th>
+                    <th>Product Details</th>
+                    <th>Invoice Number</th>
+                    <th>Barcode</th>
+                    <th>Warranty Period</th>
+                    <th>Status</th>
+                    <th style={{ width: '60px' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -724,47 +1432,64 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: "flex", gap: "8px" }}>
+                          <div className="kebab-menu-container">
                             <button
-                              onClick={() => handleOpenEdit(b)}
-                              style={{
-                                padding: "6px 12px",
-                                background: "#eff6ff",
-                                color: "#2563eb",
-                                border: "1px solid #dbeafe",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                fontWeight: "bold",
-                                transition: "all 0.2s"
+                              type="button"
+                              className="kebab-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId(prev => prev === b.id ? null : b.id);
                               }}
                             >
-                              Edit
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="1.5"></circle>
+                                <circle cx="12" cy="5" r="1.5"></circle>
+                                <circle cx="12" cy="19" r="1.5"></circle>
+                              </svg>
                             </button>
-                            <button
-                              onClick={() => setDeleteTarget(b)}
-                              style={{
-                                padding: "6px 12px",
-                                background: "#fef2f2",
-                                color: "#dc2626",
-                                border: "1px solid #fee2e2",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                fontWeight: "bold",
-                                transition: "all 0.2s"
-                              }}
-                            >
-                              Delete
-                            </button>
+                            {activeMenuId === b.id && (
+                              <div className="kebab-dropdown" onClick={(e) => e.stopPropagation()}>
+                                <button type="button" onClick={() => { setViewDetailsTarget(b); setActiveMenuId(null); }}>
+                                  View Details
+                                </button>
+                                <button type="button" onClick={() => { handleOpenEdit(b); setActiveMenuId(null); }}>
+                                  Edit
+                                </button>
+                                <button type="button" onClick={() => { handleOpenEdit(b); setActiveMenuId(null); }}>
+                                  Renew Warranty
+                                </button>
+                                <button type="button" onClick={() => { alert(`Downloading invoice for customer ${b.customerName || 'Battery'}...`); setActiveMenuId(null); }}>
+                                  Download Invoice
+                                </button>
+                                <button type="button" className="delete-item" onClick={() => { setDeleteTarget(b); setActiveMenuId(null); }}>
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} style={{ textAlign: "center", padding: "40px", color: "#999" }}>
-                        No battery records found.
+                      <td colSpan={8} style={{ padding: 0 }}>
+                        <div className="empty-state-container">
+                          <div className="empty-state-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="11" cy="11" r="8"></circle>
+                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                          </div>
+                          <h3 className="empty-state-title">No Batteries Found</h3>
+                          <p className="empty-state-subtitle">Try changing filters or add a new battery.</p>
+                          <button type="button" className="register-btn" style={{ margin: '8px auto 0 auto' }} onClick={handleOpenModal}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="12" y1="5" x2="12" y2="19"></line>
+                              <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Battery
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -774,6 +1499,49 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           )}
         </div>
       </div>
+
+      {viewDetailsTarget && (
+        <div className="modal-overlay" onClick={() => setViewDetailsTarget(null)}>
+          <div className="modal-content" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 20, color: "#111827" }}>Battery Details</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Serial Number</span>
+                <span style={{ fontWeight: 600, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.displaySerialNumber}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Customer Name</span>
+                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.customerName || "-"}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Product Details</span>
+                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.productDetails || "-"}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Invoice Number</span>
+                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.invoiceNumber || "-"}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Barcode</span>
+                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.barcode || "-"}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Warranty Period</span>
+                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.warrantyStartDate} to {viewDetailsTarget.warrantyEndDate}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px', alignItems: 'center' }}>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Status</span>
+                <span className={`status-badge ${viewDetailsTarget.warrantyActive ? "status-active" : "status-expired"}`}>
+                  {viewDetailsTarget.warrantyActive ? "Active" : "Expired"}
+                </span>
+              </div>
+            </div>
+            <div className="form-actions" style={{ marginTop: 24 }}>
+              <button type="button" className="action-btn" onClick={() => setViewDetailsTarget(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay">
@@ -1211,4 +1979,37 @@ function groupBatteries(batteryList) {
   });
 
   return groupedList;
+}
+
+function AnimatedNumber({ value }) {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    let startTimestamp = null;
+    const duration = 1000;
+    const target = parseInt(value, 10);
+    if (isNaN(target) || target <= 0) {
+      setDisplayValue(value);
+      return;
+    }
+
+    let animationFrameId;
+    const step = (timestamp) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      const easeProgress = progress * (2 - progress);
+      setDisplayValue(Math.floor(easeProgress * target));
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(step);
+      }
+    };
+    animationFrameId = requestAnimationFrame(step);
+
+    return () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [value]);
+
+  return <span>{displayValue}</span>;
 }
