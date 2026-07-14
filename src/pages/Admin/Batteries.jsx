@@ -48,9 +48,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     productDetails: "",
     invoiceNumber: "",
     barcode: "",
-    productSerialNumber: "",
-    startSeriesNumber: "",
-    endSeriesNumber: "",
+    startBarcode: "",
+    endBarcode: "",
     warrantyStartDate: "",
     warrantyEndDate: "",
     warrantyYears: "1",
@@ -83,7 +82,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     productDetails: "",
     invoiceNumber: "",
     barcode: "",
-    productSerialNumber: "",
     warrantyStartDate: "",
     warrantyEndDate: "",
     warrantyYears: "",
@@ -111,7 +109,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       productDetails: b.productDetails || "",
       invoiceNumber: b.invoiceNumber || "",
       barcode: b.barcode || "",
-      productSerialNumber: b.productSerialNumber || "",
       warrantyStartDate: b.warrantyStartDate || "",
       warrantyEndDate: b.warrantyEndDate || "",
       warrantyYears: duration > 0 ? duration.toString() : "1",
@@ -130,11 +127,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         warrantyStartDate: editFormData.warrantyStartDate,
         warrantyEndDate: editFormData.warrantyEndDate,
       };
-      if (editTarget.originalBatteries.length === 1) {
-        newEdited[orig.id].productSerialNumber = editFormData.productSerialNumber;
-      } else {
-        newEdited[orig.id].productSerialNumber = orig.productSerialNumber;
-      }
     });
     setEditedRecords(newEdited);
     localStorage.setItem("battery_inventory_edited_records", JSON.stringify(newEdited));
@@ -175,9 +167,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       productDetails: "",
       invoiceNumber: "",
       barcode: "",
-      productSerialNumber: "",
-      startSeriesNumber: "",
-      endSeriesNumber: "",
+      startBarcode: "",
+      endBarcode: "",
       warrantyStartDate: "",
       warrantyEndDate: "",
       warrantyYears: "1",
@@ -226,19 +217,18 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       customerName: formData.customerName,
       productDetails: combinedDetails,
       invoiceNumber: formData.invoiceNumber,
-      barcode: formData.barcode,
       warrantyStartDate: formData.warrantyStartDate || null,
       warrantyEndDate: formData.warrantyEndDate || null,
     };
 
     if (registerMode === "single") {
-      payload.productSerialNumber = formData.productSerialNumber;
-      payload.startSeriesNumber = null;
-      payload.endSeriesNumber = null;
+      payload.barcode = formData.barcode;
+      payload.startBarcode = null;
+      payload.endBarcode = null;
     } else {
-      payload.productSerialNumber = null;
-      payload.startSeriesNumber = formData.startSeriesNumber;
-      payload.endSeriesNumber = formData.endSeriesNumber;
+      payload.barcode = null;
+      payload.startBarcode = formData.startBarcode;
+      payload.endBarcode = formData.endBarcode;
     }
 
     try {
@@ -365,11 +355,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   // Filtered batteries based on search query, warranty year, and product category
   const filteredBatteries = groupedBatteries.filter(b => {
     const matchesSearch = searchQuery === "" ||
-      b.displaySerialNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.originalBatteries?.some(orig => orig.productSerialNumber?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      b.displayBarcode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.originalBatteries?.some(orig => orig.barcode?.toLowerCase().includes(searchQuery.toLowerCase())) ||
       b.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.barcode?.toLowerCase().includes(searchQuery.toLowerCase());
+      b.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
 
@@ -406,11 +395,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
     const tableRowsHtml = filteredBatteries.map(b => `
       <tr>
-        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold;">${b.displaySerialNumber || ''}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold;">${b.displayBarcode || ''}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.customerName || '-'}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.productDetails || '-'}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.invoiceNumber || '-'}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.barcode || '-'}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.warrantyStartDate} to ${b.warrantyEndDate}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">
           <span style="padding: 4px 8px; border-radius: 9999px; font-size: 11px; font-weight: bold; ${b.warrantyActive ? 'background: #DEF7EC; color: #03543F;' : 'background: #FDE8E8; color: #9B1C1C;'
@@ -440,11 +428,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           <table>
             <thead>
               <tr>
-                <th>Serial Number</th>
+                <th>Barcode</th>
                 <th>Customer Name</th>
                 <th>Product Details</th>
                 <th>Invoice Number</th>
-                <th>Barcode</th>
                 <th>Warranty Period</th>
                 <th>Status</th>
               </tr>
@@ -472,21 +459,19 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     }
 
     const headers = [
-      "Serial Number",
+      "Barcode",
       "Customer Name",
       "Product Details",
       "Invoice Number",
-      "Barcode",
       "Warranty Period",
       "Status"
     ];
 
     const rows = filteredBatteries.map(b => [
-      `"${b.displaySerialNumber || ''}"`,
+      `"${b.displayBarcode || ''}"`,
       `"${b.customerName || '-'}"`,
       `"${b.productDetails || '-'}"`,
       `"${b.invoiceNumber || '-'}"`,
-      `"${b.barcode || '-'}"`,
       `"${b.warrantyStartDate} to ${b.warrantyEndDate}"`,
       `"${b.warrantyActive ? 'Active' : 'Expired'}"`
     ]);
@@ -1404,11 +1389,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
               <table className="records-table">
                 <thead>
                   <tr>
-                    <th>Serial Number</th>
+                    <th>Barcode</th>
                     <th>Customer Name</th>
                     <th>Product Details</th>
                     <th>Invoice Number</th>
-                    <th>Barcode</th>
                     <th>Warranty Period</th>
                     <th>Status</th>
                     <th style={{ width: '60px' }}>Action</th>
@@ -1418,11 +1402,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                   {filteredBatteries.length > 0 ? (
                     filteredBatteries.map((b) => (
                       <tr key={b.id}>
-                        <td style={{ fontWeight: 600 }}>{b.displaySerialNumber}</td>
+                        <td style={{ fontWeight: 600 }}>{b.displayBarcode}</td>
                         <td>{b.customerName || "-"}</td>
                         <td>{b.productDetails || "-"}</td>
                         <td>{b.invoiceNumber || "-"}</td>
-                        <td>{b.barcode || "-"}</td>
                         <td style={{ fontSize: 13, color: "#666" }}>
                           {b.warrantyStartDate} to {b.warrantyEndDate}
                         </td>
@@ -1506,8 +1489,8 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
             <h3 style={{ margin: "0 0 16px 0", fontSize: 20, color: "#111827" }}>Battery Details</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
-                <span style={{ color: '#6B7280', fontSize: '13px' }}>Serial Number</span>
-                <span style={{ fontWeight: 600, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.displaySerialNumber}</span>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Barcode</span>
+                <span style={{ fontWeight: 600, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.displayBarcode}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
                 <span style={{ color: '#6B7280', fontSize: '13px' }}>Customer Name</span>
@@ -1520,10 +1503,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
                 <span style={{ color: '#6B7280', fontSize: '13px' }}>Invoice Number</span>
                 <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.invoiceNumber || "-"}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
-                <span style={{ color: '#6B7280', fontSize: '13px' }}>Barcode</span>
-                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.barcode || "-"}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
                 <span style={{ color: '#6B7280', fontSize: '13px' }}>Warranty Period</span>
@@ -1635,25 +1614,14 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                     required
                   />
                 </div>
-                <div className="form-group">
-                  <label>Barcode</label>
-                  <input
-                    type="text"
-                    name="barcode"
-                    value={formData.barcode}
-                    onChange={handleFormChange}
-                    required
-                  />
-                </div>
-
                 {registerMode === "single" ? (
                   <div className="form-group">
-                    <label>Product Serial Number</label>
+                    <label>Barcode</label>
                     <input
                       type="text"
-                      name="productSerialNumber"
-                      placeholder="e.g. BAT1001"
-                      value={formData.productSerialNumber}
+                      name="barcode"
+                      placeholder="e.g. BAT001"
+                      value={formData.barcode}
                       onChange={handleFormChange}
                       required
                     />
@@ -1661,23 +1629,23 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                 ) : (
                   <>
                     <div className="form-group">
-                      <label>Start Series Number</label>
+                      <label>Start Barcode</label>
                       <input
                         type="text"
-                        name="startSeriesNumber"
+                        name="startBarcode"
                         placeholder="e.g. BAT001"
-                        value={formData.startSeriesNumber}
+                        value={formData.startBarcode}
                         onChange={handleFormChange}
                         required
                       />
                     </div>
                     <div className="form-group">
-                      <label>End Series Number</label>
+                      <label>End Barcode</label>
                       <input
                         type="text"
-                        name="endSeriesNumber"
+                        name="endBarcode"
                         placeholder="e.g. BAT005"
-                        value={formData.endSeriesNumber}
+                        value={formData.endBarcode}
                         onChange={handleFormChange}
                         required
                       />
@@ -1780,17 +1748,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                   />
                 </div>
 
-                {editTarget.originalBatteries?.length === 1 && (
-                  <div className="form-group">
-                    <label>Product Serial Number</label>
-                    <input
-                      type="text"
-                      value={editFormData.productSerialNumber}
-                      onChange={(e) => setEditFormData({ ...editFormData, productSerialNumber: e.target.value })}
-                      required
-                    />
-                  </div>
-                )}
+
 
                 <div className="form-group">
                   <label>Warranty Start Date</label>
@@ -1876,7 +1834,6 @@ function groupBatteries(batteryList) {
       battery.customerName || "",
       battery.productDetails || "",
       battery.invoiceNumber || "",
-      battery.barcode || "",
       battery.warrantyStartDate || "",
       battery.warrantyEndDate || "",
       battery.warrantyActive ? "active" : "expired"
@@ -1910,14 +1867,14 @@ function groupBatteries(batteryList) {
     const last = chunk[chunk.length - 1];
     const originalBatteries = chunk.map(c => c.battery);
 
-    let displaySerialNumber = first.original;
+    let displayBarcode = first.original;
     if (chunk.length > 1) {
-      displaySerialNumber = `${first.original} to ${last.original}`;
+      displayBarcode = `${first.original} to ${last.original}`;
     }
 
     return {
       ...first.battery,
-      displaySerialNumber,
+      displayBarcode,
       originalBatteries
     };
   };
@@ -1928,7 +1885,7 @@ function groupBatteries(batteryList) {
     const unparsable = [];
 
     members.forEach(b => {
-      const parsed = parseSerial(b.productSerialNumber);
+      const parsed = parseSerial(b.barcode);
       if (parsed) {
         parsable.push({ battery: b, ...parsed });
       } else {
@@ -1939,7 +1896,7 @@ function groupBatteries(batteryList) {
     unparsable.forEach(b => {
       groupedList.push({
         ...b,
-        displaySerialNumber: b.productSerialNumber || "-",
+        displayBarcode: b.barcode || "-",
         originalBatteries: [b]
       });
     });

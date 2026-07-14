@@ -65,11 +65,11 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
       if (stored) {
         allowedPages = JSON.parse(stored);
       } else {
-        allowedPages = ["batteries", "warranty-claims", "maintenance", "support-requests"];
+        allowedPages = ["batteries", "warranty-claims", "maintenance", "support-requests", "orders"];
       }
     } catch (e) {
       console.error("Sidebar allowed pages error:", e);
-      allowedPages = ["batteries", "warranty-claims", "maintenance", "support-requests"];
+      allowedPages = ["batteries", "warranty-claims", "maintenance", "support-requests", "orders"];
     }
   }
 
@@ -96,6 +96,31 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
             if (response.ok) {
               const data = await response.json();
               return Array.isArray(data) ? data.filter(c => c.status === "request_created").length : 0;
+            }
+            return 0;
+          }
+        }
+      ]
+    },
+    {
+      title: "Order Management",
+      items: [
+        { 
+          name: "Order Tracking", 
+          icon: sessionsIcon, 
+          path: "/dashboard/orders", 
+          roles: ["ADMIN", "ADMIN_STAFF"],
+          getPendingCount: async (baseUrl, token) => {
+            try {
+              const response = await fetch(`${baseUrl}/orders/admin/status/pending`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (response.ok) {
+                const data = await response.json();
+                return Array.isArray(data) ? data.length : 0;
+              }
+            } catch (err) {
+              console.error("Error fetching pending orders count:", err);
             }
             return 0;
           }
