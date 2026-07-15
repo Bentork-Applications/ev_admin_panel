@@ -74,6 +74,7 @@ function PageAccessDropdown({ staff }) {
     { name: "Admin Staff", path: "staff" },
     { name: "Dealers Management", path: "dealers" },
     { name: "Café Configuration", path: "cafes" },
+    { name: "Order Tracking", path: "orders" },
   ];
 
   const getDisplayText = () => {

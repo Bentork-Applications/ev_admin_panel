@@ -15,22 +15,70 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     const years = Math.round(diffDays / 365);
     return Math.max(1, years);
   };
+  const calculateExpiryAndTotal = (startDateStr, fullY, fullM, servY, servM) => {
+    const fy = parseInt(fullY, 10) || 0;
+    const fm = parseInt(fullM, 10) || 0;
+    const sy = parseInt(servY, 10) || 0;
+    const sm = parseInt(servM, 10) || 0;
 
-  const calculateEndDate = (startDateStr, yearsStr) => {
-    if (!startDateStr || !yearsStr) return "";
-    const years = parseInt(yearsStr, 10);
-    if (isNaN(years) || years <= 0) return "";
+    const totalYRaw = fy + sy;
+    const totalMRaw = fm + sm;
 
+    const extraYears = Math.floor(totalMRaw / 12);
+    const totalYears = totalYRaw + extraYears;
+    const totalMonths = totalMRaw % 12;
+
+    let totalWarrantyLabel = "";
+    if (totalYears > 0 && totalMonths > 0) {
+      totalWarrantyLabel = `${totalYears} Year${totalYears > 1 ? "s" : ""} ${totalMonths} Month${totalMonths > 1 ? "s" : ""}`;
+    } else if (totalYears > 0) {
+      totalWarrantyLabel = `${totalYears} Year${totalYears > 1 ? "s" : ""}`;
+    } else if (totalMonths > 0) {
+      totalWarrantyLabel = `${totalMonths} Month${totalMonths > 1 ? "s" : ""}`;
+    } else {
+      totalWarrantyLabel = "0 Years";
+    }
+
+    let expiryDateStr = "";
+    if (startDateStr) {
+      const start = new Date(startDateStr);
+      if (!isNaN(start.getTime())) {
+        const end = new Date(start);
+        end.setFullYear(start.getFullYear() + totalYears);
+        end.setMonth(start.getMonth() + totalMonths);
+        end.setDate(end.getDate() - 1);
+
+        const yyyy = end.getFullYear();
+        const mm = String(end.getMonth() + 1).padStart(2, '0');
+        const dd = String(end.getDate()).padStart(2, '0');
+        expiryDateStr = `${yyyy}-${mm}-${dd}`;
+      }
+    }
+
+    return { totalWarrantyLabel, expiryDateStr, totalYearsDecimal: totalYears + (totalMonths / 12) };
+  };
+
+  const parseWarrantyPeriod = (startDateStr, endDateStr) => {
+    if (!startDateStr || !endDateStr) return { years: 1, months: 0 };
     const start = new Date(startDateStr);
-    if (isNaN(start.getTime())) return "";
+    const end = new Date(endDateStr);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return { years: 1, months: 0 };
 
-    const end = new Date(start);
-    end.setFullYear(start.getFullYear() + years);
+    const targetEnd = new Date(end);
+    targetEnd.setDate(end.getDate() + 1);
 
-    const yyyy = end.getFullYear();
-    const mm = String(end.getMonth() + 1).padStart(2, '0');
-    const dd = String(end.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+    let years = targetEnd.getFullYear() - start.getFullYear();
+    let months = targetEnd.getMonth() - start.getMonth();
+
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+
+    return {
+      years: Math.max(0, years),
+      months: Math.max(0, months)
+    };
   };
 
   const [batteries, setBatteries] = useState([]);
@@ -39,6 +87,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [warrantyYearFilter, setWarrantyYearFilter] = useState("All");
   const [productCategoryFilter, setProductCategoryFilter] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortField, setSortField] = useState("createdAt");
+  const [sortDirection, setSortDirection] = useState("desc");
   const [showModal, setShowModal] = useState(false);
   const [registerMode, setRegisterMode] = useState("single"); // "single" or "series"
   const [registerLoading, setRegisterLoading] = useState(false);
@@ -46,6 +98,9 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const [formData, setFormData] = useState({
     customerName: "",
     productDetails: "",
+    voltage: "",
+    capacity: "",
+    chemistry: "NMC",
     invoiceNumber: "",
     barcode: "",
     startBarcode: "",
@@ -55,11 +110,23 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     warrantyYears: "1",
     selectedMadeProduct: "",
     customMadeProduct: "",
+    fullWarrantyYears: "1",
+    fullWarrantyMonths: "0",
+    serviceWarrantyYears: "0",
+    serviceWarrantyMonths: "0",
   });
 
   const [deletedIds, setDeletedIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("battery_inventory_deleted_ids") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  const [deletedBarcodes, setDeletedBarcodes] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("battery_inventory_deleted_barcodes") || "[]");
     } catch {
       return [];
     }
@@ -80,11 +147,18 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const [editFormData, setEditFormData] = useState({
     customerName: "",
     productDetails: "",
+    voltage: "",
+    capacity: "",
+    chemistry: "NMC",
     invoiceNumber: "",
     barcode: "",
     warrantyStartDate: "",
     warrantyEndDate: "",
     warrantyYears: "",
+    fullWarrantyYears: "0",
+    fullWarrantyMonths: "0",
+    serviceWarrantyYears: "0",
+    serviceWarrantyMonths: "0",
   });
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
@@ -104,14 +178,29 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const handleOpenEdit = (b) => {
     setEditTarget(b);
     const duration = getWarrantyDurationYears(b);
+    const parsed = parseWarrantyPeriod(b.warrantyStartDate, b.warrantyEndDate);
+    // Parse existing productDetails to pre-fill voltage/capacity/chemistry
+    const existingDetails = b.productDetails || "";
+    const vMatch = existingDetails.match(/(\d+(?:\.\d+)?)V/);
+    const ahMatch = existingDetails.match(/(\d+(?:\.\d+)?)Ah/);
+    const chemMatch = existingDetails.match(/Chemistry\s*=\s*(\S+)/);
+    const knownChemistry = ["NMC", "LiFePO4"];
+    const parsedChem = chemMatch ? chemMatch[1] : "";
     setEditFormData({
       customerName: b.customerName || "",
       productDetails: b.productDetails || "",
+      voltage: vMatch ? vMatch[1] : "",
+      capacity: ahMatch ? ahMatch[1] : "",
+      chemistry: knownChemistry.includes(parsedChem) ? parsedChem : "NMC",
       invoiceNumber: b.invoiceNumber || "",
       barcode: b.barcode || "",
       warrantyStartDate: b.warrantyStartDate || "",
       warrantyEndDate: b.warrantyEndDate || "",
       warrantyYears: duration > 0 ? duration.toString() : "1",
+      fullWarrantyYears: parsed.years.toString(),
+      fullWarrantyMonths: parsed.months.toString(),
+      serviceWarrantyYears: "0",
+      serviceWarrantyMonths: "0",
     });
   };
 
@@ -119,9 +208,13 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     e.preventDefault();
     const newEdited = { ...editedRecords };
     editTarget.originalBatteries.forEach(orig => {
+      // Build productDetails from structured fields
+      const builtDetails = editFormData.voltage || editFormData.capacity
+        ? `${editFormData.voltage}V ${editFormData.capacity}Ah Chemistry = ${editFormData.chemistry}`
+        : editFormData.productDetails;
       newEdited[orig.id] = {
         customerName: editFormData.customerName,
-        productDetails: editFormData.productDetails,
+        productDetails: builtDetails,
         invoiceNumber: editFormData.invoiceNumber,
         barcode: editFormData.barcode,
         warrantyStartDate: editFormData.warrantyStartDate,
@@ -146,14 +239,19 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       const response = await fetch(`${baseUrl}/battery-data/admin/all`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      console.log("[BATTERY PIPELINE] API status:", response.status);
       if (response.ok) {
         const data = await response.json();
-        setBatteries(Array.isArray(data) ? data : []);
+        console.log("[BATTERY PIPELINE] 1. API returned records:", data.length, "| IDs:", data.map(d => d.id));
+        console.log("[BATTERY PIPELINE] 1. Sample record:", data[0]);
+        const normalized = Array.isArray(data) ? data : [];
+        setBatteries(normalized);
+        console.log("[BATTERY PIPELINE] 2. setBatteries called with:", normalized.length, "records");
       } else {
         throw new Error(`Failed to load batteries (Status: ${response.status})`);
       }
     } catch (err) {
-      console.error("Error fetching batteries:", err);
+      console.error("[BATTERY PIPELINE] ERROR in fetchBatteries:", err);
       setError("Failed to load battery inventory. Please try again.");
     } finally {
       setLoading(false);
@@ -165,6 +263,9 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     setFormData({
       customerName: "",
       productDetails: "",
+      voltage: "",
+      capacity: "",
+      chemistry: "NMC",
       invoiceNumber: "",
       barcode: "",
       startBarcode: "",
@@ -174,6 +275,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       warrantyYears: "1",
       selectedMadeProduct: "",
       customMadeProduct: "",
+      fullWarrantyYears: "1",
+      fullWarrantyMonths: "0",
+      serviceWarrantyYears: "0",
+      serviceWarrantyMonths: "0",
     });
     setRegisterMode("single");
     setShowModal(true);
@@ -183,8 +288,22 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     const { name, value } = e.target;
     setFormData(prev => {
       const updated = { ...prev, [name]: value };
-      if (name === "warrantyStartDate" || name === "warrantyYears") {
-        updated.warrantyEndDate = calculateEndDate(updated.warrantyStartDate, updated.warrantyYears);
+      if (
+        name === "warrantyStartDate" ||
+        name === "fullWarrantyYears" ||
+        name === "fullWarrantyMonths" ||
+        name === "serviceWarrantyYears" ||
+        name === "serviceWarrantyMonths"
+      ) {
+        const { totalWarrantyLabel, expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
+          updated.warrantyStartDate,
+          updated.fullWarrantyYears,
+          updated.fullWarrantyMonths,
+          updated.serviceWarrantyYears,
+          updated.serviceWarrantyMonths
+        );
+        updated.warrantyEndDate = expiryDateStr;
+        updated.warrantyYears = totalYearsDecimal.toString();
       }
       return updated;
     });
@@ -193,8 +312,22 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const handleEditFormChange = (name, value) => {
     setEditFormData(prev => {
       const updated = { ...prev, [name]: value };
-      if (name === "warrantyStartDate" || name === "warrantyYears") {
-        updated.warrantyEndDate = calculateEndDate(updated.warrantyStartDate, updated.warrantyYears);
+      if (
+        name === "warrantyStartDate" ||
+        name === "fullWarrantyYears" ||
+        name === "fullWarrantyMonths" ||
+        name === "serviceWarrantyYears" ||
+        name === "serviceWarrantyMonths"
+      ) {
+        const { totalWarrantyLabel, expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
+          updated.warrantyStartDate,
+          updated.fullWarrantyYears,
+          updated.fullWarrantyMonths,
+          updated.serviceWarrantyYears,
+          updated.serviceWarrantyMonths
+        );
+        updated.warrantyEndDate = expiryDateStr;
+        updated.warrantyYears = totalYearsDecimal.toString();
       }
       return updated;
     });
@@ -206,32 +339,74 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     setFormError(null);
 
     const token = localStorage.getItem("token");
-    const madeProductVal = formData.selectedMadeProduct === "Other"
-      ? formData.customMadeProduct
-      : formData.selectedMadeProduct;
-    const combinedDetails = madeProductVal
-      ? `${madeProductVal} - ${formData.productDetails}`
-      : formData.productDetails;
 
+    // Trim all text fields
+    const customerName = (formData.customerName || "").trim();
+    const invoiceNumber = (formData.invoiceNumber || "").trim();
+    const warrantyStartDate = (formData.warrantyStartDate || "").trim();
+    const warrantyEndDate = (formData.warrantyEndDate || "").trim();
+    const barcode = (formData.barcode || "").trim();
+    const startBarcode = (formData.startBarcode || "").trim();
+    const endBarcode = (formData.endBarcode || "").trim();
+
+    const madeProductVal = formData.selectedMadeProduct === "Other"
+      ? (formData.customMadeProduct || "").trim()
+      : (formData.selectedMadeProduct || "").trim();
+    const productDetailsRaw = formData.voltage || formData.capacity
+      ? `${(formData.voltage || "").trim()}V ${(formData.capacity || "").trim()}Ah Chemistry = ${formData.chemistry || "NMC"}`
+      : (formData.productDetails || "").trim();
+    const combinedDetails = madeProductVal
+      ? `${madeProductVal} - ${productDetailsRaw}`
+      : productDetailsRaw;
+
+    // --- Frontend validation ---
+    if (!customerName) {
+      setFormError("Customer name is required.");
+      setRegisterLoading(false);
+      return;
+    }
+    if (!invoiceNumber) {
+      setFormError("Invoice number is required.");
+      setRegisterLoading(false);
+      return;
+    }
+    if (!warrantyStartDate || !warrantyEndDate) {
+      setFormError("Both Warranty Start Date and Warranty End Date are required.");
+      setRegisterLoading(false);
+      return;
+    }
+    if (registerMode === "single" && !barcode) {
+      setFormError("Barcode / Serial Number is required for single registration.");
+      setRegisterLoading(false);
+      return;
+    }
+    if (registerMode === "series" && (!startBarcode || !endBarcode)) {
+      setFormError("Start Barcode and End Barcode are required for series registration.");
+      setRegisterLoading(false);
+      return;
+    }
+
+    // --- Build payload matching backend BatteryDataDTO exactly ---
     const payload = {
-      customerName: formData.customerName,
+      customerName,
       productDetails: combinedDetails,
-      invoiceNumber: formData.invoiceNumber,
-      warrantyStartDate: formData.warrantyStartDate || null,
-      warrantyEndDate: formData.warrantyEndDate || null,
+      invoiceNumber,
+      warrantyStartDate: warrantyStartDate || null,
+      warrantyEndDate: warrantyEndDate || null,
     };
 
     if (registerMode === "single") {
-      payload.barcode = formData.barcode;
-      payload.startBarcode = null;
-      payload.endBarcode = null;
+      // Backend expects 'barcode' for single registration
+      payload.barcode = barcode;
+      // NOTE: do NOT send productSerialNumber — backend derives the unique key from barcode
     } else {
-      payload.barcode = null;
-      payload.startBarcode = formData.startBarcode;
-      payload.endBarcode = formData.endBarcode;
+      // Backend expects 'startBarcode' and 'endBarcode' for bulk/series registration
+      payload.startBarcode = startBarcode;
+      payload.endBarcode = endBarcode;
     }
 
     try {
+      console.log("[REGISTER] Sending payload:", JSON.stringify(payload, null, 2));
       const response = await fetch(`${baseUrl}/battery-data/admin/register`, {
         method: "POST",
         headers: {
@@ -241,13 +416,25 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         body: JSON.stringify(payload)
       });
 
+      // Read body ONCE as text — avoids "body stream already read" TypeError
+      const rawBody = await response.text();
+      console.log("[REGISTER] Response status:", response.status, "| Raw body:", rawBody);
+
       if (response.ok) {
         alert("Battery data registered successfully!");
         setShowModal(false);
         fetchBatteries();
       } else {
-        const errorText = await response.text();
-        throw new Error(errorText || "Registration failed");
+        // Try to parse JSON from the raw text; fall back to raw text itself
+        let errorMsg = rawBody || "Registration failed";
+        try {
+          const errJson = JSON.parse(rawBody);
+          errorMsg = errJson.message || errJson.error || errJson.detail || rawBody || "Registration failed";
+        } catch {
+          // rawBody is already plain text — use it as-is
+        }
+        console.error("[REGISTER] Backend error (HTTP", response.status, "):", errorMsg);
+        throw new Error(errorMsg);
       }
     } catch (err) {
       console.error("Registration error:", err);
@@ -257,54 +444,128 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     }
   };
 
+  // Timezone-safe and start-date-aware warranty active checker (IST)
+  const checkWarrantyActive = (startDateStr, endDateStr) => {
+    if (!startDateStr || !endDateStr) return false;
+    try {
+      const now = new Date();
+      const istTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+      const todayIST = new Date(istTimeStr);
+      todayIST.setHours(0, 0, 0, 0);
+
+      const start = new Date(startDateStr);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(endDateStr);
+      end.setHours(0, 0, 0, 0);
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+      return todayIST >= start && todayIST <= end;
+    } catch (e) {
+      console.error("Error evaluating warranty status:", e);
+      return false;
+    }
+  };
+
+  // Reset page number on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, warrantyYearFilter, productCategoryFilter]);
+
+  // Synchronize deletedIds, deletedBarcodes, and editedRecords with the current API response.
+  // Removes any stale local state for IDs that no longer exist in the database.
+  useEffect(() => {
+    console.log("[BATTERY PIPELINE] SYNC EFFECT: batteries.length=", batteries.length, "| deletedIds=", deletedIds, "| editedRecordKeys=", Object.keys(editedRecords));
+
+    const liveIds = new Set(batteries.map(b => b.id));
+
+    // Prune deletedIds: keep only IDs that still exist in the live DB response
+    if (deletedIds.length > 0) {
+      const cleanedIds = deletedIds.filter(id => liveIds.has(id));
+      const cleanedBarcodes = cleanedIds.map(id => {
+        const b = batteries.find(x => x.id === id);
+        return b ? String(b.barcode || "") : null;
+      }).filter(Boolean);
+
+      if (cleanedIds.length !== deletedIds.length) {
+        console.log("[BATTERY PIPELINE] SYNC: Pruning deletedIds from", deletedIds.length, "→", cleanedIds.length);
+        setDeletedIds(cleanedIds);
+        setDeletedBarcodes(cleanedBarcodes);
+        localStorage.setItem("battery_inventory_deleted_ids", JSON.stringify(cleanedIds));
+        localStorage.setItem("battery_inventory_deleted_barcodes", JSON.stringify(cleanedBarcodes));
+      }
+    }
+
+    // Prune editedRecords: remove overrides for IDs that no longer exist in the DB
+    const editedKeys = Object.keys(editedRecords).map(Number);
+    const staleEditKeys = editedKeys.filter(id => !liveIds.has(id));
+    if (staleEditKeys.length > 0) {
+      console.log("[BATTERY PIPELINE] SYNC: Pruning editedRecords keys:", staleEditKeys);
+      const cleanedEdits = { ...editedRecords };
+      staleEditKeys.forEach(id => delete cleanedEdits[id]);
+      setEditedRecords(cleanedEdits);
+      localStorage.setItem("battery_inventory_edited_records", JSON.stringify(cleanedEdits));
+    }
+  }, [batteries]);
+
   // Merge backend batteries with local edited overrides and filter out deleted ones
   const activeBatteries = React.useMemo(() => {
-    return batteries
-      .filter(b => !deletedIds.includes(b.id))
+    const result = batteries
+      .filter(b => b && !deletedIds.includes(b.id))
       .map(b => {
-        if (editedRecords[b.id]) {
-          const edited = editedRecords[b.id];
-          const warrantyEndDate = edited.warrantyEndDate || b.warrantyEndDate;
-          const isExpired = warrantyEndDate ? new Date().toISOString().split('T')[0] > warrantyEndDate : false;
-          return {
-            ...b,
-            ...edited,
-            warrantyActive: !isExpired
-          };
-        }
-        return b;
+        const edited = editedRecords[b.id] || {};
+        const finalStart = edited.warrantyStartDate || b.warrantyStartDate;
+        const finalEnd = edited.warrantyEndDate || b.warrantyEndDate;
+        const active = checkWarrantyActive(finalStart, finalEnd);
+        return {
+          ...b,
+          ...edited,
+          warrantyActive: active
+        };
       });
+    console.log("[BATTERY PIPELINE] 3. activeBatteries:", result.length, "| deletedIds filtering:", deletedIds, "| batteries.length:", batteries.length);
+    return result;
   }, [batteries, deletedIds, editedRecords]);
 
   // Group batteries into series
   const groupedBatteries = React.useMemo(() => {
-    return groupBatteries(activeBatteries);
+    const result = groupBatteries(activeBatteries);
+    console.log("[BATTERY PIPELINE] 4. groupedBatteries:", result.length);
+    return result;
   }, [activeBatteries]);
 
   const getCurrentWarrantyYear = (b) => {
-    if (!b.warrantyStartDate || !b.warrantyEndDate) return null;
-    const start = new Date(b.warrantyStartDate);
-    const end = new Date(b.warrantyEndDate);
-    const today = new Date();
+    if (!b || !b.warrantyStartDate || !b.warrantyEndDate) return null;
+    try {
+      const start = new Date(b.warrantyStartDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(b.warrantyEndDate);
+      end.setHours(0, 0, 0, 0);
 
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
-    if (today < start) return null; // Warranty has not started yet
-    if (today > end) return null;   // Warranty has expired
+      const todayIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      todayIST.setHours(0, 0, 0, 0);
 
-    // Calculate elapsed years
-    let elapsedYears = today.getFullYear() - start.getFullYear();
-    const monthDiff = today.getMonth() - start.getMonth();
-    const dayDiff = today.getDate() - start.getDate();
-    if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
-      elapsedYears--;
-    }
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+      if (todayIST < start) return null; // Warranty has not started yet
+      if (todayIST > end) return null;   // Warranty has expired
 
-    const currentYear = elapsedYears + 1;
-    const totalYears = getWarrantyDurationYears(b);
-    if (currentYear > totalYears) {
+      let elapsedYears = todayIST.getFullYear() - start.getFullYear();
+      const monthDiff = todayIST.getMonth() - start.getMonth();
+      const dayDiff = todayIST.getDate() - start.getDate();
+      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        elapsedYears--;
+      }
+
+      const currentYear = elapsedYears + 1;
+      const totalYears = getWarrantyDurationYears(b);
+      if (currentYear > totalYears) {
+        return null;
+      }
+      return currentYear;
+    } catch (e) {
+      console.error("Error getting current warranty year:", e);
       return null;
     }
-    return currentYear;
   };
 
   const maxWarrantyDuration = React.useMemo(() => {
@@ -325,24 +586,40 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   }, [maxWarrantyDuration]);
 
   const getBatteryCategory = (b) => {
+    if (!b) return "Other";
     if (b.productCategory) return b.productCategory;
     if (b.category) return b.category;
 
-    const details = (b.productDetails || "").toLowerCase();
+    const details = String(b.productDetails || "").toLowerCase();
     if (details.includes("solar")) {
-      return "Solar Batteries";
+      return "Solar Battery";
     }
     if (details.includes("ev") || details.includes("electric vehicle") || details.includes("li-ion") || details.includes("lithium")) {
-      return "EV Batteries";
+      return "EV Battery";
+    }
+    if (details.includes("inverter")) {
+      return "Inverter Battery";
+    }
+    if (details.includes("robotics") || details.includes("robot")) {
+      return "Robotics Battery";
+    }
+    if (details.includes("defence") || details.includes("defense")) {
+      return "Defence Battery";
+    }
+    if (details.includes("medical")) {
+      return "Medical Battery";
+    }
+    if (details.includes("strip pump") || details.includes("strippump")) {
+      return "Strip Pump Battery";
     }
     if (details.includes("battery") || details.includes("pack")) {
-      return "Batteries";
+      return "EV Battery"; // fallback to EV Battery or General Battery if details check matches general batteries
     }
     return "Other";
   };
 
   const productCategories = React.useMemo(() => {
-    const categories = new Set(["Solar Batteries", "EV Batteries", "Batteries"]);
+    const categories = new Set(["Solar Battery", "EV Battery", "Inverter Battery", "Robotics Battery", "Defence Battery", "Medical Battery", "Strip Pump Battery"]);
     activeBatteries.forEach(b => {
       const cat = getBatteryCategory(b);
       if (cat) {
@@ -353,33 +630,113 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   }, [activeBatteries]);
 
   // Filtered batteries based on search query, warranty year, and product category
-  const filteredBatteries = groupedBatteries.filter(b => {
-    const matchesSearch = searchQuery === "" ||
-      b.displayBarcode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.originalBatteries?.some(orig => orig.barcode?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      b.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredBatteries = React.useMemo(() => {
+    const result = groupedBatteries.filter(b => {
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch = query === "" ||
+        String(b.displayBarcode || "").toLowerCase().includes(query) ||
+        b.originalBatteries?.some(orig => String(orig.barcode || "").toLowerCase().includes(query)) ||
+        String(b.customerName || "").toLowerCase().includes(query) ||
+        String(b.invoiceNumber || "").toLowerCase().includes(query);
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (warrantyYearFilter !== "All") {
-      const targetYear = parseInt(warrantyYearFilter, 10);
-      const currentYear = getCurrentWarrantyYear(b);
-      if (currentYear !== targetYear) return false;
+      if (warrantyYearFilter !== "All") {
+        const targetYear = parseInt(warrantyYearFilter, 10);
+        const currentYear = getCurrentWarrantyYear(b);
+        if (currentYear !== targetYear) return false;
+      }
+
+      if (productCategoryFilter !== "All") {
+        const cat = getBatteryCategory(b);
+        if (cat !== productCategoryFilter) return false;
+      }
+
+      return true;
+    });
+    console.log("[BATTERY PIPELINE] 5. filteredBatteries:", result.length, "| search:", searchQuery, "| warrantyFilter:", warrantyYearFilter, "| catFilter:", productCategoryFilter);
+    return result;
+  }, [groupedBatteries, searchQuery, warrantyYearFilter, productCategoryFilter]);
+
+  // Sort the filtered batteries
+  const sortedBatteries = React.useMemo(() => {
+    const sorted = [...filteredBatteries];
+    if (sortField) {
+      sorted.sort((a, b) => {
+        let valA, valB;
+        if (sortField === "barcode") {
+          valA = a.displayBarcode || "";
+          valB = b.displayBarcode || "";
+        } else {
+          valA = a[sortField];
+          valB = b[sortField];
+        }
+
+        if (valA === valB) return 0;
+        if (valA === null || valA === undefined) return 1;
+        if (valB === null || valB === undefined) return -1;
+
+        // Custom comparator for numbers, dates, boolean, or strings
+        if (typeof valA === "boolean" && typeof valB === "boolean") {
+          return sortDirection === "asc"
+            ? (valA === valB ? 0 : valA ? -1 : 1)
+            : (valA === valB ? 0 : valA ? 1 : -1);
+        }
+
+        const strA = String(valA).trim().toLowerCase();
+        const strB = String(valB).trim().toLowerCase();
+
+        if (sortDirection === "asc") {
+          return strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
+        } else {
+          return strB.localeCompare(strA, undefined, { numeric: true, sensitivity: 'base' });
+        }
+      });
     }
+    console.log("[BATTERY PIPELINE] 6. sortedBatteries:", sorted.length);
+    return sorted;
+  }, [filteredBatteries, sortField, sortDirection]);
 
-    if (productCategoryFilter !== "All") {
-      const cat = getBatteryCategory(b);
-      if (cat !== productCategoryFilter) return false;
+  // Paginated chunk
+  const paginatedBatteries = React.useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    const result = sortedBatteries.slice(start, start + itemsPerPage);
+    console.log("[BATTERY PIPELINE] 7. paginatedBatteries:", result.length, "| page:", currentPage, "/ totalPages:", Math.max(1, Math.ceil(sortedBatteries.length / itemsPerPage)));
+    return result;
+  }, [sortedBatteries, currentPage, itemsPerPage]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedBatteries.length / itemsPerPage));
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
     }
+    setCurrentPage(1);
+  };
 
-    return true;
-  });
+  const renderSortIcon = (field) => {
+    if (sortField !== field) {
+      return (
+        <span style={{ marginLeft: 6, color: '#9ca3af', fontSize: 10, display: 'inline-flex', alignSelf: 'center', transition: 'color 0.2s' }}>
+          ↕
+        </span>
+      );
+    }
+    return (
+      <span style={{ marginLeft: 6, color: '#10b981', fontSize: 11, fontWeight: 'bold', display: 'inline-flex', alignSelf: 'center', transition: 'transform 0.2s' }}>
+        {sortDirection === "asc" ? "▲" : "▼"}
+      </span>
+    );
+  };
 
   // Compute metrics
   const totalBatteries = activeBatteries.length;
   const activeWarranties = activeBatteries.filter(b => b.warrantyActive).length;
   const expiredWarranties = totalBatteries - activeWarranties;
+
 
   const exportToPDF = () => {
     if (filteredBatteries.length === 0) {
@@ -1385,100 +1742,269 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
               <button className="maint-btn" onClick={fetchBatteries} style={{ marginTop: 12 }}>Retry</button>
             </div>
           ) : (
-            <div className="table-wrapper">
-              <table className="records-table">
-                <thead>
-                  <tr>
-                    <th>Barcode</th>
-                    <th>Customer Name</th>
-                    <th>Product Details</th>
-                    <th>Invoice Number</th>
-                    <th>Warranty Period</th>
-                    <th>Status</th>
-                    <th style={{ width: '60px' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredBatteries.length > 0 ? (
-                    filteredBatteries.map((b) => (
-                      <tr key={b.id}>
-                        <td style={{ fontWeight: 600 }}>{b.displayBarcode}</td>
-                        <td>{b.customerName || "-"}</td>
-                        <td>{b.productDetails || "-"}</td>
-                        <td>{b.invoiceNumber || "-"}</td>
-                        <td style={{ fontSize: 13, color: "#666" }}>
-                          {b.warrantyStartDate} to {b.warrantyEndDate}
-                        </td>
-                        <td>
-                          <span className={`status-badge ${b.warrantyActive ? "status-active" : "status-expired"}`}>
-                            {b.warrantyActive ? "Active" : "Expired"}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="kebab-menu-container">
-                            <button
-                              type="button"
-                              className="kebab-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuId(prev => prev === b.id ? null : b.id);
-                              }}
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="1.5"></circle>
-                                <circle cx="12" cy="5" r="1.5"></circle>
-                                <circle cx="12" cy="19" r="1.5"></circle>
-                              </svg>
-                            </button>
-                            {activeMenuId === b.id && (
-                              <div className="kebab-dropdown" onClick={(e) => e.stopPropagation()}>
-                                <button type="button" onClick={() => { setViewDetailsTarget(b); setActiveMenuId(null); }}>
-                                  View Details
-                                </button>
-                                <button type="button" onClick={() => { handleOpenEdit(b); setActiveMenuId(null); }}>
-                                  Edit
-                                </button>
-                                <button type="button" onClick={() => { handleOpenEdit(b); setActiveMenuId(null); }}>
-                                  Renew Warranty
-                                </button>
-                                <button type="button" onClick={() => { alert(`Downloading invoice for customer ${b.customerName || 'Battery'}...`); setActiveMenuId(null); }}>
-                                  Download Invoice
-                                </button>
-                                <button type="button" className="delete-item" onClick={() => { setDeleteTarget(b); setActiveMenuId(null); }}>
-                                  Delete
-                                </button>
-                              </div>
+            <>
+              <div className="table-wrapper">
+                <table className="records-table">
+                  <thead>
+                    <tr>
+                      <th onClick={() => handleSort("barcode")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Barcode {renderSortIcon("barcode")}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort("customerName")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Customer Name {renderSortIcon("customerName")}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort("productDetails")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Product Details {renderSortIcon("productDetails")}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort("invoiceNumber")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Invoice Number {renderSortIcon("invoiceNumber")}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort("warrantyStartDate")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Warranty Period {renderSortIcon("warrantyStartDate")}
+                        </div>
+                      </th>
+                      <th onClick={() => handleSort("warrantyActive")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          Status {renderSortIcon("warrantyActive")}
+                        </div>
+                      </th>
+                      <th style={{ width: '60px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedBatteries.length > 0 ? (
+                      paginatedBatteries.map((b) => (
+                        <tr key={`${b.id || ''}-${b.displayBarcode || ''}`}>
+                          <td style={{ fontWeight: 600 }}>{b.displayBarcode || "-"}</td>
+                          <td>{b.customerName || "-"}</td>
+                          <td>{b.productDetails || "-"}</td>
+                          <td>{b.invoiceNumber || "-"}</td>
+                          <td style={{ fontSize: 13, color: "#666" }}>
+                            {b.warrantyStartDate || "-"} to {b.warrantyEndDate || "-"}
+                          </td>
+                          <td>
+                            <span className={`status-badge ${b.warrantyActive ? "status-active" : "status-expired"}`}>
+                              {b.warrantyActive ? "Active" : "Expired"}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="kebab-menu-container">
+                              <button
+                                type="button"
+                                className="kebab-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuId(prev => prev === b.id ? null : b.id);
+                                }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="1.5"></circle>
+                                  <circle cx="12" cy="5" r="1.5"></circle>
+                                  <circle cx="12" cy="19" r="1.5"></circle>
+                                </svg>
+                              </button>
+                              {activeMenuId === b.id && (
+                                <div className="kebab-dropdown" onClick={(e) => e.stopPropagation()}>
+                                  <button type="button" onClick={() => { setViewDetailsTarget(b); setActiveMenuId(null); }}>
+                                    View Details
+                                  </button>
+                                  <button type="button" onClick={() => { handleOpenEdit(b); setActiveMenuId(null); }}>
+                                    Edit
+                                  </button>
+
+                                  <button type="button" onClick={() => { alert(`Downloading invoice for customer ${b.customerName || 'Battery'}...`); setActiveMenuId(null); }}>
+                                    Download Invoice
+                                  </button>
+                                  <button type="button" className="delete-item" onClick={() => { setDeleteTarget(b); setActiveMenuId(null); }}>
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={7} style={{ padding: '60px 20px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '16px' }}>
+                              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                              <line x1="22" y1="11" x2="22" y2="13"></line>
+                              <line x1="6" y1="11" x2="10" y2="11"></line>
+                              <line x1="6" y1="14" x2="14" y2="14"></line>
+                            </svg>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#374151', margin: '0 0 4px 0' }}>No Battery Records Found</h3>
+                            <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 16px 0', maxWidth: '320px' }}>
+                              We couldn't find any inventory items matching your query. Adjust your search keywords or clear filters to retry.
+                            </p>
+                            {(searchQuery !== "" || warrantyYearFilter !== "All" || productCategoryFilter !== "All") && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSearchQuery("");
+                                  setWarrantyYearFilter("All");
+                                  setProductCategoryFilter("All");
+                                }}
+                                className="action-btn"
+                                style={{ display: 'inline-flex', padding: '6px 16px', borderRadius: '8px', border: '1px solid #d1d5db', background: '#fff', fontSize: '13px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}
+                              >
+                                Clear All Filters
+                              </button>
                             )}
                           </div>
                         </td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={8} style={{ padding: 0 }}>
-                        <div className="empty-state-container">
-                          <div className="empty-state-icon">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="11" cy="11" r="8"></circle>
-                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                          </div>
-                          <h3 className="empty-state-title">No Batteries Found</h3>
-                          <p className="empty-state-subtitle">Try changing filters or add a new battery.</p>
-                          <button type="button" className="register-btn" style={{ margin: '8px auto 0 auto' }} onClick={handleOpenModal}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <line x1="12" y1="5" x2="12" y2="19"></line>
-                              <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                            Add Battery
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {sortedBatteries.length > 0 && (
+                <div className="pagination-container" style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '16px 20px',
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderTop: 'none',
+                  borderBottomLeftRadius: '12px',
+                  borderBottomRightRadius: '12px',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                }}>
+                  <div className="pagination-info" style={{ fontSize: '14px', color: '#6b7280' }}>
+                    Showing <span style={{ fontWeight: 600, color: '#374151' }}>{Math.min(sortedBatteries.length, (currentPage - 1) * itemsPerPage + 1)}</span> to{' '}
+                    <span style={{ fontWeight: 600, color: '#374151' }}>{Math.min(sortedBatteries.length, currentPage * itemsPerPage)}</span> of{' '}
+                    <span style={{ fontWeight: 600, color: '#374151' }}>{sortedBatteries.length}</span> records
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    {/* Rows Per Page */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '13px', color: '#6b7280' }}>Rows per page:</span>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(parseInt(e.target.value, 10));
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #d1d5db',
+                          background: '#fff',
+                          fontSize: '13px',
+                          color: '#374151',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+
+                    {/* Buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: '1px solid #d1d5db',
+                          background: currentPage === 1 ? '#f3f4f6' : '#fff',
+                          color: currentPage === 1 ? '#9ca3af' : '#374151',
+                          cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                          outline: 'none',
+                          fontSize: '16px'
+                        }}
+                      >
+                        ‹
+                      </button>
+
+                      {(() => {
+                        const pages = [];
+                        const maxButtons = 5;
+                        let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+                        let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+                        if (endPage - startPage + 1 < maxButtons) {
+                          startPage = Math.max(1, endPage - maxButtons + 1);
+                        }
+
+                        for (let i = startPage; i <= endPage; i++) {
+                          pages.push(
+                            <button
+                              key={i}
+                              onClick={() => setCurrentPage(i)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '6px',
+                                border: i === currentPage ? '1px solid #10b981' : '1px solid #d1d5db',
+                                background: i === currentPage ? '#10b981' : '#fff',
+                                color: i === currentPage ? '#fff' : '#374151',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                fontSize: '13px',
+                                fontWeight: i === currentPage ? 600 : 400
+                              }}
+                            >
+                              {i}
+                            </button>
+                          );
+                        }
+                        return pages;
+                      })()}
+
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: '1px solid #d1d5db',
+                          background: currentPage === totalPages ? '#f3f4f6' : '#fff',
+                          color: currentPage === totalPages ? '#9ca3af' : '#374151',
+                          cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                          outline: 'none',
+                          fontSize: '16px'
+                        }}
+                      >
+                        ›
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1582,9 +2108,13 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                     required
                   >
                     <option value="" disabled>Select Made Product</option>
-                    <option value="Solar Batteries">Solar Batteries</option>
-                    <option value="EV Batteries">EV Batteries</option>
-                    <option value="Batteries">Batteries</option>
+                    <option value="Solar Battery">Solar Battery</option>
+                    <option value="EV Battery">EV Battery</option>
+                    <option value="Inverter Battery">Inverter Battery</option>
+                    <option value="Robotics Battery">Robotics Battery</option>
+                    <option value="Defence Battery">Defence Battery</option>
+                    <option value="Medical Battery">Medical Battery</option>
+                    <option value="Strip Pump Battery">Spray pump battery</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
@@ -1605,14 +2135,60 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
                 <div className="form-group full-width">
                   <label>Product Description</label>
-                  <input
-                    type="text"
-                    name="productDetails"
-                    placeholder="e.g. EV Li-Ion Battery Pack 60V 30Ah"
-                    value={formData.productDetails}
-                    onChange={handleFormChange}
-                    required
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto' }}>
+                    <input
+                      type="number"
+                      name="voltage"
+                      placeholder="V"
+                      value={formData.voltage}
+                      onChange={handleFormChange}
+                      min="0"
+                      style={{ width: '50px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                      required
+                    />
+                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>V</span>
+                    <input
+                      type="number"
+                      name="capacity"
+                      placeholder="Ah"
+                      value={formData.capacity}
+                      onChange={handleFormChange}
+                      min="0"
+                      style={{ width: '50px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                      required
+                    />
+                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>Ah</span>
+                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px', marginLeft: '100px' }}>Chemistry </span>
+                    <select
+                      name="chemistry"
+                      value={formData.chemistry}
+                      onChange={handleFormChange}
+                      style={{
+                        width: '140px',
+                        padding: '8px 12px',
+                        border: '1px solid #D1D5DB',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        outline: 'none',
+                        background: '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="NMC">NMC</option>
+                      <option value="LiFePO4">LiFePO4</option>
+                    </select>
+                  </div>
+                  {(formData.voltage || formData.capacity) && (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#6B7280' }}>
+                      Preview:{' '}
+                      <strong style={{ color: '#111827' }}>
+                        {formData.voltage}V {formData.capacity}Ah{' '}
+                        <span style={{ marginLeft: '30px' }}>
+                          Chemistry = {formData.chemistry}
+                        </span>
+                      </strong>
+                    </div>
+                  )}
                 </div>
                 {registerMode === "single" ? (
                   <div className="form-group">
@@ -1663,20 +2239,77 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                     required
                   />
                 </div>
+
+                <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label>Full Warranty (Years)</label>
+                    <input
+                      type="number"
+                      name="fullWarrantyYears"
+                      min="0"
+                      value={formData.fullWarrantyYears}
+                      onChange={handleFormChange}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label>Full Warranty (Months)</label>
+                    <input
+                      type="number"
+                      name="fullWarrantyMonths"
+                      min="0"
+                      max="11"
+                      value={formData.fullWarrantyMonths}
+                      onChange={handleFormChange}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label>Service Warranty (Years)</label>
+                    <input
+                      type="number"
+                      name="serviceWarrantyYears"
+                      min="0"
+                      value={formData.serviceWarrantyYears}
+                      onChange={handleFormChange}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label>Service Warranty (Months)</label>
+                    <input
+                      type="number"
+                      name="serviceWarrantyMonths"
+                      min="0"
+                      max="11"
+                      value={formData.serviceWarrantyMonths}
+                      onChange={handleFormChange}
+                      required
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
-                  <label>Warranty Duration (Years)</label>
+                  <label>Total Warranty (Auto Calculated)</label>
                   <input
-                    type="number"
-                    name="warrantyYears"
-                    min="1"
-                    placeholder="e.g. 1, 2, 3"
-                    value={formData.warrantyYears}
-                    onChange={handleFormChange}
-                    required
+                    type="text"
+                    value={calculateExpiryAndTotal(
+                      formData.warrantyStartDate,
+                      formData.fullWarrantyYears,
+                      formData.fullWarrantyMonths,
+                      formData.serviceWarrantyYears,
+                      formData.serviceWarrantyMonths
+                    ).totalWarrantyLabel}
+                    readOnly
+                    style={{ background: "#f5f5f5", cursor: "not-allowed" }}
                   />
                 </div>
+
                 <div className="form-group">
-                  <label>Warranty End Date</label>
+                  <label>Warranty Expiry Date (Auto Calculated)</label>
                   <input
                     type="date"
                     name="warrantyEndDate"
@@ -1731,12 +2364,40 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                 </div>
                 <div className="form-group full-width">
                   <label>Product Description</label>
-                  <input
-                    type="text"
-                    value={editFormData.productDetails}
-                    onChange={(e) => setEditFormData({ ...editFormData, productDetails: e.target.value })}
-                    required
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto' }}>
+                    <input
+                      type="number"
+                      placeholder="V"
+                      value={editFormData.voltage}
+                      onChange={(e) => setEditFormData({ ...editFormData, voltage: e.target.value })}
+                      min="0"
+                      style={{ width: '60px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                    />
+                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>V</span>
+                    <input
+                      type="number"
+                      placeholder="Ah"
+                      value={editFormData.capacity}
+                      onChange={(e) => setEditFormData({ ...editFormData, capacity: e.target.value })}
+                      min="0"
+                      style={{ width: '60px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                    />
+                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>Ah</span>
+                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px', marginLeft: '16px' }}>Chemistry =</span>
+                    <select
+                      value={editFormData.chemistry}
+                      onChange={(e) => setEditFormData({ ...editFormData, chemistry: e.target.value })}
+                      style={{ padding: '8px 12px', border: '1px solid #000000ff', borderRadius: '8px', fontSize: '13px', outline: 'none', background: '#fff', cursor: 'pointer' }}
+                    >
+                      <option value="NMC">NMC</option>
+                      <option value="LiFePO4">LiFePO4</option>
+                    </select>
+                  </div>
+                  {(editFormData.voltage || editFormData.capacity) && (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#6B7280' }}>
+                      Preview: <strong style={{ color: '#111827' }}>{editFormData.voltage}V {editFormData.capacity}Ah Chemistry = {editFormData.chemistry}</strong>
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Barcode</label>
@@ -1759,19 +2420,73 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                     required
                   />
                 </div>
+
+                <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label>Full Warranty (Years)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editFormData.fullWarrantyYears}
+                      onChange={(e) => handleEditFormChange("fullWarrantyYears", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label>Full Warranty (Months)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="11"
+                      value={editFormData.fullWarrantyMonths}
+                      onChange={(e) => handleEditFormChange("fullWarrantyMonths", e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label>Service Warranty (Years)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editFormData.serviceWarrantyYears}
+                      onChange={(e) => handleEditFormChange("serviceWarrantyYears", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label>Service Warranty (Months)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="11"
+                      value={editFormData.serviceWarrantyMonths}
+                      onChange={(e) => handleEditFormChange("serviceWarrantyMonths", e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
-                  <label>Warranty Duration (Years)</label>
+                  <label>Total Warranty (Auto Calculated)</label>
                   <input
-                    type="number"
-                    min="1"
-                    placeholder="e.g. 1, 2, 3"
-                    value={editFormData.warrantyYears}
-                    onChange={(e) => handleEditFormChange("warrantyYears", e.target.value)}
-                    required
+                    type="text"
+                    value={calculateExpiryAndTotal(
+                      editFormData.warrantyStartDate,
+                      editFormData.fullWarrantyYears,
+                      editFormData.fullWarrantyMonths,
+                      editFormData.serviceWarrantyYears,
+                      editFormData.serviceWarrantyMonths
+                    ).totalWarrantyLabel}
+                    readOnly
+                    style={{ background: "#f5f5f5", cursor: "not-allowed" }}
                   />
                 </div>
+
                 <div className="form-group">
-                  <label>Warranty End Date</label>
+                  <label>Warranty Expiry Date (Auto Calculated)</label>
                   <input
                     type="date"
                     value={editFormData.warrantyEndDate}
@@ -1805,9 +2520,18 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                 className="maint-btn"
                 style={{ background: "#dc2626" }}
                 onClick={() => {
-                  const newDeleted = [...deletedIds, ...deleteTarget.originalBatteries.map(orig => orig.id)];
-                  setDeletedIds(newDeleted);
-                  localStorage.setItem("battery_inventory_deleted_ids", JSON.stringify(newDeleted));
+                  const targetIds = deleteTarget.originalBatteries.map(orig => orig.id);
+                  const targetBarcodes = deleteTarget.originalBatteries.map(orig => String(orig.barcode || ""));
+
+                  const newDeletedIds = [...deletedIds, ...targetIds];
+                  const newDeletedBarcodes = [...deletedBarcodes, ...targetBarcodes];
+
+                  setDeletedIds(newDeletedIds);
+                  setDeletedBarcodes(newDeletedBarcodes);
+
+                  localStorage.setItem("battery_inventory_deleted_ids", JSON.stringify(newDeletedIds));
+                  localStorage.setItem("battery_inventory_deleted_barcodes", JSON.stringify(newDeletedBarcodes));
+
                   setDeleteTarget(null);
                   alert("Battery records deleted successfully!");
                 }}
@@ -1831,11 +2555,11 @@ function groupBatteries(batteryList) {
   const groups = {};
   batteryList.forEach(battery => {
     const key = [
-      battery.customerName || "",
-      battery.productDetails || "",
-      battery.invoiceNumber || "",
-      battery.warrantyStartDate || "",
-      battery.warrantyEndDate || "",
+      String(battery.customerName || ""),
+      String(battery.productDetails || ""),
+      String(battery.invoiceNumber || ""),
+      String(battery.warrantyStartDate || ""),
+      String(battery.warrantyEndDate || ""),
       battery.warrantyActive ? "active" : "expired"
     ].join("||");
 
@@ -1850,14 +2574,15 @@ function groupBatteries(batteryList) {
   // Helper to extract prefix and suffix
   const parseSerial = (serial) => {
     if (!serial) return null;
-    const match = serial.match(/^([a-zA-Z_-]*)(0*)(\d+)$/);
+    const serialStr = String(serial);
+    const match = serialStr.match(/^([a-zA-Z_-]*)(0*)(\d+)$/);
     if (!match) return null;
     return {
       prefix: match[1],
       padding: match[2],
       num: parseInt(match[3], 10),
       numStr: match[3],
-      original: serial
+      original: serialStr
     };
   };
 

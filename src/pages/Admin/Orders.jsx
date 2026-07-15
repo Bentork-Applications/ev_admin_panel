@@ -4,9 +4,18 @@ import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, BarChart, Ba
 export default function Orders({ baseUrl }) {
   const [orders, setOrders] = useState([]);
   const [userList, setUserList] = useState([]);
+  const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Frontend-only staff assignments, persisted in localStorage
+  const [orderStaffAssignments, setOrderStaffAssignments] = useState(() => {
+    try {
+      const stored = localStorage.getItem("order_staff_assignments");
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -59,9 +68,10 @@ export default function Orders({ baseUrl }) {
   const fetchOrdersAndUsers = async () => {
     setLoading(true);
     try {
-      const [ordersRes, usersRes] = await Promise.all([
+      const [ordersRes, usersRes, staffRes] = await Promise.all([
         fetch(`${baseUrl}/orders/admin/all`, { headers }),
-        fetch(`${baseUrl}/user/all`, { headers })
+        fetch(`${baseUrl}/user/all`, { headers }),
+        fetch(`${baseUrl}/admin/alladmin`, { headers })
       ]);
 
       if (ordersRes.ok) {
@@ -72,12 +82,26 @@ export default function Orders({ baseUrl }) {
         const data = await usersRes.json();
         setUserList(Array.isArray(data) ? data : []);
       }
+      if (staffRes.ok) {
+        const data = await staffRes.json();
+        const adminStaff = Array.isArray(data)
+          ? data.filter(a => a.role === "ADMIN_STAFF" || a.role === "admin_staff")
+          : [];
+        setStaffList(adminStaff);
+      }
     } catch (err) {
       console.error("Failed to load orders or users:", err);
       setErrorMsg("Failed to connect to backend server. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  // Frontend-only: assign a staff member to an order
+  const handleAssignStaff = (orderId, staffId) => {
+    const updated = { ...orderStaffAssignments, [orderId]: staffId };
+    setOrderStaffAssignments(updated);
+    localStorage.setItem("order_staff_assignments", JSON.stringify(updated));
   };
 
   useEffect(() => {
@@ -188,7 +212,7 @@ export default function Orders({ baseUrl }) {
   const filteredOrders = React.useMemo(() => {
     return orders.filter(o => {
       const parsed = parseOrderDescription(o.description, o.title);
-      const matchesSearch = 
+      const matchesSearch =
         (o.orderNumber && o.orderNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (parsed.productName && parsed.productName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (parsed.batterySerialNumber && parsed.batterySerialNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -330,7 +354,7 @@ export default function Orders({ baseUrl }) {
         // Send user notification for status update
         let notifTitle = "Order Update";
         let notifMessage = `Your order '${updated.title}' has been updated to status: ${updated.status.toUpperCase()}.`;
-        
+
         switch (updated.status) {
           case "in_progress":
             notifTitle = "🔄 Order In Progress";
@@ -429,7 +453,7 @@ export default function Orders({ baseUrl }) {
     if (!currentStatus) return [];
     const status = currentStatus.toLowerCase().trim();
     if (status === "cancelled" || status === "delivered") return [];
-    
+
     const options = [];
     if (status === "pending") options.push("in_progress");
     else if (status === "in_progress") options.push("testing");
@@ -466,19 +490,19 @@ export default function Orders({ baseUrl }) {
 
   // Filtered lists for searchable user pickers
   const searchedUsersList = userSearchQuery.trim()
-    ? userList.filter(u => 
-        (u.name && u.name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
-        (u.id && u.id.toString().includes(userSearchQuery)) ||
-        (u.mobile && u.mobile.includes(userSearchQuery))
-      )
+    ? userList.filter(u =>
+      (u.name && u.name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+      (u.id && u.id.toString().includes(userSearchQuery)) ||
+      (u.mobile && u.mobile.includes(userSearchQuery))
+    )
     : [];
 
   const searchedReassignUsersList = reassignSearchQuery.trim()
-    ? userList.filter(u => 
-        (u.name && u.name.toLowerCase().includes(reassignSearchQuery.toLowerCase())) ||
-        (u.id && u.id.toString().includes(reassignSearchQuery)) ||
-        (u.mobile && u.mobile.includes(reassignSearchQuery))
-      )
+    ? userList.filter(u =>
+      (u.name && u.name.toLowerCase().includes(reassignSearchQuery.toLowerCase())) ||
+      (u.id && u.id.toString().includes(reassignSearchQuery)) ||
+      (u.mobile && u.mobile.includes(reassignSearchQuery))
+    )
     : [];
 
   return (
@@ -877,6 +901,40 @@ export default function Orders({ baseUrl }) {
           color: #111827;
           margin-bottom: 4px;
         }
+        .assign-staff-select {
+          padding: 6px 10px;
+          border: 1px solid #E5E7EB;
+          border-radius: 8px;
+          font-size: 12px;
+          font-family: 'Lexend', sans-serif;
+          color: #374151;
+          background: #fff;
+          cursor: pointer;
+          outline: none;
+          min-width: 150px;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .assign-staff-select:hover {
+          border-color: #9CA3AF;
+        }
+        .assign-staff-select:focus {
+          border-color: #111827;
+          box-shadow: 0 0 0 3px rgba(17,24,39,0.08);
+        }
+        .assigned-staff-badge {
+          display: block;
+          margin-top: 4px;
+          font-size: 10px;
+          font-weight: 600;
+          color: #065F46;
+          background: #D1FAE5;
+          border-radius: 6px;
+          padding: 2px 6px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 150px;
+        }
       `}</style>
 
       <div className="orders-container">
@@ -1033,6 +1091,7 @@ export default function Orders({ baseUrl }) {
                   <th>Battery Serial</th>
                   <th>Priority</th>
                   <th>Current Status</th>
+                  <th>Assign To</th>
                   <th>Created Date</th>
                 </tr>
               </thead>
@@ -1064,6 +1123,28 @@ export default function Orders({ baseUrl }) {
                         <span className="pill-badge" style={{ backgroundColor: sStyle.bg, color: sStyle.fg }}>
                           {o.status?.replace('_', ' ')}
                         </span>
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <select
+                          className="assign-staff-select"
+                          value={orderStaffAssignments[o.id] || ""}
+                          onChange={(e) => handleAssignStaff(o.id, e.target.value)}
+                        >
+                          <option value="">Select Admin Staff</option>
+                          {staffList.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name || s.email || `Staff #${s.id}`}
+                            </option>
+                          ))}
+                        </select>
+                        {orderStaffAssignments[o.id] && (() => {
+                          const assigned = staffList.find(s => String(s.id) === String(orderStaffAssignments[o.id]));
+                          return assigned ? (
+                            <span className="assigned-staff-badge">
+                              ✓ {assigned.name || assigned.email}
+                            </span>
+                          ) : null;
+                        })()}
                       </td>
                       <td style={{ color: "#6B7280", fontSize: 13 }}>
                         {new Date(o.createdAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
@@ -1170,7 +1251,7 @@ export default function Orders({ baseUrl }) {
               </div>
 
               <div className="form-group">
-                <label>Battery Serial Number *</label>
+                <label>Battery Barcode Number *</label>
                 <input
                   type="text"
                   className="form-control"
@@ -1181,16 +1262,7 @@ export default function Orders({ baseUrl }) {
                 />
               </div>
 
-              <div className="form-group">
-                <label>QR Code (if available)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Scan or enter QR string..."
-                  value={createFormData.qrCode}
-                  onChange={(e) => setCreateFormData({ ...createFormData, qrCode: e.target.value })}
-                />
-              </div>
+
 
               <div className="form-group">
                 <label>Issue / Work Description *</label>
@@ -1365,8 +1437,8 @@ export default function Orders({ baseUrl }) {
                 <div className="detail-label" style={{ fontWeight: 600, color: '#111827', marginBottom: 6 }}>Status Timeline Flow</div>
                 <div className="stepper-flow">
                   {[
-                    { key: "pending", label: "Pending / Placed", time: selectedOrder.createdAt },
-                    { key: "in_progress", label: "In Progress", time: selectedOrder.inProgressAt },
+                    { key: "pending", label: "Order Confirmed", time: selectedOrder.createdAt },
+                    { key: "in_progress", label: "In Production", time: selectedOrder.inProgressAt },
                     { key: "testing", label: "Testing", time: selectedOrder.testingAt },
                     { key: "completed", label: "Completed", time: selectedOrder.completedAt },
                     { key: "dispatched", label: "Dispatched", time: selectedOrder.dispatchedAt },
