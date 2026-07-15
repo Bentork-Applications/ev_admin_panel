@@ -31,7 +31,7 @@ export default function Topbar({ onMenuClick, onLogout }) {
           <button className="menu-btn" onClick={onMenuClick}>☰</button>
 
           <img
-            src="https://github.com/bentork5151/assets/blob/main/Logo/bentork_logo.jpg?raw=true"
+            src="https://raw.githubusercontent.com/Bentork-Applications/assets/refs/heads/main/img/logo_transparent.png"
             alt="BENTORK"
             className="logo"
           />

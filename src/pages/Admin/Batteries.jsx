@@ -2143,7 +2143,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                       value={formData.voltage}
                       onChange={handleFormChange}
                       min="0"
-                      style={{ width: '50px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                      style={{ width: '60px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
                       required
                     />
                     <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>V</span>
@@ -2154,7 +2154,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                       value={formData.capacity}
                       onChange={handleFormChange}
                       min="0"
-                      style={{ width: '50px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                      style={{ width: '60px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
                       required
                     />
                     <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>Ah</span>
