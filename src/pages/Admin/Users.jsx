@@ -33,13 +33,13 @@ function timeAgo(dateStr) {
 const APPLICATION_STATUSES = ["PENDING", "APPROVED", "DISPATCHED", "DELIVERED"];
 
 const STATUS_CONFIG = {
-  PENDING:    { label: "Pending",    bg: "#FEF3C7", color: "#92400E", dot: "#F59E0B", border: "#FCD34D" },
-  APPROVED:   { label: "Approved",   bg: "#ECFDF5", color: "#065F46", dot: "#10B981", border: "#A7F3D0" },
+  PENDING: { label: "Pending", bg: "#FEF3C7", color: "#92400E", dot: "#F59E0B", border: "#FCD34D" },
+  APPROVED: { label: "Approved", bg: "#ECFDF5", color: "#065F46", dot: "#10B981", border: "#A7F3D0" },
   DISPATCHED: { label: "Dispatched", bg: "#EFF6FF", color: "#1E40AF", dot: "#3B82F6", border: "#BFDBFE" },
-  DELIVERED:  { label: "Delivered",  bg: "#F0FDF4", color: "#14532D", dot: "#22C55E", border: "#86EFAC" },
-  ACTIVE:     { label: "Active",     bg: "#ECFDF5", color: "#065F46", dot: "#10B981", border: "#A7F3D0" },
-  INACTIVE:   { label: "Deactivated", bg: "#FEF2F2", color: "#991B1B", dot: "#EF4444", border: "#FECACA" },
-  UNKNOWN:    { label: "Unknown",    bg: "#F3F4F6", color: "#374151", dot: "#9CA3AF", border: "#E5E7EB" },
+  DELIVERED: { label: "Delivered", bg: "#F0FDF4", color: "#14532D", dot: "#22C55E", border: "#86EFAC" },
+  ACTIVE: { label: "Active", bg: "#ECFDF5", color: "#065F46", dot: "#10B981", border: "#A7F3D0" },
+  INACTIVE: { label: "Deactivated", bg: "#FEF2F2", color: "#991B1B", dot: "#EF4444", border: "#FECACA" },
+  UNKNOWN: { label: "Unknown", bg: "#F3F4F6", color: "#374151", dot: "#9CA3AF", border: "#E5E7EB" },
 };
 
 const getStatusConf = (status) => STATUS_CONFIG[status?.toUpperCase()] || STATUS_CONFIG.UNKNOWN;
@@ -75,14 +75,19 @@ const StatusBadge = ({ status }) => {
 };
 
 const StatCard = ({ title, value, icon, subtext, accent }) => (
-  <div style={{
-    background: "#fff", borderRadius: 16, padding: "20px 24px",
-    border: "1px solid #E5E7EB", display: "flex", flexDirection: "column",
-    gap: 4, boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-    transition: "box-shadow 0.2s",
-  }}
-    onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)"}
-    onMouseLeave={e => e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04)"}
+  <div
+    className="rfid-stat-card"
+    style={{
+      background: "#fff",
+      borderRadius: 16,
+      padding: "20px 24px",
+      border: "1px solid #E5E7EB",
+      display: "flex",
+      flexDirection: "column",
+      gap: 4,
+      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      cursor: "default",
+    }}
   >
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
       <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 500 }}>{title}</span>
@@ -436,6 +441,7 @@ function Users({ baseUrl }) {
   const [appSearch, setAppSearch] = useState("");
   const [appStatusFilter, setAppStatusFilter] = useState("ALL");
   const [cardStatusFilter, setCardStatusFilter] = useState("ALL");
+  const [activeChip, setActiveChip] = useState("All");
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -482,7 +488,7 @@ function Users({ baseUrl }) {
       fetch(`${baseUrl}${path}`, { headers })
         .then(r => r.ok ? r.text() : null)
         .then(text => { if (text !== null) setSummaryData(prev => ({ ...prev, [key]: text })); })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [baseUrl]);
 
@@ -576,11 +582,31 @@ function Users({ baseUrl }) {
       (c.user?.name || "").toLowerCase().includes(term) ||
       (c.cardNumber || "").toLowerCase().includes(term) ||
       (c.user?.email || "").toLowerCase().includes(term);
+
+    // Apply Chip Filter logic
+    let matchChip = true;
+    if (activeChip === "Active") {
+      matchChip = c.active;
+    } else if (activeChip === "Inactive") {
+      matchChip = !c.active;
+    } else if (activeChip === "Recently Added") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      matchChip = new Date(c.createdAt) >= sevenDaysAgo;
+    } else if (activeChip === "This Month") {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      matchChip = new Date(c.createdAt) >= startOfMonth;
+    } else if (activeChip === "Pending") {
+      matchChip = false; // Pending requests are in the requests tab
+    }
+
     const matchStatus =
       cardStatusFilter === "ALL" ||
       (cardStatusFilter === "ACTIVE" && c.active) ||
       (cardStatusFilter === "INACTIVE" && !c.active);
-    return matchSearch && matchStatus;
+    return matchSearch && matchStatus && matchChip;
   });
 
   const filteredApps = applications.filter(app => {
@@ -590,11 +616,45 @@ function Users({ baseUrl }) {
       (app.email || app.user?.email || "").toLowerCase().includes(term) ||
       (app.mobile || app.user?.mobile || "").toLowerCase().includes(term) ||
       (app.address || "").toLowerCase().includes(term);
+
+    let matchChip = true;
+    if (activeChip === "Pending") {
+      matchChip = app.status === "PENDING";
+    } else if (activeChip === "Recently Added") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      matchChip = new Date(app.createdAt) >= sevenDaysAgo;
+    } else if (activeChip === "This Month") {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      matchChip = new Date(app.createdAt) >= startOfMonth;
+    } else if (activeChip !== "All") {
+      matchChip = false; // Active/Inactive chips display cards, not applications
+    }
+
     const matchStatus = appStatusFilter === "ALL" || app.status === appStatusFilter;
-    return matchSearch && matchStatus;
+    return matchSearch && matchStatus && matchChip;
   });
 
   const pendingCount = applications.filter(a => a.status === "PENDING").length;
+
+  const handleChipClick = (chip) => {
+    setActiveChip(chip);
+    if (chip === "Pending") {
+      setActiveTab("requests");
+      setAppStatusFilter("PENDING");
+    } else if (chip === "Active") {
+      setActiveTab("registered");
+      setCardStatusFilter("ACTIVE");
+    } else if (chip === "Inactive") {
+      setActiveTab("registered");
+      setCardStatusFilter("INACTIVE");
+    } else if (chip === "All") {
+      setCardStatusFilter("ALL");
+      setAppStatusFilter("ALL");
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -613,6 +673,15 @@ function Users({ baseUrl }) {
         .rfid-subtitle { font-size: 14px; color: #64748B; margin: 4px 0 0; }
         .rfid-header-actions { display: flex; gap: 10px; align-items: center; }
 
+        .rfid-stat-card {
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease;
+        }
+        .rfid-stat-card:hover {
+          transform: translateY(-5px) scale(1.02);
+          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08) !important;
+          border-color: #10b981 !important;
+        }
+
         .rfid-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
         
         .rfid-card-section { background: #fff; border-radius: 20px; border: 1px solid #E9ECF0; overflow: hidden; }
@@ -626,13 +695,6 @@ function Users({ baseUrl }) {
 
         .table-toolbar { display: flex; gap: 12px; align-items: center; padding: 16px 20px; flex-wrap: wrap; }
         .search-wrap { position: relative; flex: 1; min-width: 220px; }
-        .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9CA3AF; }
-        .search-input { width: 100%; height: 40px; padding: 0 12px 0 36px; border: 1.5px solid #E5E7EB; border-radius: 10px; font-size: 14px; outline: none; background: #F8FAFC; font-family: 'Inter', sans-serif; transition: border-color 0.15s, box-shadow 0.15s; box-sizing: border-box; }
-        .search-input:focus { border-color: #111; background: #fff; box-shadow: 0 0 0 3px rgba(17,17,17,0.06); }
-
-        .filter-select { height: 40px; padding: 0 12px; border: 1.5px solid #E5E7EB; border-radius: 10px; font-size: 13px; outline: none; background: #fff; cursor: pointer; font-family: 'Inter', sans-serif; color: #374151; }
-        .filter-select:focus { border-color: #111; }
-
         .primary-btn { height: 40px; padding: 0 18px; background: #0F172A; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; font-family: 'Inter', sans-serif; transition: background 0.15s, transform 0.1s; }
         .primary-btn:hover { background: #1E293B; }
         .primary-btn:active { transform: scale(0.98); }
@@ -751,6 +813,9 @@ function Users({ baseUrl }) {
           <StatCard title="Recently Added" value={summaryData.recentlyAdded} icon={recentIcon} subtext="Last 7 days" />
         </div>
 
+        {/* ── Card Usage Analytics Widget ── */}
+
+
         {/* ── Main Card ── */}
         <div className="rfid-card-section">
           {/* Tab Bar */}
@@ -791,6 +856,54 @@ function Users({ baseUrl }) {
                   <option value="ACTIVE">Active</option>
                   <option value="INACTIVE">Inactive</option>
                 </select>
+              </div>
+
+              {/* Quick Filter Chips */}
+              <div style={{ padding: "0 20px 16px", display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid #F1F5F9" }}>
+                {["All", "Active", "Inactive", "Pending", "Recently Added", "This Month"].map(chip => {
+                  const isActive = activeChip === chip;
+                  return (
+                    <button
+                      key={chip}
+                      onClick={() => handleChipClick(chip)}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        border: "1.5px solid",
+                        borderColor: isActive ? "#10b981" : "#E2E8F0",
+                        background: isActive ? "#E6FBF0" : "#fff",
+                        color: isActive ? "#065F46" : "#64748B",
+                        transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                        fontFamily: "'Inter', sans-serif"
+                      }}
+                      onMouseEnter={e => {
+                        if (!isActive) {
+                          e.currentTarget.style.borderColor = "#10b981";
+                          e.currentTarget.style.color = "#10b981";
+                        }
+                        e.currentTarget.style.transform = "translateY(-1.5px)";
+                      }}
+                      onMouseLeave={e => {
+                        if (!isActive) {
+                          e.currentTarget.style.borderColor = "#E2E8F0";
+                          e.currentTarget.style.color = "#64748B";
+                        }
+                        e.currentTarget.style.transform = "none";
+                      }}
+                      onMouseDown={e => {
+                        e.currentTarget.style.transform = "scale(0.96)";
+                      }}
+                      onMouseUp={e => {
+                        e.currentTarget.style.transform = "none";
+                      }}
+                    >
+                      {chip}
+                    </button>
+                  );
+                })}
               </div>
 
               {loading ? <LoadingSpinner /> : filteredCards.length === 0 ? (
@@ -1023,11 +1136,11 @@ function Users({ baseUrl }) {
                                 </button>
                               )}
                               <button
-                                  className="secondary-btn"
-                                  style={{ height: 32, padding: "0 12px", fontSize: 12 }}
-                                  onClick={(e) => { e.stopPropagation(); setDrawerApp(app); }}
-                                >
-                                  View
+                                className="secondary-btn"
+                                style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                                onClick={(e) => { e.stopPropagation(); setDrawerApp(app); }}
+                              >
+                                View
                               </button>
                             </div>
                           </td>

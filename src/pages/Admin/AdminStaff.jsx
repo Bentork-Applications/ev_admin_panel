@@ -5,15 +5,37 @@ import editIcon from "../../assets/icons/stafficon/edit.svg";
 import AddStaffForm from "./form/AddStaffForm";
 import StaffEditForm from "./form/staffedit";
 
-const LoadingSpinner = () =>
-  <div style={{ textAlign: 'center', padding: '50px' }}>
-    Loading...
-  </div>;
+const LoadingSpinner = () => (
+  <div style={{ padding: "8px 0" }}>
+    {[...Array(5)].map((_, i) => (
+      <div
+        key={i}
+        className="staff-skeleton-row"
+        style={{
+          height: "48px",
+          borderRadius: "8px",
+          marginBottom: "8px",
+          backgroundColor: "#f3f4f6",
+          backgroundImage: "linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)",
+          backgroundSize: "200% 100%",
+          animation: "staff-shimmer-anim 1.5s infinite linear",
+          animationDelay: `${i * 0.08}s`
+        }}
+      />
+    ))}
+  </div>
+);
 
-const ErrorDisplay = ({ message }) =>
-  <div style={{ textAlign: 'center', padding: '50px', color: 'red' }}>
+const ErrorDisplay = ({ message }) => (
+  <div style={{ textAlign: 'center', padding: '50px', color: '#EF4444', fontFamily: "'Lexend', sans-serif", fontWeight: 600 }}>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 8, verticalAlign: 'middle' }}>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
     {message}
-  </div>;
+  </div>
+);
 
 
 
@@ -211,11 +233,23 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
   }, [location.state, navigate, location.pathname]);
   const [editingStaff, setEditingStaff] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [accessFilter, setAccessFilter] = useState("ALL");
+  const [selectedStaffForDrawer, setSelectedStaffForDrawer] = useState(null);
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
+
   const getStaffStatus = (staff) => {
     return staff.active !== false ? "Active" : "Suspended";
   };
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
+
+  useEffect(() => {
+    const handleGlobalClick = () => setActiveDropdownId(null);
+    window.addEventListener("click", handleGlobalClick);
+    return () => window.removeEventListener("click", handleGlobalClick);
+  }, []);
 
   useEffect(() => {
     fetchAllStaffData();
@@ -297,19 +331,56 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
 
   const filteredStaff = staffData
     .filter(staff => staff.role?.toUpperCase() !== "DEALER")
-    .filter(staff =>
-      staff.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      staff.email?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    .filter(staff => {
+      const term = searchQuery.toLowerCase();
+      const matchesSearch =
+        (staff.name || "").toLowerCase().includes(term) ||
+        (staff.email || "").toLowerCase().includes(term);
+
+      const matchesRole =
+        roleFilter === "ALL" ||
+        staff.role?.toUpperCase() === roleFilter.toUpperCase();
+
+      const statusVal = getStaffStatus(staff);
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        statusVal.toUpperCase() === statusFilter.toUpperCase();
+
+      const isLimited = staff.role?.toUpperCase() === "ADMIN_STAFF";
+      const matchesAccess =
+        accessFilter === "ALL" ||
+        (accessFilter === "FULL" && !isLimited) ||
+        (accessFilter === "LIMITED" && isLimited);
+
+      return matchesSearch && matchesRole && matchesStatus && matchesAccess;
+    });
 
   return (
-    <div style={{ width: "100%", minHeight: "100vh", background: "#f1f1f1", position: "relative" }}>
+    <div style={{ width: "100%", minHeight: "100vh", background: "#F9FAFB", position: "relative" }}>
       <style>{`
+        @keyframes staff-fadeInPage {
+          from { opacity: 0; transform: translateY(20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes staff-shimmer-anim {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes staff-fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes staff-slideIn {
+          from { opacity: 0; transform: scale(0.97) translateY(10px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
         .management-container {
           max-width: 1200px;
           margin: 0 auto;
           padding: 24px;
           font-family: 'Lexend', sans-serif;
+          animation: staff-fadeInPage 400ms ease-out forwards;
         }
         .header-row {
           display: flex;
@@ -318,8 +389,9 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
           margin-bottom: 24px;
         }
         .header-left h2 {
-          font-size: 24px;
-          font-weight: 600;
+          font-size: 28px;
+          font-weight: 700;
+          color: #0f172a;
           margin: 0;
         }
         .header-actions {
@@ -333,6 +405,11 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
           border-radius: 8px;
           padding: 8px;
           cursor: pointer;
+          transition: transform 0.2s ease, background-color 0.15s;
+        }
+        .icon-btn:hover {
+          transform: scale(1.05);
+          background-color: #f3f4f6;
         }
         .profile-chip {
           display: flex;
@@ -345,65 +422,186 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
         }
         .directory-box {
           background: #fff;
-          border-radius: 24px;
+          border-radius: 16px;
           padding: 24px;
           margin-top: 24px;
-          border: 1px solid #eee;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 1px 3px rgba(0,0,0,.02);
         }
         .search-bar {
           width: 100%;
-          padding: 12px 16px;
-          border: 1px solid #ddd;
-          border-radius: 12px;
+          padding: 10px 16px;
+          border: 1.5px solid #d1d5db;
+          border-radius: 10px;
           margin: 20px 0;
           font-size: 14px;
+          outline: none;
+          font-family: inherit;
+          background: #F9FAFB;
+          transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
+        }
+        .search-bar:focus {
+          border-color: #10b981;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
         }
         .staff-table {
           width: 100%;
-          border-collapse: collapse;
+          border-collapse: separate;
+          border-spacing: 0;
         }
         .staff-table th {
           text-align: left;
-          padding: 12px;
-          color: #111;
+          padding: 12px 14px;
+          color: #4B5563;
           font-weight: 600;
-          font-size: 14px;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          border-bottom: 1px solid #E5E7EB;
+          background: #F9FAFB;
         }
         .staff-table td {
           padding: 16px 12px;
-          border-bottom: 1px solid #f9f9f9;
+          border-bottom: 1px solid #E5E7EB;
           font-size: 14px;
+          color: #374151;
+          transition: background-color 0.2s ease;
         }
+        .staff-table tr td:first-child {
+          border-left: 3px solid transparent;
+          transition: border-left-color 0.2s ease, background-color 0.2s ease;
+        }
+        .staff-table tr:hover td { background: #F0FDF4 !important; }
+        .staff-table tr:hover td:first-child { border-left-color: #10b981; }
+
         .role-pill {
-          padding: 6px 16px;
+          padding: 4px 12px;
           border-radius: 20px;
-          font-size: 12px;
-          font-weight: 500;
+          font-size: 11px;
+          font-weight: 600;
+          border: 1px solid transparent;
         }
         .action-btns {
           display: flex;
           gap: 12px;
         }
-        .side-buttons {
-          position: fixed;
-          bottom: 24px;
-          left: 24px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          z-index: 100;
-        }
         .add-btn {
-          background: #111;
+          background: #111827;
           color: white;
           border: none;
-          padding: 12px 24px;
+          padding: 10px 20px;
           border-radius: 10px;
           cursor: pointer;
           font-weight: 600;
           font-size: 13px;
+          font-family: inherit;
+          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s, box-shadow 0.2s;
+        }
+        .add-btn:hover {
+          background: #374151;
+          transform: scale(1.03);
+          box-shadow: 0 4px 12px rgba(17, 24, 39, 0.15);
+        }
+        .add-btn:active {
+          transform: scale(0.97);
+        }
+
+        /* Drawer styles */
+        .staff-drawer-overlay {
+          position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+          backdrop-filter: blur(5px); z-index: 2000;
+          display: flex; justify-content: flex-end;
+          animation: staff-fadeIn 0.2s ease;
+        }
+        .staff-drawer {
+          width: 480px; max-width: 90vw; height: 100%; background: #fff;
+          box-shadow: -10px 0 30px rgba(0,0,0,0.08);
+          display: flex; flex-direction: column;
+          animation: staff-drawer-slide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          border-left: 1px solid #E5E7EB;
+        }
+        @keyframes staff-drawer-slide {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+        .staff-drawer-header {
+          padding: 24px; border-bottom: 1px solid #F3F4F6;
+          display: flex; justify-content: space-between; align-items: center;
+        }
+        .staff-drawer-title { margin: 0; font-size: 18px; font-weight: 700; color: #111827; }
+        .staff-drawer-subtitle { margin: 4px 0 0; font-size: 12px; color: #6B7280; }
+        .staff-drawer-body {
+          flex: 1; overflow-y: auto; padding: 24px;
+          display: flex; flex-direction: column; gap: 24px;
+        }
+        .staff-drawer-card {
+          background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 14px; padding: 16px;
+        }
+        .staff-drawer-metric {
+          background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px 16px;
+          display: flex; flex-direction: column; gap: 4px;
+        }
+        .staff-drawer-metric-label { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+        .staff-drawer-metric-val { font-size: 20px; font-weight: 700; color: #111827; }
+        .staff-drawer-section { display: flex; flex-direction: column; gap: 14px; }
+        .staff-drawer-section-title {
+          margin: 0; font-size: 14px; font-weight: 700; color: #111827;
+          border-bottom: 1.5px solid #F3F4F6; padding-bottom: 6px;
+          text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .staff-drawer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .staff-drawer-grid-item { display: flex; flex-direction: column; gap: 4px; }
+        .staff-drawer-item-label { font-size: 12px; color: #6B7280; font-weight: 500; }
+        .staff-drawer-item-value { font-size: 13px; color: #111827; font-weight: 600; }
+
+        /* Dropdown overflow menu styles */
+        .staff-dropdown-container {
+          position: relative;
+          display: inline-block;
+        }
+        .staff-dropdown-menu {
+          position: absolute;
+          right: 0;
+          top: 100%;
+          background: #fff;
+          border: 1px solid #E5E7EB;
+          border-radius: 10px;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+          z-index: 1000;
           width: 160px;
-          text-align: center;
+          padding: 6px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          animation: staff-fadeIn 0.15s ease;
+        }
+        .staff-dropdown-item {
+          background: none;
+          border: none;
+          text-align: left;
+          padding: 8px 12px;
+          font-size: 13px;
+          font-weight: 500;
+          color: #374151;
+          border-radius: 6px;
+          cursor: pointer;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .staff-dropdown-item:hover {
+          background-color: #F3F4F6;
+          color: #111827;
+        }
+        .staff-dropdown-item.danger {
+          color: #EF4444;
+        }
+        .staff-dropdown-item.danger:hover {
+          background-color: #FEF2F2;
+          color: #DC2626;
         }
       `}</style>
 
@@ -412,7 +610,7 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
           <div className="header-left">
             <h2>Management Console</h2>
           </div>
-          <button className="add-btn" style={{ width: "auto", background: "#111", color: "white" }} onClick={() => setIsFormOpen("add")}>Add Staff</button>
+          <button className="add-btn" onClick={() => setIsFormOpen("add")}>Add Staff</button>
         </div>
 
         <StaffSummaryCards stats={{ admins: summaryStats.admins, staff: summaryStats.staff }} />
@@ -421,13 +619,82 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Staff Directory</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>View and manage staff members and their permissions</p>
 
-          <input
-            type="text"
-            placeholder="Search"
-            className="search-bar"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <div style={{ display: "flex", gap: "12px", margin: "20px 0", flexWrap: "wrap", width: "100%" }}>
+            <div style={{ position: "relative", flex: 1, minWidth: "240px" }}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#6B7280"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)" }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search Staff..."
+                className="search-bar"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ margin: 0, paddingLeft: "38px", paddingRight: "32px", boxSizing: "border-box" }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  style={{
+                    position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: "16px"
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <select
+              style={{
+                height: "40px", padding: "0 12px", border: "1.5px solid #E5E7EB",
+                borderRadius: "10px", fontSize: "13px", outline: "none", background: "#fff",
+                cursor: "pointer", fontFamily: "inherit", color: "#374151"
+              }}
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="ALL">All Roles</option>
+              <option value="ADMIN">Administrator</option>
+              <option value="ADMIN_STAFF">Staff</option>
+            </select>
+            <select
+              style={{
+                height: "40px", padding: "0 12px", border: "1.5px solid #E5E7EB",
+                borderRadius: "10px", fontSize: "13px", outline: "none", background: "#fff",
+                cursor: "pointer", fontFamily: "inherit", color: "#374151"
+              }}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="SUSPENDED">Suspended</option>
+            </select>
+            <select
+              style={{
+                height: "40px", padding: "0 12px", border: "1.5px solid #E5E7EB",
+                borderRadius: "10px", fontSize: "13px", outline: "none", background: "#fff",
+                cursor: "pointer", fontFamily: "inherit", color: "#374151"
+              }}
+              value={accessFilter}
+              onChange={(e) => setAccessFilter(e.target.value)}
+            >
+              <option value="ALL">All Access</option>
+              <option value="FULL">Full Access</option>
+              <option value="LIMITED">Limited Access</option>
+            </select>
+          </div>
 
           {loading ? <LoadingSpinner /> : error ? <ErrorDisplay message={error} /> : (
             <table className="staff-table">
@@ -445,74 +712,108 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
                 {filteredStaff.map((staff) => {
                   const style = roleStyles[staff.role] || (staff.role?.includes('DEALER') ? roleStyles.Dealer : roleStyles.DEFAULT);
                   return (
-                    <tr key={staff.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                      <tr key={staff.id} style={{ cursor: "pointer" }}>
+                        <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: '#0f172a' }}>{staff.name || 'User Name'}</div>
+                              <div style={{ fontSize: 11, color: '#6B7280' }}>{staff.email || 'user@xyz.com'}</div>
+                            </div>
                           </div>
-                          <div>
-                            <div style={{ fontWeight: 600 }}>{staff.name || 'User Name'}</div>
-                            <div style={{ fontSize: 11, color: '#999' }}>{staff.email || 'user@xyz.com'}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="role-pill" style={{ background: style.background, color: style.color }}>
-                          {staff.role || 'Admin'}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', padding: '4px 12px',
-                          borderRadius: '999px', fontSize: '12px', fontWeight: 600,
-                          background: getStaffStatus(staff) === 'Active' ? '#D1FAE5' : '#FEE2E2',
-                          color: getStaffStatus(staff) === 'Active' ? '#065F46' : '#991B1B',
-                          border: `1px solid ${getStaffStatus(staff) === 'Active' ? '#A7F3D0' : '#FECACA'}`
-                        }}>
-                          {getStaffStatus(staff)}
-                        </span>
-                      </td>
-                      <td>{staff.lastLogin ? new Date(staff.lastLogin).toLocaleString() : '2024-01-15 14:30'}</td>
-                      <td>
-                        {staff.role?.toUpperCase() === "ADMIN_STAFF" ? (
-                          <PageAccessDropdown staff={staff} />
-                        ) : (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            padding: '4px 12px',
-                            borderRadius: '999px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: '#FEF3C7',
-                            color: '#D97706',
-                            border: '1px solid #FDE68A'
+                        </td>
+                        <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                          <span className="role-pill" style={{
+                            background: style.background === '#D1FAE5' ? '#ECFDF5' : style.background === '#DBEAFE' ? '#E0F2FE' : '#F3F4F6',
+                            color: style.color === '#065F46' ? '#0369A1' : style.color,
+                            border: `1px solid ${style.background === '#D1FAE5' ? '#A7F3D0' : style.background === '#DBEAFE' ? '#BAE6FD' : '#E5E7EB'}`
                           }}>
-                            Full Access
+                            {staff.role || 'Admin'}
                           </span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="action-btns">
-                          <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => { setEditingStaff(staff); setIsFormOpen('edit'); }}>
-                            <img src={editIcon} alt="Edit" style={{ width: 18 }} />
-                          </button>
-                          <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                            title="Delete"
-                            onClick={() => handleDeleteStaff(staff)}
-                          >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              <line x1="10" y1="11" x2="10" y2="17" />
-                              <line x1="14" y1="11" x2="14" y2="17" />
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                        <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px',
+                            borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                            background: getStaffStatus(staff) === 'Active' ? '#ECFDF5' : '#FEF2F2',
+                            color: getStaffStatus(staff) === 'Active' ? '#065F46' : '#991B1B',
+                            border: `1px solid ${getStaffStatus(staff) === 'Active' ? '#A7F3D0' : '#FECACA'}`
+                          }}>
+                            <span style={{
+                              width: 6, height: 6, borderRadius: '50%',
+                              background: getStaffStatus(staff) === 'Active' ? '#10B981' : '#EF4444',
+                              flexShrink: 0
+                            }} />
+                            {getStaffStatus(staff)}
+                          </span>
+                        </td>
+                        <td onClick={() => setSelectedStaffForDrawer(staff)}>{staff.lastLogin ? new Date(staff.lastLogin).toLocaleString() : '2024-01-15 14:30'}</td>
+                        <td>
+                          {staff.role?.toUpperCase() === "ADMIN_STAFF" ? (
+                            <PageAccessDropdown staff={staff} />
+                          ) : (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              padding: '4px 12px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              background: '#FEF3C7',
+                              color: '#D97706',
+                              border: '1px solid #FDE68A'
+                            }} onClick={() => setSelectedStaffForDrawer(staff)}>
+                              Full Access
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="staff-dropdown-container">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDropdownId(activeDropdownId === staff.id ? null : staff.id);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                padding: '6px 12px',
+                                fontSize: '18px',
+                                fontWeight: 'bold',
+                                color: '#64748B',
+                                borderRadius: '6px',
+                                transition: 'background-color 0.2s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              ⋮
+                            </button>
+                            {activeDropdownId === staff.id && (
+                              <div className="staff-dropdown-menu">
+                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setSelectedStaffForDrawer(staff); setActiveDropdownId(null); }}>
+                                  👁️ View Details
+                                </button>
+                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
+                                  ✏️ Edit Staff
+                                </button>
+                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
+                                  🔑 Reset Password
+                                </button>
+                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
+                                  🎭 Change Role
+                                </button>
+                                <button className="staff-dropdown-item danger" onClick={(e) => { e.stopPropagation(); handleDeleteStaff(staff); setActiveDropdownId(null); }}>
+                                  🗑️ Delete Staff
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                   );
                 })}
               </tbody>
@@ -529,6 +830,120 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
           {isFormOpen === "edit" && <StaffEditForm staff={editingStaff} onClose={closeForm} />}
         </div>
       )}
+
+      {/* Staff Details Drawer */}
+      {selectedStaffForDrawer && (
+        <StaffDrawer
+          staff={selectedStaffForDrawer}
+          onClose={() => setSelectedStaffForDrawer(null)}
+          getStaffStatus={getStaffStatus}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Staff Details Drawer Component ───────────────────────────────────────────
+function StaffDrawer({ staff, onClose, getStaffStatus }) {
+  if (!staff) return null;
+  const isSuspended = getStaffStatus(staff) === "Suspended";
+  const initials = (staff.name || "S").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const isLimited = staff.role?.toUpperCase() === "ADMIN_STAFF";
+
+  return (
+    <div className="staff-drawer-overlay" onClick={onClose}>
+      <div className="staff-drawer" onClick={e => e.stopPropagation()}>
+        <div className="staff-drawer-header">
+          <div>
+            <h3 className="staff-drawer-title">Staff Profile</h3>
+            <p className="staff-drawer-subtitle">Detailed view of staff details & operations</p>
+          </div>
+          <button className="dl-close-btn" style={{ fontSize: "16px", padding: "6px" }} onClick={onClose}>✕</button>
+        </div>
+        <div className="staff-drawer-body">
+          {/* Card Info */}
+          <div className="staff-drawer-card" style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{
+              width: 54, height: 54, borderRadius: "50%", background: "#ECFDF5",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 700, color: "#10b981", fontSize: 18, border: "1px solid rgba(16, 185, 129, 0.2)"
+            }}>
+              {initials}
+            </div>
+            <div>
+              <h4 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#111827" }}>{staff.name || "—"}</h4>
+              <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6B7280" }}>{staff.email || "—"}</p>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="staff-drawer-metric">
+              <span className="staff-drawer-metric-label">Access Level</span>
+              <span className="staff-drawer-metric-val" style={{ color: isLimited ? "#D97706" : "#10b981", fontSize: "14px" }}>
+                {isLimited ? "Limited Access" : "Full Access"}
+              </span>
+            </div>
+            <div className="staff-drawer-metric">
+              <span className="staff-drawer-metric-label">Status</span>
+              <span className="staff-drawer-metric-val" style={{ color: isSuspended ? "#EF4444" : "#10b981", fontSize: "14px" }}>
+                {isSuspended ? "Suspended" : "Active"}
+              </span>
+            </div>
+          </div>
+
+          {/* Staff Information */}
+          <div className="staff-drawer-section">
+            <h4 className="staff-drawer-section-title">Staff Details</h4>
+            <div className="staff-drawer-grid">
+              <div className="staff-drawer-grid-item">
+                <span className="staff-drawer-item-label">Mobile Number</span>
+                <span className="staff-drawer-item-value">{staff.mobile || "—"}</span>
+              </div>
+              <div className="staff-drawer-grid-item">
+                <span className="staff-drawer-item-label">Role</span>
+                <span className="staff-drawer-item-value">{staff.role || "ADMIN"}</span>
+              </div>
+              <div className="staff-drawer-grid-item">
+                <span className="staff-drawer-item-label">Created Date</span>
+                <span className="staff-drawer-item-value">
+                  {staff.createdAt ? new Date(staff.createdAt).toLocaleDateString() : "2024-01-10"}
+                </span>
+              </div>
+              <div className="staff-drawer-grid-item">
+                <span className="staff-drawer-item-label">Last Login</span>
+                <span className="staff-drawer-item-value" style={{ fontSize: "12px" }}>
+                  {staff.lastLogin ? new Date(staff.lastLogin).toLocaleString() : "2024-01-15 14:30"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Timeline Section */}
+          <div className="staff-drawer-section">
+            <h4 className="staff-drawer-section-title">Activity Timeline</h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingLeft: 8, marginTop: 8 }}>
+              {[
+                { time: "Just now", event: "Staff details viewed" },
+                { time: "Yesterday", event: "Permissions configuration updated" },
+                { time: "5 days ago", event: "Staff logged in successfully" }
+              ].map((item, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 12, position: "relative" }}>
+                  {idx < 2 && (
+                    <div style={{ position: "absolute", left: 4, top: 12, bottom: -20, width: 2, background: "#E5E7EB" }} />
+                  )}
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#10b981", border: "2.5px solid #fff", zIndex: 1, marginTop: 4, boxShadow: "0 0 0 1px #10b981" }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{item.event}</div>
+                    <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{item.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
