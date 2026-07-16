@@ -105,10 +105,10 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
     {
       title: "Order Management",
       items: [
-        { 
-          name: "Order Tracking", 
-          icon: sessionsIcon, 
-          path: "/dashboard/orders", 
+        {
+          name: "Order Tracking",
+          icon: sessionsIcon,
+          path: "/dashboard/orders",
           roles: ["ADMIN", "ADMIN_STAFF"],
           getPendingCount: async (baseUrl, token) => {
             try {
@@ -393,7 +393,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
                     fontWeight: 600,
                     cursor: "pointer",
                     transition: "all 0.2s ease-in-out",
-                    backgroundColor: isActive ? "#000" : "transparent",
+                    backgroundColor: isActive ? "#10b86feb" : "transparent",
                     color: isActive ? "#fff" : "#000",
                     textDecoration: "none",
                   })}

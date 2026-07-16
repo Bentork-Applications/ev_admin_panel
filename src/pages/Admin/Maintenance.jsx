@@ -252,10 +252,12 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
       <style>{`
         .maintenance-dashboard-container {
           width: 100%;
-          background: #f1f1f1;
+          background: #F9FAFB;
           padding: 24px;
           box-sizing: border-box;
           font-family: 'Lexend', sans-serif;
+          min-height: 100vh;
+          animation: maintenance-fadeInPage 400ms ease-out forwards;
         }
 
         @media (max-width: 1024px) {
@@ -290,93 +292,89 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 24px;
+          margin-bottom: 28px;
         }
 
         .header-left h2 {
-          font-size: 24px;
-          font-weight: 600;
-          color: #1a1a1a;
+          font-size: 28px;
+          font-weight: 700;
+          color: #111827;
           margin: 0;
         }
 
-        .header-actions {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-        }
-
-        .icon-btn {
-          background: #fff;
-          border: 1px solid #e0e0e0;
-          border-radius: 8px;
-          padding: 8px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .profile-chip {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: #fff;
-          padding: 6px 12px;
-          border-radius: 20px;
-          border: 1px solid #e0e0e0;
+        .header-left p {
+          font-size: 13px;
+          color: #6B7280;
+          margin: 4px 0 0 0;
         }
 
         .maint-btn {
-          padding: 10px 20px;
-          background: #111;
+          height: 40px;
+          padding: 0 20px;
+          background: #111827;
           color: white;
           border: none;
-          border-radius: 8px;
+          border-radius: 20px;
           cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
+          font-size: 13px;
+          font-weight: 600;
+          transition: all 0.2s ease;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .maint-btn:hover {
+          background: #374151;
+          transform: translateY(-1px);
         }
 
         .stats-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 20px;
-          margin-bottom: 24px;
+          gap: 24px;
+          margin-bottom: 28px;
         }
 
         .stat-card {
           background: #fff;
           border-radius: 16px;
           padding: 24px;
-          border: 1px solid #eee;
+          border: 1px solid #E5E7EB;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          height: 120px;
+          height: 140px;
+          box-sizing: border-box;
+          transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
         }
 
-        .stat-label {
-          font-size: 14px;
-          color: #666;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+        .stat-card:hover {
+          transform: translateY(-5px) scale(1.02);
+          box-shadow: 0 12px 24px rgba(0,0,0,0.08);
+          border-color: #10b981;
         }
 
         .stat-value {
           font-size: 32px;
           font-weight: 700;
-          color: #111;
-          margin-top: 8px;
+          color: #111827;
+          line-height: 1;
         }
 
         .graph-container {
           background: #fff;
           border-radius: 16px;
           padding: 24px;
-          border: 1px solid #eee;
-          margin-bottom: 24px;
+          border: 1px solid #E5E7EB;
+          margin-bottom: 28px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .graph-container:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 12px 24px rgba(0,0,0,0.08);
         }
 
         .graph-header {
@@ -388,9 +386,11 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
 
         .records-section {
           background: #fff;
-          border-radius: 24px;
+          border-radius: 16px;
           padding: 24px;
-          border: 1px solid #eee;
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          margin-bottom: 28px;
         }
 
         .records-header {
@@ -409,41 +409,47 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
         .records-table th {
           text-align: left;
           padding: 12px 16px;
-          color: #666;
-          font-weight: 500;
+          color: #4B5563;
+          font-weight: 600;
           font-size: 13px;
-          border-bottom: 1px solid #f0f0f0;
+          border-bottom: 1.5px solid #F3F4F6;
+          background: #F9FAFB;
         }
 
         .records-table td {
           padding: 16px;
           font-size: 14px;
-          color: #333;
-          border-bottom: 1px solid #f0f0f0;
+          color: #374151;
+          border-bottom: 1px solid #F3F4F6;
+          transition: background-color 0.2s;
         }
 
-        .status-badge {
-          display: inline-block;
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 500;
-          background: #ffe5ea;
-          color: #ff3b5c;
+        .records-table tr {
+          border-left: 3px solid transparent;
+        }
+        .records-table tr:hover td {
+          background-color: #F0FDF4 !important;
+        }
+        .records-table tr:hover td:first-child {
+          border-left: 3px solid #10b981;
         }
 
         .action-btn {
           padding: 6px 14px;
           background: #fff;
-          border: 1px solid #ddd;
+          border: 1.5px solid #E5E7EB;
           border-radius: 8px;
           cursor: pointer;
           font-size: 13px;
+          font-weight: 600;
+          color: #374151;
           transition: all 0.2s;
         }
 
         .action-btn:hover {
-          background: #f5f5f5;
+          background: #F9FAFB;
+          border-color: #10B981;
+          color: #10B981;
         }
 
         .modal-overlay {
@@ -452,7 +458,8 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0,0,0,0.5);
+          background: rgba(0,0,0,0.4);
+          backdrop-filter: blur(4px);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -465,32 +472,50 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
           border-radius: 16px;
           width: 500px;
           max-width: 90%;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+          border: 1px solid #E5E7EB;
+        }
+        .modal-content h3 {
+          margin: 0 0 24px;
+          font-size: 18px;
+          font-weight: 700;
+          color: #111827;
         }
 
         .form-group {
-          margin-bottom: 16px;
+          margin-bottom: 20px;
         }
 
         .form-group label {
           display: block;
           margin-bottom: 6px;
-          font-size: 14px;
-          color: #333;
+          font-size: 13px;
+          font-weight: 600;
+          color: #374151;
         }
 
         .form-group input {
           width: 100%;
-          padding: 10px;
-          border: 1px solid #ddd;
-          border-radius: 8px;
+          height: 40px;
+          padding: 0 12px;
+          border: 1.5px solid #E5E7EB;
+          border-radius: 10px;
           outline: none;
+          box-sizing: border-box;
+          font-family: inherit;
+          font-size: 13px;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus {
+          border-color: #10B981;
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
         }
 
         .form-actions {
           display: flex;
           justify-content: flex-end;
           gap: 12px;
-          margin-top: 24px;
+          margin-top: 28px;
         }
 
         .switch-maint-container {
@@ -501,20 +526,37 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
         }
 
         .switch-maint-btn {
-          background: #111;
+          background: #111827;
           color: white;
           padding: 12px 24px;
           border-radius: 30px;
           border: none;
           cursor: pointer;
           font-weight: 600;
-          font-size: 14px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-          transition: transform 0.2s;
+          font-size: 13px;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+          transition: transform 0.2s, background-color 0.2s;
         }
 
         .switch-maint-btn:hover {
           transform: translateY(-2px);
+          background-color: #374151;
+        }
+
+        @keyframes maintenance-fadeInPage {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes maint-shimmer-anim {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .maint-skeleton-shimmer {
+          background: linear-gradient(90deg, #F3F4F6 25%, #E5E7EB 50%, #F3F4F6 75%);
+          background-size: 200% 100%;
+          animation: maint-shimmer-anim 1.5s infinite linear;
+          height: 16px;
+          border-radius: 4px;
         }
       `}</style>
 
@@ -522,37 +564,129 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
         <div className="top-header">
           <div className="header-left">
             <h2>Emergency & Maintenance</h2>
+            <p>Monitor emergency requests, status, and service activity</p>
           </div>
-
+          {/* UI filter tabs */}
+          <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "8px", padding: "2px", gap: "2px" }}>
+            {["Today", "This Week", "This Month", "This Year"].map((tab) => {
+              const active = tab === "This Month";
+              return (
+                <button
+                  key={tab}
+                  style={{
+                    border: "none",
+                    background: active ? "#fff" : "transparent",
+                    color: active ? "#111827" : "#6B7280",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    boxShadow: active ? "0 1px 2px rgba(0,0,0,0.05)" : "none"
+                  }}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="stats-grid">
-          <div className="stat-card">
-            <span className="stat-label">Active Cases <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></span>
-            <span className="stat-value">14</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Scheduled Today <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span>
-            <span className="stat-value">1</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">In Progress <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M12 2v4" /><path d="M12 18v4" /><path d="M4.93 4.93l2.83 2.83" /><path d="M16.24 16.24l2.83 2.83" /><path d="M2 12h4" /><path d="M18 12h4" /><path d="M4.93 19.07l2.83-2.83" /><path d="M16.24 7.76l2.83-2.83" /></svg></span>
-            <span className="stat-value">1</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Completed This Week <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#db2777" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg></span>
-            <span className="stat-value">3</span>
-          </div>
+          {[
+            {
+              label: "Active Cases",
+              value: 14,
+              color: "#3b82f6",
+              trend: "Critical urgent cases",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              )
+            },
+            {
+              label: "Scheduled Today",
+              value: 1,
+              color: "#10b981",
+              trend: "Planned runs",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              )
+            },
+            {
+              label: "In Progress",
+              value: 1,
+              color: "#f59e0b",
+              trend: "Currently active tasks",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5">
+                  <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                  <path d="M12 6v6l4 2" />
+                </svg>
+              )
+            },
+            {
+              label: "Completed",
+              value: 3,
+              color: "#db2777",
+              trend: "Resolved this week",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#db2777" strokeWidth="2.5">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+              )
+            }
+          ].map((card, idx) => (
+            <div className="stat-card" key={idx}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
+                <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                  <div style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    background: `${card.color}15`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}>
+                    {card.icon}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <span className="stat-label-text" style={{ fontSize: "13px", fontWeight: 600, color: "#6B7280" }}>{card.label}</span>
+                    <span style={{ fontSize: "11px", color: "#9CA3AF", marginTop: "2px", fontWeight: 500 }}>{card.trend}</span>
+                  </div>
+                </div>
+                <div style={{ color: "#9CA3AF", fontSize: "14px", fontWeight: "bold" }}>↗</div>
+              </div>
+              <span className="stat-value" style={{ marginTop: "12px", paddingLeft: "4px", display: "block" }}>
+                <AnimatedNumber value={card.value} />
+              </span>
+            </div>
+          ))}
         </div>
 
         <div className="graph-container">
           <div className="graph-header">
             <div>
-              <h3 style={{ margin: 0, fontSize: 16 }}>Graphical Overview</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>Real-time monitoring data</p>
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111827" }}>Graphical Overview</h3>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6B7280' }}>Real-time monitoring emergency logs</p>
             </div>
-            <div className="icon-btn">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "12px", fontWeight: 500 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981" }} />
+                <span style={{ color: "#4B5563" }}>Emergency Cases</span>
+              </div>
             </div>
           </div>
           <div style={{ width: '100%', height: 250 }}>
@@ -560,15 +694,24 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
               <AreaChart data={data}>
                 <defs>
                   <linearGradient id="colorCases" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8884d8" stopOpacity={0.1} />
-                    <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} dy={10} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#6B7280" }} dy={10} />
                 <YAxis hide />
                 <Tooltip />
-                <Area type="monotone" dataKey="cases" stroke="#8884d8" fillOpacity={1} fill="url(#colorCases)" strokeWidth={3} />
+                <Area
+                  type="monotone"
+                  dataKey="cases"
+                  stroke="#10B981"
+                  fillOpacity={1}
+                  fill="url(#colorCases)"
+                  strokeWidth={3}
+                  isAnimationActive={true}
+                  animationDuration={800}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -576,17 +719,36 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
 
         <div className="records-section">
           <div className="records-header">
-            <h3 style={{ margin: 0, fontSize: 18 }}>Emergency Contacts</h3>
+            <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#111827" }}>Emergency Contacts</h3>
             {!isDealer && (
               <button className="maint-btn" onClick={() => handleOpenModal()}>Add Contact</button>
             )}
           </div>
 
           {loading ? (
-            <div style={{ textAlign: "center", padding: "40px" }}>
-              <div style={{ display: 'inline-block', width: 24, height: 24, border: '3px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: 12 }}></div>
-              <div style={{ color: '#64748b' }}>Loading contacts...</div>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{ overflowX: "auto" }}>
+              <table className="records-table">
+                <thead>
+                  <tr>
+                    <th>Station Name</th>
+                    <th>Station ID</th>
+                    <th>CPO Phone Number</th>
+                    <th>Company Support Number</th>
+                    {!isDealer && <th>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...Array(3)].map((_, idx) => (
+                    <tr key={idx}>
+                      <td><div className="maint-skeleton-shimmer" style={{ width: "150px" }} /></td>
+                      <td><div className="maint-skeleton-shimmer" style={{ width: "80px" }} /></td>
+                      <td><div className="maint-skeleton-shimmer" style={{ width: "120px" }} /></td>
+                      <td><div className="maint-skeleton-shimmer" style={{ width: "120px" }} /></td>
+                      {!isDealer && <td><div className="maint-skeleton-shimmer" style={{ width: "100px" }} /></td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : error ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 16 }}>
@@ -742,3 +904,28 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
     </>
   );
 }
+
+// ─── Stat Card Number Count Up Animation ─────────────────────────────────────
+const AnimatedNumber = ({ value }) => {
+  const [current, setCurrent] = useState(0);
+  useEffect(() => {
+    const target = parseInt(value, 10) || 0;
+    if (target === 0) {
+      setCurrent(0);
+      return;
+    }
+    let start = 0;
+    const duration = 400; // ms
+    const stepTime = Math.max(Math.floor(duration / target), 15);
+    const timer = setInterval(() => {
+      start += 1;
+      setCurrent(start);
+      if (start >= target) {
+        setCurrent(target);
+        clearInterval(timer);
+      }
+    }, stepTime);
+    return () => clearInterval(timer);
+  }, [value]);
+  return <>{current}</>;
+};

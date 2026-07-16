@@ -919,29 +919,6 @@ function StaffDrawer({ staff, onClose, getStaffStatus }) {
             </div>
           </div>
 
-          {/* Timeline Section */}
-          <div className="staff-drawer-section">
-            <h4 className="staff-drawer-section-title">Activity Timeline</h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingLeft: 8, marginTop: 8 }}>
-              {[
-                { time: "Just now", event: "Staff details viewed" },
-                { time: "Yesterday", event: "Permissions configuration updated" },
-                { time: "5 days ago", event: "Staff logged in successfully" }
-              ].map((item, idx) => (
-                <div key={idx} style={{ display: "flex", gap: 12, position: "relative" }}>
-                  {idx < 2 && (
-                    <div style={{ position: "absolute", left: 4, top: 12, bottom: -20, width: 2, background: "#E5E7EB" }} />
-                  )}
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#10b981", border: "2.5px solid #fff", zIndex: 1, marginTop: 4, boxShadow: "0 0 0 1px #10b981" }} />
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{item.event}</div>
-                    <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>{item.time}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
         </div>
       </div>
     </div>
