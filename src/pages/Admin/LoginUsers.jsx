@@ -619,7 +619,7 @@ function LoginUsers({ baseUrl }) {
 
       <div className="header-row">
         <div>
-          <h2 className="page-title">Login Users Management</h2>
+          <h2 className="page-title">User Accounts</h2>
           <p className="page-subtitle">Monitor user registrations, authentication methods, and account states</p>
         </div>
       </div>
@@ -627,9 +627,9 @@ function LoginUsers({ baseUrl }) {
       <div className="stats-grid">
         <StatCard title="Total Users" value={summary.total} icon={totalIcon} trend="+12% this month" color="#3b82f6" />
         <StatCard title="Active Users" value={summary.active} icon={activeIcon} trend="98% active rate" color="#10b981" />
-        <StatCard title="Google Login" value={summary.google} icon={uptimeIcon} trend="Google OAuth" color="#6366f1" />
-        <StatCard title="Manual Login" value={summary.manual} icon={errorIcon} trend="Email & Password" color="#f59e0b" />
-        <StatCard title="Truecaller Login" value={summary.truecaller} icon={uptimeIcon} trend="Mobile OTP Auth" color="#0ea5e9" />
+        <StatCard title="Signed up via Google" value={summary.google} icon={uptimeIcon} trend="Google OAuth" color="#6366f1" />
+        <StatCard title="Signed up via Email/Password" value={summary.manual} icon={errorIcon} trend="Email & Password" color="#f59e0b" />
+        <StatCard title="Signed up via Truecaller" value={summary.truecaller} icon={uptimeIcon} trend="Mobile OTP Auth" color="#0ea5e9" />
       </div>
 
       {chartData.length > 0 ? (
@@ -670,11 +670,11 @@ function LoginUsers({ baseUrl }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", flexWrap: "wrap", gap: 16 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#111827', display: "flex", alignItems: "center", gap: 8 }}>
-                <span>📈</span> User Login Analytics
+                <span>📈</span> New User Sign-ups (Last 7 Days)
               </h3>
-              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6B7280' }}>Daily login trends and active users</p>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6B7280' }}>Daily count of new users registered on the platform.</p>
             </div>
-            
+
             <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
               {/* Legend */}
               <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: "12px", fontWeight: 500 }}>
@@ -759,7 +759,7 @@ function LoginUsers({ baseUrl }) {
 
       <div className="table-section">
         <div className="table-header-controls" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, width: "100%", flexWrap: "wrap" }}>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#111827' }}>Registered Users</h3>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#111827' }}>All Registered Users</h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", flex: 1, justifyContent: "flex-end", minWidth: "300px" }}>
             <div style={{ position: "relative", width: "100%", maxWidth: "320px" }}>
               <svg
@@ -778,7 +778,7 @@ function LoginUsers({ baseUrl }) {
               </svg>
               <input
                 type="text"
-                placeholder="Search User..."
+                placeholder="Search by name, email, mobile number, or login method"
                 className="search-bar"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -841,12 +841,12 @@ function LoginUsers({ baseUrl }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>User Name</th>
-                <th>Email</th>
-                <th>Mobile Number</th>
-                <th>Login Method</th>
-                <th>Created Date</th>
+                <th>User ID</th>
+                <th>Name</th>
+                <th>Email Address</th>
+                <th>Phone Number</th>
+                <th>Sign-up Method</th>
+                <th>Registered On</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -877,7 +877,7 @@ function LoginUsers({ baseUrl }) {
                     <td onClick={() => setSelectedUserForDrawer(user)}>{user.mobile || "—"}</td>
                     <td onClick={() => setSelectedUserForDrawer(user)}>
                       <span className={`method-badge ${user.password ? 'method-manual' : (user.mobile ? 'method-truecaller' : 'method-google')}`}>
-                        {user.password ? "Manual Login" : (user.mobile ? "Truecaller Login" : "Google Login")}
+                        {user.password ? "Email/Password" : (user.mobile ? "Truecaller" : "Google")}
                       </span>
                     </td>
                     <td onClick={() => setSelectedUserForDrawer(user)}>{new Date(user.createdAt).toLocaleDateString()}</td>
@@ -1062,7 +1062,7 @@ function UserDrawer({ user, onClose, getUserStatus }) {
   if (!user) return null;
   const isSuspended = getUserStatus(user) === "Suspended";
   const initials = (user.name || "U").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  const method = user.password ? "Manual Login" : (user.mobile ? "Truecaller Login" : "Google Login");
+  const method = user.password ? "Email/Password" : (user.mobile ? "Truecaller" : "Google");
 
   return (
     <div className="user-drawer-overlay" onClick={onClose}>

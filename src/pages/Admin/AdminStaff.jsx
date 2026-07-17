@@ -608,16 +608,16 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
       <div className="management-container">
         <div className="header-row">
           <div className="header-left">
-            <h2>Management Console</h2>
+            <h2>Admin Staff Management</h2>
           </div>
-          <button className="add-btn" onClick={() => setIsFormOpen("add")}>Add Staff</button>
+          <button className="add-btn" onClick={() => setIsFormOpen("add")}>Add Staff Member</button>
         </div>
 
         <StaffSummaryCards stats={{ admins: summaryStats.admins, staff: summaryStats.staff }} />
 
         <div className="directory-box">
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Staff Directory</h3>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>View and manage staff members and their permissions</p>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#666' }}>View, edit, or remove staff accounts and manage their page access</p>
 
           <div style={{ display: "flex", gap: "12px", margin: "20px 0", flexWrap: "wrap", width: "100%" }}>
             <div style={{ position: "relative", flex: 1, minWidth: "240px" }}>
@@ -637,7 +637,7 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
               </svg>
               <input
                 type="text"
-                placeholder="Search Staff..."
+                placeholder="Search by name or email"
                 className="search-bar"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -705,7 +705,7 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
                   <th>Status</th>
                   <th>Last Login</th>
                   <th>Page Access</th>
-                  <th>Action</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -730,7 +730,7 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
                             color: style.color === '#065F46' ? '#0369A1' : style.color,
                             border: `1px solid ${style.background === '#D1FAE5' ? '#A7F3D0' : style.background === '#DBEAFE' ? '#BAE6FD' : '#E5E7EB'}`
                           }}>
-                            {staff.role || 'Admin'}
+                          {staff.role === 'ADMIN' || staff.role === 'admin' ? 'Administrator' : staff.role === 'ADMIN_STAFF' || staff.role === 'admin_staff' ? 'Staff' : staff.role || 'Admin'}
                           </span>
                         </td>
                         <td onClick={() => setSelectedStaffForDrawer(staff)}>
@@ -902,7 +902,7 @@ function StaffDrawer({ staff, onClose, getStaffStatus }) {
               </div>
               <div className="staff-drawer-grid-item">
                 <span className="staff-drawer-item-label">Role</span>
-                <span className="staff-drawer-item-value">{staff.role || "ADMIN"}</span>
+                <span className="staff-drawer-item-value">{staff.role === 'ADMIN' || staff.role === 'admin' ? 'Administrator' : staff.role === 'ADMIN_STAFF' || staff.role === 'admin_staff' ? 'Staff' : staff.role || 'Administrator'}</span>
               </div>
               <div className="staff-drawer-grid-item">
                 <span className="staff-drawer-item-label">Created Date</span>

@@ -8,39 +8,70 @@ import editIcon from "../../assets/icons/stationicon/edit.svg";
 import deleteIcon from "../../assets/icons/stationicon/red.svg";
 import plusIcon from "../../assets/icons/stafficon/plus.svg";
 
-
-
-
+// ── Shimmer Skeleton Loader ───────────────────────────────────────────────────
 const LoadingSpinner = () => (
-  <div className="loading-spinner">
-    <div className="spinner"></div>
-    <p>Loading café configurations...</p>
+  <div style={{ padding: "8px 0" }}>
+    {[...Array(5)].map((_, i) => (
+      <div
+        key={i}
+        style={{
+          height: "56px",
+          borderRadius: "10px",
+          marginBottom: "8px",
+          background: "linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)",
+          backgroundSize: "200% 100%",
+          animation: `cc-shimmer 1.4s ease infinite`,
+          animationDelay: `${i * 0.07}s`,
+        }}
+      />
+    ))}
   </div>
 );
 
+// ── Premium Modal Component ───────────────────────────────────────────────────
 const Modal = ({ children, onClose }) => (
-  <div className="modal-overlay" onClick={onClose}>
-    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+  <div className="cc-modal-overlay" onClick={onClose}>
+    <div className="cc-modal-content" onClick={(e) => e.stopPropagation()}>
       {children}
     </div>
   </div>
 );
 
+// ── Animated Counter ──────────────────────────────────────────────────────────
+const AnimatedNumber = ({ value }) => {
+  const [current, setCurrent] = useState(0);
+  useEffect(() => {
+    const target = parseInt(value, 10) || 0;
+    if (target === 0) { setCurrent(0); return; }
+    let start = 0;
+    const stepTime = Math.max(Math.floor(500 / target), 10);
+    const timer = setInterval(() => {
+      start += Math.ceil(target / 40);
+      if (start >= target) { setCurrent(target); clearInterval(timer); }
+      else setCurrent(start);
+    }, stepTime);
+    return () => clearInterval(timer);
+  }, [value]);
+  return <>{current}</>;
+};
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function CafeConfig({ baseUrl }) {
   const navigate = useNavigate();
+
+  // ── All state preserved exactly ───────────────────────────────────────────
   const [cafes, setCafes] = useState([]);
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Section states
   const [activeTab, setActiveTab] = useState("Cafe");
   const [addSectionType, setAddSectionType] = useState("Cafe");
   const [editSectionType, setEditSectionType] = useState("Cafe");
   const [isAddDropdownOpen, setIsAddDropdownOpen] = useState(false);
 
-  // Helper functions to manage sections
+  // ── All helper functions preserved exactly ────────────────────────────────
   const getSectionFromCafe = (cafe) => {
     if (cafe && cafe.category) {
       const cat = cafe.category.trim().toLowerCase();
@@ -48,7 +79,6 @@ export default function CafeConfig({ baseUrl }) {
       if (cat === "mall") return "Mall";
       return "Cafe";
     }
-    // Fallback to name prefix check for backward compatibility with prefix-tagged items
     if (cafe && cafe.name) {
       if (cafe.name.startsWith("[Restaurant] ")) return "Restaurant";
       if (cafe.name.startsWith("[Mall] ")) return "Mall";
@@ -64,19 +94,17 @@ export default function CafeConfig({ baseUrl }) {
     return name;
   };
 
-  // Modal control states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedCafe, setSelectedCafe] = useState(null);
 
-  // Form states
   const [formData, setFormData] = useState({
     stationId: "",
     name: "",
     address: "",
     latitude: "",
     longitude: "",
-    rating: "5.0", // Maps to Ranking Priority
+    rating: "5.0",
     isOpen: true,
     googleMapLocation: "",
     googleMapImageUrl: "",
@@ -86,14 +114,12 @@ export default function CafeConfig({ baseUrl }) {
   const [formErrors, setFormErrors] = useState({});
   const [formSubmitting, setFormSubmitting] = useState(false);
 
+  // ── All useEffects / API calls preserved exactly ──────────────────────────
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       const token = localStorage.getItem("token");
-      if (!token) {
-        navigate("/");
-        return;
-      }
+      if (!token) { navigate("/"); return; }
 
       const headers = {
         Authorization: `Bearer ${token}`,
@@ -101,23 +127,18 @@ export default function CafeConfig({ baseUrl }) {
       };
 
       try {
-        // Fetch All Admin Cafes
         const cafeRes = await fetch(`${baseUrl}/cafes/all`, { headers });
         if (cafeRes.status === 401 || cafeRes.status === 403) {
           localStorage.removeItem("token");
           navigate("/");
           return;
         }
-
         const cafeData = await cafeRes.json();
-        // The café with the highest ranking (rating) should display first.
-        // We sort descending by rating.
         const sortedCafes = Array.isArray(cafeData)
           ? cafeData.sort((a, b) => (b.rating || 0) - (a.rating || 0))
           : [];
         setCafes(sortedCafes);
 
-        // Fetch Stations for the dropdown
         const stationRes = await fetch(`${baseUrl}/stations/all`, { headers });
         if (stationRes.ok) {
           const stationData = await stationRes.json();
@@ -132,11 +153,10 @@ export default function CafeConfig({ baseUrl }) {
         setLoading(false);
       }
     };
-
     fetchData();
   }, [baseUrl, navigate, refreshKey]);
 
-  // Handle open Add Modal
+  // ── All modal / form handlers preserved exactly ───────────────────────────
   const openAddModal = (type = "Cafe") => {
     setAddSectionType(type);
     setFormData({
@@ -155,7 +175,6 @@ export default function CafeConfig({ baseUrl }) {
     setIsAddModalOpen(true);
   };
 
-  // Handle open Edit Modal
   const openEditModal = (cafe) => {
     setSelectedCafe(cafe);
     const type = getSectionFromCafe(cafe);
@@ -176,7 +195,6 @@ export default function CafeConfig({ baseUrl }) {
     setIsEditModalOpen(true);
   };
 
-  // Form Input Change Handler
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
@@ -185,42 +203,33 @@ export default function CafeConfig({ baseUrl }) {
     }));
   };
 
-  // Validate the Form Data
   const validateForm = () => {
     const errors = {};
-    const sectionName = (isEditModalOpen ? editSectionType : addSectionType) === "Cafe" ? "Café" : (isEditModalOpen ? editSectionType : addSectionType);
+    const sectionName = (isEditModalOpen ? editSectionType : addSectionType) === "Cafe"
+      ? "Café"
+      : (isEditModalOpen ? editSectionType : addSectionType);
     if (!formData.name.trim()) errors.name = `${sectionName} Name is required`;
     if (!formData.address.trim()) errors.address = "Address is required";
     if (!formData.stationId) errors.stationId = "Associated Station is required";
     if (!formData.category) errors.category = "Category is required";
-
     const latVal = parseFloat(formData.latitude);
-    if (isNaN(latVal) || latVal < -90 || latVal > 90) {
+    if (isNaN(latVal) || latVal < -90 || latVal > 90)
       errors.latitude = "Latitude must be a valid number between -90 and 90";
-    }
-
     const lngVal = parseFloat(formData.longitude);
-    if (isNaN(lngVal) || lngVal < -180 || lngVal > 180) {
+    if (isNaN(lngVal) || lngVal < -180 || lngVal > 180)
       errors.longitude = "Longitude must be a valid number between -180 and 180";
-    }
-
     const ratingVal = parseFloat(formData.rating);
-    if (isNaN(ratingVal) || ratingVal < 0) {
+    if (isNaN(ratingVal) || ratingVal < 0)
       errors.rating = "Ranking priority must be a valid positive number";
-    }
-
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  // Create Café/Section Submission
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
-
     setFormSubmitting(true);
     const token = localStorage.getItem("token");
-
     const payload = {
       stationId: parseInt(formData.stationId),
       name: formData.name.trim(),
@@ -233,20 +242,15 @@ export default function CafeConfig({ baseUrl }) {
       address: formData.address,
       category: formData.category,
     };
-
     try {
       const res = await fetch(`${baseUrl}/cafes/add`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       if (res.ok) {
         setIsAddModalOpen(false);
-        setActiveTab(formData.category); // Switch to added category tab
+        setActiveTab(formData.category);
         setRefreshKey((prev) => prev + 1);
       } else {
         const errorData = await res.json();
@@ -260,14 +264,11 @@ export default function CafeConfig({ baseUrl }) {
     }
   };
 
-  // Update Café/Section Submission
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
-
     setFormSubmitting(true);
     const token = localStorage.getItem("token");
-
     const payload = {
       stationId: parseInt(formData.stationId),
       name: formData.name.trim(),
@@ -280,17 +281,12 @@ export default function CafeConfig({ baseUrl }) {
       address: formData.address,
       category: formData.category,
     };
-
     try {
       const res = await fetch(`${baseUrl}/cafes/update/${selectedCafe.id}`, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       if (res.ok) {
         setIsEditModalOpen(false);
         setSelectedCafe(null);
@@ -307,7 +303,6 @@ export default function CafeConfig({ baseUrl }) {
     }
   };
 
-  // Toggle active/isOpen state directly from table
   const handleToggleActiveState = async (cafe) => {
     const token = localStorage.getItem("token");
     const payload = {
@@ -316,1090 +311,1028 @@ export default function CafeConfig({ baseUrl }) {
       googleMapLocation: cafe.googleMapsUri,
       googleMapImageUrl: cafe.googleMapImageUrl,
       rating: cafe.rating,
-      isOpen: !cafe.openNow, // Toggle state
+      isOpen: !cafe.openNow,
       latitude: cafe.latitude,
       longitude: cafe.longitude,
       address: cafe.address,
       category: cafe.category,
     };
-
     try {
       const res = await fetch(`${baseUrl}/cafes/update/${cafe.id}`, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (res.ok) {
-        setRefreshKey((prev) => prev + 1);
-      } else {
-        alert("Failed to update status");
-      }
+      if (res.ok) { setRefreshKey((prev) => prev + 1); }
+      else { alert("Failed to update status"); }
     } catch (err) {
       console.error("Error toggling status:", err);
     }
   };
 
-  // Delete Café/Section configuration
   const handleDeleteCafe = async (cafe) => {
     const sectionName = getSectionFromCafe(cafe) === "Cafe" ? "café" : getSectionFromCafe(cafe).toLowerCase();
     if (!window.confirm(`Are you sure you want to delete this ${sectionName} configuration?`)) return;
-
     const token = localStorage.getItem("token");
     try {
       const res = await fetch(`${baseUrl}/cafes/delete/${cafe.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (res.ok) {
-        setRefreshKey((prev) => prev + 1);
-      } else {
-        alert(`Failed to delete ${sectionName}`);
-      }
+      if (res.ok) { setRefreshKey((prev) => prev + 1); }
+      else { alert(`Failed to delete ${sectionName}`); }
     } catch (error) {
       console.error(`Error deleting ${sectionName}:`, error);
     }
   };
 
-  // Filter cafes by the active section type
-  const sectionCafes = cafes.filter(
-    (cafe) => getSectionFromCafe(cafe) === activeTab
-  );
-
-  // Filtering for local table search
+  // ── All filtering / computation preserved exactly ─────────────────────────
+  const sectionCafes = cafes.filter((cafe) => getSectionFromCafe(cafe) === activeTab);
   const filteredCafes = sectionCafes.filter(
     (cafe) =>
       (getCleanName(cafe.name) || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (cafe.address || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (cafe.stationName || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // Statistics calculation for the active section type
   const totalCount = sectionCafes.length;
   const activeCount = sectionCafes.filter((c) => c.openNow).length;
   const highestRanked = sectionCafes.length > 0 ? sectionCafes[0] : null;
+  const tabLabel = activeTab === "Cafe" ? "Café" : activeTab;
+  const tabLabelPlural = activeTab === "Cafe" ? "Cafés" : activeTab + "s";
 
+  // ── Reusable form fields shared between Add and Edit modals ───────────────
+  const renderFormFields = () => (
+    <div className="cc-form-grid">
+      <div className="cc-form-group cc-full">
+        <label className="cc-form-label">Associated Station</label>
+        <select className="cc-form-input" name="stationId" value={formData.stationId} onChange={handleInputChange}>
+          {stations.map((st) => (
+            <option key={st.id} value={st.id}>{st.name} (ID: {st.locationId || st.id})</option>
+          ))}
+        </select>
+        {formErrors.stationId && <span className="cc-error">{formErrors.stationId}</span>}
+      </div>
+
+      <div className="cc-form-group cc-full">
+        <label className="cc-form-label">Category</label>
+        <select className="cc-form-input" name="category" value={formData.category} onChange={handleInputChange}>
+          <option value="Cafe">Cafe</option>
+          <option value="Restaurant">Restaurant</option>
+          <option value="Mall">Mall</option>
+        </select>
+        {formErrors.category && <span className="cc-error">{formErrors.category}</span>}
+      </div>
+
+      <div className="cc-form-group cc-full">
+        <label className="cc-form-label">{formData.category === "Cafe" ? "Café" : formData.category} Name</label>
+        <input
+          type="text"
+          className="cc-form-input"
+          name="name"
+          placeholder={`E.g. Antigravity ${formData.category === "Cafe" ? "Café" : formData.category} Lounge`}
+          value={formData.name}
+          onChange={handleInputChange}
+        />
+        {formErrors.name && <span className="cc-error">{formErrors.name}</span>}
+      </div>
+
+      <div className="cc-form-group cc-full">
+        <label className="cc-form-label">Address</label>
+        <input
+          type="text"
+          className="cc-form-input"
+          name="address"
+          placeholder="Enter full physical address"
+          value={formData.address}
+          onChange={handleInputChange}
+        />
+        {formErrors.address && <span className="cc-error">{formErrors.address}</span>}
+      </div>
+
+      <div className="cc-form-group">
+        <label className="cc-form-label">Latitude</label>
+        <input type="text" className="cc-form-input" name="latitude" placeholder="E.g. 19.0760" value={formData.latitude} onChange={handleInputChange} />
+        {formErrors.latitude && <span className="cc-error">{formErrors.latitude}</span>}
+      </div>
+
+      <div className="cc-form-group">
+        <label className="cc-form-label">Longitude</label>
+        <input type="text" className="cc-form-input" name="longitude" placeholder="E.g. 72.8777" value={formData.longitude} onChange={handleInputChange} />
+        {formErrors.longitude && <span className="cc-error">{formErrors.longitude}</span>}
+      </div>
+
+      <div className="cc-form-group">
+        <label className="cc-form-label">Ranking Priority (Rating)</label>
+        <input type="text" className="cc-form-input" name="rating" placeholder="E.g. 5.0" value={formData.rating} onChange={handleInputChange} />
+        {formErrors.rating && <span className="cc-error">{formErrors.rating}</span>}
+      </div>
+
+      <div className="cc-form-group" style={{ display: "flex", alignItems: "flex-end" }}>
+        <label className="cc-toggle-wrap">
+          <div style={{ position: "relative", display: "inline-block", width: "44px", height: "24px" }}>
+            <input
+              type="checkbox"
+              id={isEditModalOpen ? "isOpenEdit" : "isOpenAdd"}
+              name="isOpen"
+              checked={formData.isOpen}
+              onChange={handleInputChange}
+              style={{ opacity: 0, width: 0, height: 0, position: "absolute" }}
+            />
+            <span
+              style={{
+                position: "absolute", cursor: "pointer", inset: 0,
+                background: formData.isOpen ? "#10b981" : "#D1D5DB",
+                borderRadius: "24px",
+                transition: "background 0.25s ease",
+              }}
+            />
+            <span
+              style={{
+                position: "absolute",
+                height: "18px", width: "18px",
+                left: formData.isOpen ? "23px" : "3px",
+                bottom: "3px",
+                background: "#fff",
+                borderRadius: "50%",
+                transition: "left 0.25s ease",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+              }}
+            />
+          </div>
+          <span className="cc-form-label" style={{ cursor: "pointer", userSelect: "none", marginLeft: "10px" }}>
+            Is Open / Active
+          </span>
+        </label>
+      </div>
+
+      <div className="cc-form-group cc-full">
+        <label className="cc-form-label">Google Maps Location URL</label>
+        <input type="text" className="cc-form-input" name="googleMapLocation" placeholder="E.g. https://maps.google.com/?q=..." value={formData.googleMapLocation} onChange={handleInputChange} />
+      </div>
+
+      <div className="cc-form-group cc-full">
+        <label className="cc-form-label">Google Maps Image URL</label>
+        <input type="text" className="cc-form-input" name="googleMapImageUrl" placeholder="Enter visual thumbnail URL (optional)" value={formData.googleMapImageUrl} onChange={handleInputChange} />
+      </div>
+    </div>
+  );
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
-      <style>
-        {`
-          .cafes-page-container {
-            padding: 30px;
-            font-family: 'Roboto', sans-serif;
-            background-color: #F3F4F6;
-            min-height: 100vh;
-          }
-          .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
-          }
-          .page-header h1 {
-            font-size: 26px;
-            font-weight: 700;
-            color: #111;
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          .loading-spinner {
-            text-align: center;
-            padding: 100px 50px;
-            font-size: 16px;
-            color: #555;
-          }
-          .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            border-left-color: #000;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-          }
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(4px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-          }
-          .modal-content {
-            background-color: white;
-            border-radius: 20px;
-            width: 90%;
-            max-width: 650px;
-            max-height: 90vh;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
-            animation: slideUp 0.25s ease-out;
-            padding: 30px;
-            font-family: 'Lexend', sans-serif;
-          }
-          @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-          }
-          .summary-cards-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin-bottom: 30px;
-          }
-          .summary-card {
-            background-color: white;
-            border-radius: 16px;
-            padding: 20px 24px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-            min-height: 120px;
-            border: 1px solid #E5E7EB;
-            transition: transform 0.2s, box-shadow 0.2s;
-          }
-          .summary-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-          }
-          .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            width: 100%;
-            margin-bottom: 8px;
-          }
-          .card-title {
-            font-size: 13px;
-            color: #666;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          .card-icon {
-            width: 18px;
-            height: 18px;
-            opacity: 0.8;
-          }
-          .card-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #111;
-            line-height: 1.2;
-            margin-bottom: 4px;
-          }
-          .card-subtext {
-            font-size: 12px;
-            color: #888;
-            font-weight: 500;
-          }
-          .search-bar-container {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 24px;
-            align-items: center;
-            width: 100%;
-          }
-          .search-input-wrapper {
-            flex: 1;
-            background-color: #fff;
-            border-radius: 24px;
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            border: 1px solid #E5E7EB;
-          }
-          .search-input {
-            border: none;
-            background: none;
-            outline: none;
-            width: 100%;
-            font-size: 14px;
-            margin-left: 10px;
-            font-family: 'Lexend', sans-serif;
-          }
-          .create-btn {
-            background-color: #000;
-            color: #fff;
-            border-radius: 24px;
-            padding: 12px 28px;
-            font-size: 13px;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: background-color 0.2s, transform 0.1s;
-          }
-          .create-btn:hover {
-            background-color: #222;
-            transform: translateY(-1px);
-          }
-          .create-btn:active {
-            transform: translateY(0);
-          }
-          .create-plus {
-            font-size: 18px;
-            font-weight: 700;
-            line-height: 0;
-          }
-          .cafes-list-section {
-            background-color: #fff;
-            border-radius: 18px;
-            padding: 24px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-            border: 1px solid #E5E7EB;
-            font-family: 'Lexend', sans-serif;
-          }
-          .table-header {
-            font-size: 18px;
-            font-weight: 700;
-            color: #111;
-            margin: 0 0 20px 0;
-          }
-          .cafes-table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-          }
-          .table-th {
-            font-size: 12px;
-            font-weight: 700;
-            color: #4B5563;
-            text-transform: uppercase;
-            padding: 12px 16px;
-            border-bottom: 2px solid #E5E7EB;
-            text-align: left;
-            letter-spacing: 0.5px;
-          }
-          .table-row {
-            font-size: 13px;
-            color: #374151;
-            transition: background-color 0.15s;
-          }
-          .table-row:hover {
-            background-color: #F9FAFB;
-          }
-          .table-td {
-            padding: 18px 16px;
-            border-bottom: 1px solid #E5E7EB;
-            vertical-align: middle;
-          }
-          .td-name {
-            font-weight: 700;
-            color: #111;
-            font-size: 14px;
-          }
-          .td-station {
-            color: #4B5563;
-            font-weight: 500;
-          }
-          .status-toggle {
-            cursor: pointer;
-            border: none;
-            background: none;
-            padding: 0;
-            display: inline-block;
-          }
-          .status-badge {
-            display: inline-block;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 700;
-            text-align: center;
-            min-width: 90px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            transition: filter 0.2s;
-          }
-          .status-badge:hover {
-            filter: brightness(0.95);
-          }
-          .status-active {
-            background-color: #D1FAE5;
-            color: #065F46;
-          }
-          .status-inactive {
-            background-color: #FEE2E2;
-            color: #991B1B;
-          }
-          .priority-badge {
-            display: inline-block;
-            background-color: #EEF2F6;
-            color: #1E293B;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 8px;
-            font-size: 12px;
-          }
-          .link-text {
-            color: #2563EB;
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.15s;
-          }
-          .link-text:hover {
-            color: #1D4ED8;
-            text-decoration: underline;
-          }
-          .action-buttons {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-          }
-          .icon-btn {
-            border: none;
-            background: none;
-            cursor: pointer;
-            padding: 6px;
-            border-radius: 8px;
-            transition: background-color 0.15s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .icon-btn:hover {
-            background-color: #F3F4F6;
-          }
-          .icon-btn-delete:hover {
-            background-color: #FEE2E2;
-          }
-          .icon-img {
-            width: 15px;
-            height: 15px;
-          }
-          .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #6B7280;
-            font-size: 14px;
-          }
-          .empty-state p {
-            margin: 0;
-            font-weight: 500;
-          }
+      {/* ── All Inline Styles ───────────────────────────────────────────── */}
+      <style>{`
+        /* ── Keyframes ────────────────────────────────────────────────── */
+        @keyframes cc-fadeInPage {
+          from { opacity: 0; transform: translateY(20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cc-shimmer {
+          0%   { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes cc-fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes cc-slideUp {
+          from { opacity: 0; transform: scale(0.97) translateY(12px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
 
-          /* Form Styles */
-          .form-header {
-            margin-bottom: 24px;
-          }
-          .form-header h2 {
-            font-size: 22px;
-            font-weight: 700;
-            margin: 0 0 6px 0;
-            color: #111;
-          }
-          .form-header p {
-            font-size: 13px;
-            color: #666;
-            margin: 0;
-          }
-          .form-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-            margin-bottom: 24px;
-          }
-          .form-group-full {
-            grid-column: span 2;
-          }
-          .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-          }
-          .form-label {
-            font-size: 12px;
-            font-weight: 700;
-            color: #374151;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          .form-input {
-            padding: 12px 16px;
-            border-radius: 12px;
-            border: 1px solid #D1D5DB;
-            font-size: 14px;
-            outline: none;
-            font-family: 'Lexend', sans-serif;
-            background-color: #FAFAFA;
-            transition: border-color 0.15s, background-color 0.15s;
-          }
-          .form-input:focus {
-            border-color: #000;
-            background-color: #fff;
-          }
-          .form-checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 12px;
-          }
-          .form-checkbox {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-            accent-color: #000;
-          }
-          .error-text {
-            font-size: 11px;
-            color: #DC2626;
-            font-weight: 600;
-            margin-top: 2px;
-          }
-          .form-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-            margin-top: 20px;
-          }
-          .btn-cancel {
-            padding: 12px 28px;
-            border-radius: 24px;
-            border: 1px solid #D1D5DB;
-            background-color: #fff;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-            font-family: 'Lexend', sans-serif;
-            transition: background-color 0.15s;
-          }
-          .btn-cancel:hover {
-            background-color: #F9FAFB;
-          }
-          .btn-submit {
-            padding: 12px 32px;
-            border-radius: 24px;
-            border: none;
-            background-color: #000;
-            color: #fff;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-            font-family: 'Lexend', sans-serif;
-            transition: background-color 0.15s;
-          }
-          .btn-submit:hover {
-            background-color: #222;
-          }
-          .btn-submit:disabled {
-            background-color: #9CA3AF;
-            cursor: not-allowed;
-          }
+        /* ── Page Container ───────────────────────────────────────────── */
+        .cc-page {
+          padding: 24px;
+          font-family: 'Lexend', sans-serif;
+          background-color: #F9FAFB;
+          min-height: 100vh;
+          animation: cc-fadeInPage 400ms ease-out forwards;
+        }
 
-          /* Tabs styling */
-          .tabs-wrapper {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
-            background-color: #fff;
-            padding: 6px;
-            border-radius: 30px;
-            border: 1px solid #E5E7EB;
-            width: fit-content;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-          }
-          .tab-btn {
-            border: none;
-            background: none;
-            padding: 10px 24px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #4B5563;
-            border-radius: 24px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: 'Lexend', sans-serif;
-          }
-          .tab-btn:hover {
-            color: #111;
-            background-color: #F3F4F6;
-          }
-          .tab-btn.active {
-            background-color: #000;
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          }
+        /* ── Page Header ──────────────────────────────────────────────── */
+        .cc-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 28px;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .cc-header-left h2 {
+          font-size: 28px;
+          font-weight: 700;
+          color: #111827;
+          margin: 0 0 4px 0;
+        }
+        .cc-header-left p {
+          font-size: 13px;
+          color: #6B7280;
+          margin: 0;
+        }
+        .cc-header-right {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
 
-          /* Dropdown styling */
-          .add-dropdown-container {
-            position: relative;
-            display: inline-block;
-          }
-          .dropdown-menu {
-            position: absolute;
-            top: calc(100% + 8px);
-            right: 0;
-            background-color: white;
-            border-radius: 12px;
-            border: 1px solid #E5E7EB;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            z-index: 100;
-            min-width: 160px;
-            padding: 6px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            animation: fadeIn 0.15s ease-out;
-          }
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-5px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          .dropdown-item {
-            border: none;
-            background: none;
-            text-align: left;
-            padding: 10px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #374151;
-            border-radius: 8px;
-            cursor: pointer;
-            font-family: 'Lexend', sans-serif;
-            transition: background-color 0.15s, color 0.15s;
-          }
-          .dropdown-item:hover {
-            background-color: #F3F4F6;
-            color: #111;
-          }
-        `}
-      </style>
+        /* ── Date Tabs (UI-only) ──────────────────────────────────────── */
+        .cc-tab-group {
+          display: flex;
+          background: #F3F4F6;
+          border-radius: 10px;
+          padding: 3px;
+          gap: 2px;
+        }
+        .cc-tab {
+          border: none;
+          background: transparent;
+          color: #6B7280;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 7px 14px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-family: inherit;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+        .cc-tab:hover { color: #111827; }
+        .cc-tab.active {
+          background: #fff;
+          color: #111827;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
 
-      <div className="cafes-page-container">
-        {/* Modals */}
-        {isAddModalOpen && (
-          <Modal onClose={() => setIsAddModalOpen(false)}>
-            <div className="form-header">
-              <h2>Add {formData.category === 'Cafe' ? 'Café' : formData.category} Configuration</h2>
-              <p>Configure a new {formData.category === 'Cafe' ? 'café' : formData.category.toLowerCase()} location and map it to an active charging station.</p>
+        /* ── Add Section Dropdown Button ──────────────────────────────── */
+        .cc-add-wrap { position: relative; display: inline-block; }
+        .cc-add-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          background: #111827;
+          color: #fff;
+          border: none;
+          border-radius: 10px;
+          padding: 10px 20px;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: inherit;
+          cursor: pointer;
+          transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+        .cc-add-btn:hover {
+          background: #374151;
+          transform: scale(1.03);
+          box-shadow: 0 4px 12px rgba(17,24,39,0.15);
+        }
+        .cc-add-btn:active { transform: scale(0.97); }
+        .cc-dropdown-menu {
+          position: absolute;
+          top: calc(100% + 8px);
+          right: 0;
+          background: #fff;
+          border-radius: 12px;
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+          z-index: 200;
+          min-width: 160px;
+          padding: 6px;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          animation: cc-fadeIn 0.15s ease-out;
+        }
+        .cc-dropdown-item {
+          border: none;
+          background: none;
+          text-align: left;
+          padding: 10px 14px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #374151;
+          border-radius: 8px;
+          cursor: pointer;
+          font-family: inherit;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .cc-dropdown-item:hover { background: #F0FDF4; color: #059669; }
+
+        /* ── Section Tabs ─────────────────────────────────────────────── */
+        .cc-section-tabs {
+          display: flex;
+          gap: 4px;
+          margin-bottom: 24px;
+          background: #F3F4F6;
+          border-radius: 12px;
+          padding: 4px;
+          width: fit-content;
+        }
+        .cc-section-tab {
+          border: none;
+          background: transparent;
+          padding: 9px 22px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #6B7280;
+          border-radius: 9px;
+          cursor: pointer;
+          font-family: inherit;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+        .cc-section-tab:hover { color: #111827; background: rgba(255,255,255,0.6); }
+        .cc-section-tab.active {
+          background: #fff;
+          color: #111827;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+
+        /* ── Analytics Cards ──────────────────────────────────────────── */
+        .cc-stats-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 20px;
+          margin-bottom: 24px;
+        }
+        @media (max-width: 900px)  { .cc-stats-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 540px)  { .cc-stats-grid { grid-template-columns: 1fr; } }
+
+        .cc-stat-card {
+          background: #fff;
+          border-radius: 16px;
+          padding: 22px 20px;
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          min-height: 132px;
+          box-sizing: border-box;
+          transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+          cursor: default;
+        }
+        .cc-stat-card:hover {
+          transform: translateY(-5px) scale(1.02);
+          box-shadow: 0 12px 24px rgba(0,0,0,0.08);
+          border-color: #10b981;
+        }
+        .cc-stat-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+        }
+        .cc-stat-meta { display: flex; flex-direction: column; gap: 3px; }
+        .cc-stat-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: #6B7280;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .cc-stat-subtitle { font-size: 11px; color: #9CA3AF; font-weight: 500; }
+        .cc-stat-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .cc-stat-value {
+          font-size: 30px;
+          font-weight: 700;
+          color: #111827;
+          line-height: 1;
+          margin-top: 10px;
+        }
+        .cc-stat-value-sm {
+          font-size: 18px;
+          font-weight: 700;
+          color: #111827;
+          line-height: 1.3;
+          margin-top: 10px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* ── Controls Row ─────────────────────────────────────────────── */
+        .cc-controls {
+          background: #fff;
+          border-radius: 16px;
+          border: 1px solid #E5E7EB;
+          padding: 16px 20px;
+          margin-bottom: 24px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-wrap: wrap;
+        }
+        .cc-search-wrap { position: relative; flex: 1; min-width: 220px; }
+        .cc-search-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          pointer-events: none;
+        }
+        .cc-search-input {
+          width: 100%;
+          padding: 10px 14px 10px 38px;
+          border: 1.5px solid #E5E7EB;
+          border-radius: 10px;
+          font-size: 14px;
+          font-family: inherit;
+          outline: none;
+          background: #F9FAFB;
+          color: #111827;
+          box-sizing: border-box;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+        .cc-search-input:focus {
+          border-color: #10b981;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(16,185,129,0.12);
+        }
+        .cc-search-clear {
+          position: absolute;
+          right: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          color: #9CA3AF;
+          cursor: pointer;
+          font-size: 14px;
+          padding: 2px 4px;
+          display: flex;
+          align-items: center;
+          border-radius: 4px;
+          transition: color 0.15s;
+        }
+        .cc-search-clear:hover { color: #374151; }
+
+        /* ── Table Card ───────────────────────────────────────────────── */
+        .cc-table-card {
+          background: #fff;
+          border-radius: 16px;
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          overflow: hidden;
+          transition: box-shadow 0.3s ease;
+        }
+        .cc-table-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+        .cc-table-card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 18px 24px;
+          border-bottom: 1px solid #F3F4F6;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+        .cc-table-card-title { font-size: 16px; font-weight: 700; color: #111827; margin: 0; }
+        .cc-table-count {
+          font-size: 12px;
+          color: #6B7280;
+          background: #F3F4F6;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-weight: 600;
+        }
+        .cc-table-scroll { overflow-x: auto; }
+
+        /* ── Table ────────────────────────────────────────────────────── */
+        .cc-table {
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+          font-size: 14px;
+        }
+        .cc-table th {
+          text-align: left;
+          padding: 13px 16px;
+          font-size: 11px;
+          font-weight: 600;
+          color: #4B5563;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          border-bottom: 1px solid #E5E7EB;
+          background: #F9FAFB;
+          white-space: nowrap;
+        }
+        .cc-table td {
+          padding: 16px;
+          color: #374151;
+          border-bottom: 1px solid #F3F4F6;
+          vertical-align: middle;
+          transition: background-color 0.2s ease;
+        }
+        .cc-table tr td:first-child {
+          border-left: 3px solid transparent;
+          transition: border-left-color 0.2s ease, background-color 0.2s ease;
+        }
+        .cc-table tr:hover td { background-color: #F0FDF4 !important; }
+        .cc-table tr:hover td:first-child { border-left-color: #10b981; }
+        .cc-table tr:last-child td { border-bottom: none; }
+
+        /* ── Status Badge ─────────────────────────────────────────────── */
+        .cc-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 12px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 600;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: opacity 0.2s ease, transform 0.15s ease;
+          border: none;
+          background: none;
+          font-family: inherit;
+        }
+        .cc-badge:hover { opacity: 0.8; transform: scale(1.04); }
+        .cc-badge::before {
+          content: '';
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+        .cc-badge-open    { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+        .cc-badge-open::before    { background: #10B981; }
+        .cc-badge-closed  { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+        .cc-badge-closed::before  { background: #EF4444; }
+
+        /* ── Priority Badge ───────────────────────────────────────────── */
+        .cc-priority {
+          display: inline-block;
+          background: #EEF2FF;
+          color: #4338CA;
+          font-weight: 700;
+          padding: 4px 10px;
+          border-radius: 8px;
+          font-size: 12px;
+        }
+
+        /* ── Action Buttons ───────────────────────────────────────────── */
+        .cc-action-row { display: flex; gap: 8px; align-items: center; justify-content: center; }
+        .cc-icon-btn {
+          border: 1.5px solid #E5E7EB;
+          background: #fff;
+          cursor: pointer;
+          padding: 7px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+        }
+        .cc-icon-btn:hover { background: #F3F4F6; border-color: #D1D5DB; transform: scale(1.05); }
+        .cc-icon-btn-del:hover { background: #FEF2F2; border-color: #FECACA; }
+        .cc-icon-img { width: 14px; height: 14px; }
+
+        /* ── Maps Link ────────────────────────────────────────────────── */
+        .cc-map-link {
+          color: #2563EB;
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 13px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          transition: color 0.15s ease;
+        }
+        .cc-map-link:hover { color: #1D4ED8; text-decoration: underline; }
+
+        /* ── Empty State ──────────────────────────────────────────────── */
+        .cc-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 80px 24px;
+          text-align: center;
+          animation: cc-fadeIn 0.3s ease;
+        }
+        .cc-empty-icon { font-size: 52px; margin-bottom: 16px; line-height: 1; }
+        .cc-empty h3 { margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #111827; }
+        .cc-empty p { margin: 0; font-size: 14px; color: #6B7280; max-width: 320px; }
+
+        /* ── Modal ────────────────────────────────────────────────────── */
+        .cc-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15,23,42,0.45);
+          backdrop-filter: blur(5px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          animation: cc-fadeIn 0.2s ease;
+          padding: 20px;
+        }
+        .cc-modal-content {
+          background: #fff;
+          border-radius: 20px;
+          width: 100%;
+          max-width: 640px;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          overflow-y: auto;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+          animation: cc-slideUp 0.25s cubic-bezier(0.16,1,0.3,1);
+          font-family: 'Lexend', sans-serif;
+        }
+        .cc-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 24px 28px 20px;
+          border-bottom: 1px solid #F3F4F6;
+          flex-shrink: 0;
+        }
+        .cc-modal-header h2 { font-size: 20px; font-weight: 700; color: #111827; margin: 0 0 4px; }
+        .cc-modal-header p { font-size: 13px; color: #6B7280; margin: 0; }
+        .cc-modal-close {
+          background: #F3F4F6;
+          border: none;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          font-size: 16px;
+          color: #6B7280;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          transition: all 0.2s ease;
+          margin-left: 12px;
+        }
+        .cc-modal-close:hover { background: #E5E7EB; color: #111827; }
+        .cc-modal-body { padding: 24px 28px; overflow-y: auto; }
+        .cc-modal-footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          padding: 16px 28px 24px;
+          border-top: 1px solid #F3F4F6;
+          flex-shrink: 0;
+        }
+
+        /* ── Form ─────────────────────────────────────────────────────── */
+        .cc-form-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+        }
+        @media (max-width: 540px) { .cc-form-grid { grid-template-columns: 1fr; } }
+        .cc-full { grid-column: span 2; }
+        @media (max-width: 540px) { .cc-full { grid-column: span 1; } }
+        .cc-form-group { display: flex; flex-direction: column; gap: 6px; }
+        .cc-form-label {
+          font-size: 11px;
+          font-weight: 700;
+          color: #374151;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .cc-form-input {
+          padding: 11px 14px;
+          border-radius: 10px;
+          border: 1.5px solid #E5E7EB;
+          font-size: 14px;
+          outline: none;
+          font-family: 'Lexend', sans-serif;
+          background: #F9FAFB;
+          color: #111827;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+          width: 100%;
+          box-sizing: border-box;
+          appearance: none;
+          -webkit-appearance: none;
+        }
+        .cc-form-input:focus {
+          border-color: #10b981;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(16,185,129,0.12);
+        }
+        .cc-error { font-size: 11px; color: #DC2626; font-weight: 600; }
+        .cc-toggle-wrap {
+          display: flex;
+          align-items: center;
+          cursor: pointer;
+          gap: 0;
+          margin-top: 20px;
+        }
+
+        /* ── Form Buttons ─────────────────────────────────────────────── */
+        .cc-btn-cancel {
+          padding: 10px 22px;
+          border-radius: 10px;
+          border: 1.5px solid #E5E7EB;
+          background: #fff;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 13px;
+          font-family: inherit;
+          color: #374151;
+          transition: all 0.2s ease;
+        }
+        .cc-btn-cancel:hover { background: #F3F4F6; border-color: #D1D5DB; }
+        .cc-btn-submit {
+          padding: 10px 24px;
+          border-radius: 10px;
+          border: none;
+          background: #111827;
+          color: #fff;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 13px;
+          font-family: inherit;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .cc-btn-submit:hover { background: #374151; transform: scale(1.02); }
+        .cc-btn-submit:disabled { background: #9CA3AF; cursor: not-allowed; transform: none; }
+
+        /* ── Name+Address cell ────────────────────────────────────────── */
+        .cc-cell-name { font-weight: 700; color: #111827; font-size: 14px; }
+        .cc-cell-sub  { font-size: 11px; color: #6B7280; margin-top: 3px; }
+        .cc-cell-station { color: #4B5563; font-weight: 500; }
+      `}</style>
+
+      {/* ── Add Modal ───────────────────────────────────────────────────── */}
+      {isAddModalOpen && (
+        <div className="cc-modal-overlay" onClick={() => setIsAddModalOpen(false)}>
+          <div className="cc-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="cc-modal-header">
+              <div>
+                <h2>Add {formData.category === "Cafe" ? "Café" : formData.category} Configuration</h2>
+                <p>Configure a new {formData.category === "Cafe" ? "café" : formData.category.toLowerCase()} location and map it to an active charging station.</p>
+              </div>
+              <button className="cc-modal-close" onClick={() => setIsAddModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleAddSubmit}>
-              <div className="form-grid">
-                <div className="form-group form-group-full">
-                  <label className="form-label">Associated Station</label>
-                  <select
-                    className="form-input"
-                    name="stationId"
-                    value={formData.stationId}
-                    onChange={handleInputChange}
-                  >
-                    {stations.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name} (ID: {st.locationId || st.id})
-                      </option>
-                    ))}
-                  </select>
-                  {formErrors.stationId && <span className="error-text">{formErrors.stationId}</span>}
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Category</label>
-                  <select
-                    className="form-input"
-                    name="category"
-                    value={formData.category}
-                    onChange={handleInputChange}
-                  >
-                    <option value="Cafe">Cafe</option>
-                    <option value="Restaurant">Restaurant</option>
-                    <option value="Mall">Mall</option>
-                  </select>
-                  {formErrors.category && <span className="error-text">{formErrors.category}</span>}
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">{formData.category === 'Cafe' ? 'Café' : formData.category} Name</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="name"
-                    placeholder={`E.g. Antigravity ${formData.category === 'Cafe' ? 'Café' : formData.category} Lounge`}
-                    value={formData.name}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.name && <span className="error-text">{formErrors.name}</span>}
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Address</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="address"
-                    placeholder="Enter full physical address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.address && <span className="error-text">{formErrors.address}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Latitude</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="latitude"
-                    placeholder="E.g. 19.0760"
-                    value={formData.latitude}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.latitude && <span className="error-text">{formErrors.latitude}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Longitude</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="longitude"
-                    placeholder="E.g. 72.8777"
-                    value={formData.longitude}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.longitude && <span className="error-text">{formErrors.longitude}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Ranking Priority (Rating)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="rating"
-                    placeholder="E.g. 5.0"
-                    value={formData.rating}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.rating && <span className="error-text">{formErrors.rating}</span>}
-                </div>
-
-                <div className="form-group">
-                  <div className="form-checkbox-group">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox"
-                      id="isOpenAdd"
-                      name="isOpen"
-                      checked={formData.isOpen}
-                      onChange={handleInputChange}
-                    />
-                    <label htmlFor="isOpenAdd" className="form-label" style={{ cursor: "pointer", marginTop: "3px" }}>
-                      Is Open / Active
-                    </label>
-                  </div>
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Google Maps Location URL</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="googleMapLocation"
-                    placeholder="E.g. https://maps.google.com/?q=..."
-                    value={formData.googleMapLocation}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Google Maps Image URL</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="googleMapImageUrl"
-                    placeholder="Enter visual thumbnail URL (optional)"
-                    value={formData.googleMapImageUrl}
-                    onChange={handleInputChange}
-                  />
-                </div>
+              <div className="cc-modal-body">
+                {renderFormFields()}
               </div>
-
-              <div className="form-actions">
-                <button type="button" className="btn-cancel" onClick={() => setIsAddModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-submit" disabled={formSubmitting}>
-                  {formSubmitting ? "Saving..." : `Add ${formData.category === 'Cafe' ? 'Café' : formData.category}`}
+              <div className="cc-modal-footer">
+                <button type="button" className="cc-btn-cancel" onClick={() => setIsAddModalOpen(false)}>Cancel</button>
+                <button type="submit" className="cc-btn-submit" disabled={formSubmitting}>
+                  {formSubmitting ? "Saving…" : `Add ${formData.category === "Cafe" ? "Café" : formData.category}`}
                 </button>
               </div>
             </form>
-          </Modal>
-        )}
+          </div>
+        </div>
+      )}
 
-        {isEditModalOpen && (
-          <Modal onClose={() => setIsEditModalOpen(false)}>
-            <div className="form-header">
-              <h2>Edit {formData.category === 'Cafe' ? 'Café' : formData.category} Configuration</h2>
-              <p>Modify the configuration, priority, or station mappings of this {formData.category === 'Cafe' ? 'café' : formData.category.toLowerCase()}.</p>
+      {/* ── Edit Modal ──────────────────────────────────────────────────── */}
+      {isEditModalOpen && (
+        <div className="cc-modal-overlay" onClick={() => setIsEditModalOpen(false)}>
+          <div className="cc-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="cc-modal-header">
+              <div>
+                <h2>Edit {formData.category === "Cafe" ? "Café" : formData.category} Configuration</h2>
+                <p>Modify the configuration, priority, or station mappings of this {formData.category === "Cafe" ? "café" : formData.category.toLowerCase()}.</p>
+              </div>
+              <button className="cc-modal-close" onClick={() => setIsEditModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleEditSubmit}>
-              <div className="form-grid">
-                <div className="form-group form-group-full">
-                  <label className="form-label">Associated Station</label>
-                  <select
-                    className="form-input"
-                    name="stationId"
-                    value={formData.stationId}
-                    onChange={handleInputChange}
-                  >
-                    {stations.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name} (ID: {st.locationId || st.id})
-                      </option>
-                    ))}
-                  </select>
-                  {formErrors.stationId && <span className="error-text">{formErrors.stationId}</span>}
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Category</label>
-                  <select
-                    className="form-input"
-                    name="category"
-                    value={formData.category}
-                    onChange={handleInputChange}
-                  >
-                    <option value="Cafe">Cafe</option>
-                    <option value="Restaurant">Restaurant</option>
-                    <option value="Mall">Mall</option>
-                  </select>
-                  {formErrors.category && <span className="error-text">{formErrors.category}</span>}
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">{formData.category === 'Cafe' ? 'Café' : formData.category} Name</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="name"
-                    placeholder={`E.g. Antigravity ${formData.category === 'Cafe' ? 'Café' : formData.category} Lounge`}
-                    value={formData.name}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.name && <span className="error-text">{formErrors.name}</span>}
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Address</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="address"
-                    placeholder="Enter full physical address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.address && <span className="error-text">{formErrors.address}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Latitude</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="latitude"
-                    placeholder="E.g. 19.0760"
-                    value={formData.latitude}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.latitude && <span className="error-text">{formErrors.latitude}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Longitude</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="longitude"
-                    placeholder="E.g. 72.8777"
-                    value={formData.longitude}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.longitude && <span className="error-text">{formErrors.longitude}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Ranking Priority (Rating)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="rating"
-                    placeholder="E.g. 5.0"
-                    value={formData.rating}
-                    onChange={handleInputChange}
-                  />
-                  {formErrors.rating && <span className="error-text">{formErrors.rating}</span>}
-                </div>
-
-                <div className="form-group">
-                  <div className="form-checkbox-group">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox"
-                      id="isOpenEdit"
-                      name="isOpen"
-                      checked={formData.isOpen}
-                      onChange={handleInputChange}
-                    />
-                    <label htmlFor="isOpenEdit" className="form-label" style={{ cursor: "pointer", marginTop: "3px" }}>
-                      Is Open / Active
-                    </label>
-                  </div>
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Google Maps Location URL</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="googleMapLocation"
-                    placeholder="E.g. https://maps.google.com/?q=..."
-                    value={formData.googleMapLocation}
-                    onChange={handleInputChange}
-                  />
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label className="form-label">Google Maps Image URL</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    name="googleMapImageUrl"
-                    placeholder="Enter visual thumbnail URL (optional)"
-                    value={formData.googleMapImageUrl}
-                    onChange={handleInputChange}
-                  />
-                </div>
+              <div className="cc-modal-body">
+                {renderFormFields()}
               </div>
-
-              <div className="form-actions">
-                <button type="button" className="btn-cancel" onClick={() => setIsEditModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-submit" disabled={formSubmitting}>
-                  {formSubmitting ? "Saving..." : `Update ${formData.category === 'Cafe' ? 'Café' : formData.category}`}
+              <div className="cc-modal-footer">
+                <button type="button" className="cc-btn-cancel" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
+                <button type="submit" className="cc-btn-submit" disabled={formSubmitting}>
+                  {formSubmitting ? "Saving…" : `Update ${formData.category === "Cafe" ? "Café" : formData.category}`}
                 </button>
               </div>
             </form>
-          </Modal>
-        )}
+          </div>
+        </div>
+      )}
 
-        {/* Page Header */}
-        <div className="page-header">
-          <h1>{activeTab === 'Cafe' ? 'Café' : activeTab} Configuration Settings</h1>
-          <div className="add-dropdown-container">
-            <button className="create-btn" onClick={() => setIsAddDropdownOpen(!isAddDropdownOpen)}>
-              <span className="create-plus">+</span> Add Section <span style={{ fontSize: "10px", marginLeft: "4px" }}>▼</span>
+      {/* ── Page Body ───────────────────────────────────────────────────── */}
+      <div className="cc-page">
+
+        {/* ── Page Header ─────────────────────────────────────────────── */}
+        <div className="cc-header">
+          <div className="cc-header-left">
+            <h2>Cafe Configuration</h2>
+            <p>Manage cafe settings, menu configuration, pricing, and operational preferences.</p>
+          </div>
+          <div className="cc-header-right">
+            {/* Date filter tabs – UI only */}
+            <div className="cc-tab-group">
+              {["Today", "This Week", "This Month", "This Year"].map(tab => (
+                <button key={tab} className="cc-tab">{tab}</button>
+              ))}
+            </div>
+
+            {/* Add Section Dropdown */}
+            <div className="cc-add-wrap">
+              <button className="cc-add-btn" onClick={() => setIsAddDropdownOpen(!isAddDropdownOpen)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Section
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              {isAddDropdownOpen && (
+                <div className="cc-dropdown-menu">
+                  {["Cafe", "Restaurant", "Mall"].map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      className="cc-dropdown-item"
+                      onClick={() => { openAddModal(type); setIsAddDropdownOpen(false); }}
+                    >
+                      {type === "Cafe" ? "☕ Cafe" : type === "Restaurant" ? "🍽️ Restaurant" : "🏬 Mall"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Section Tabs (Cafe / Restaurant / Mall) ─────────────────── */}
+        <div className="cc-section-tabs">
+          {["Cafe", "Restaurant", "Mall"].map(tab => (
+            <button
+              key={tab}
+              type="button"
+              className={`cc-section-tab${activeTab === tab ? " active" : ""}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === "Cafe" ? "☕ Cafe" : tab === "Restaurant" ? "🍽️ Restaurant" : "🏬 Mall"}
             </button>
-            {isAddDropdownOpen && (
-              <div className="dropdown-menu">
-                <button
-                  type="button"
-                  className="dropdown-item"
-                  onClick={() => {
-                    openAddModal("Cafe");
-                    setIsAddDropdownOpen(false);
-                  }}
-                >
-                  Cafe
-                </button>
-                <button
-                  type="button"
-                  className="dropdown-item"
-                  onClick={() => {
-                    openAddModal("Restaurant");
-                    setIsAddDropdownOpen(false);
-                  }}
-                >
-                  Restaurant
-                </button>
-                <button
-                  type="button"
-                  className="dropdown-item"
-                  onClick={() => {
-                    openAddModal("Mall");
-                    setIsAddDropdownOpen(false);
-                  }}
-                >
-                  Mall
-                </button>
+          ))}
+        </div>
+
+        {/* ── Analytics Summary Cards ──────────────────────────────────── */}
+        <div className="cc-stats-grid">
+          {/* Total */}
+          <div className="cc-stat-card">
+            <div className="cc-stat-top">
+              <div className="cc-stat-meta">
+                <span className="cc-stat-label">Total {tabLabelPlural}</span>
+                <span className="cc-stat-subtitle">Configured in system</span>
               </div>
+              <div className="cc-stat-icon" style={{ background: "#EEF2FF" }}>
+                <img src={totalIcon} alt="" style={{ width: 22, height: 22 }} />
+              </div>
+            </div>
+            <div className="cc-stat-value"><AnimatedNumber value={totalCount} /></div>
+          </div>
+
+          {/* Active */}
+          <div className="cc-stat-card">
+            <div className="cc-stat-top">
+              <div className="cc-stat-meta">
+                <span className="cc-stat-label">Open / Active</span>
+                <span className="cc-stat-subtitle">Visible on app search</span>
+              </div>
+              <div className="cc-stat-icon" style={{ background: "#ECFDF5" }}>
+                <img src={activeIcon} alt="" style={{ width: 22, height: 22 }} />
+              </div>
+            </div>
+            <div className="cc-stat-value"><AnimatedNumber value={activeCount} /></div>
+          </div>
+
+          {/* Top Priority */}
+          <div className="cc-stat-card">
+            <div className="cc-stat-top">
+              <div className="cc-stat-meta">
+                <span className="cc-stat-label">Top Priority {tabLabel}</span>
+                <span className="cc-stat-subtitle">
+                  {highestRanked ? `Rank: ${highestRanked.rating || "N/A"}` : "Set priority in config"}
+                </span>
+              </div>
+              <div className="cc-stat-icon" style={{ background: "#FFFBEB" }}>
+                <img src={uptimeIcon} alt="" style={{ width: 22, height: 22 }} />
+              </div>
+            </div>
+            <div className="cc-stat-value-sm">
+              {highestRanked ? getCleanName(highestRanked.name) : "N/A"}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Search & Filter Controls ─────────────────────────────────── */}
+        <div className="cc-controls">
+          <div className="cc-search-wrap">
+            <span className="cc-search-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </span>
+            <input
+              type="text"
+              className="cc-search-input"
+              placeholder={`Search ${activeTab === "Cafe" ? "cafés" : activeTab === "Restaurant" ? "restaurants" : "malls"} by name, station, or address…`}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button className="cc-search-clear" onClick={() => setSearchTerm("")}>✕</button>
             )}
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="tabs-wrapper">
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === 'Cafe' ? 'active' : ''}`}
-            onClick={() => setActiveTab("Cafe")}
-          >
-            Cafe
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === 'Restaurant' ? 'active' : ''}`}
-            onClick={() => setActiveTab("Restaurant")}
-          >
-            Restaurant
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === 'Mall' ? 'active' : ''}`}
-            onClick={() => setActiveTab("Mall")}
-          >
-            Mall
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="summary-cards-grid">
-          <div className="summary-card">
-            <div className="card-header">
-              <span className="card-title">Total Configured {activeTab === 'Cafe' ? 'Cafés' : activeTab + 's'}</span>
-              <img src={totalIcon} alt="" className="card-icon" />
-            </div>
-            <div>
-              <div className="card-value">{totalCount}</div>
-              <div className="card-subtext">Mapped stations around areas</div>
-            </div>
+        {/* ── Table Card ──────────────────────────────────────────────── */}
+        <div className="cc-table-card">
+          <div className="cc-table-card-header">
+            <h3 className="cc-table-card-title">{tabLabel} Locations</h3>
+            <span className="cc-table-count">{filteredCafes.length} record{filteredCafes.length !== 1 ? "s" : ""}</span>
           </div>
-
-          <div className="summary-card">
-            <div className="card-header">
-              <span className="card-title">Open / Active {activeTab === 'Cafe' ? 'Cafés' : activeTab + 's'}</span>
-              <img src={activeIcon} alt="" className="card-icon" />
-            </div>
-            <div>
-              <div className="card-value">{activeCount}</div>
-              <div className="card-subtext">Currently active on app search</div>
-            </div>
-          </div>
-
-          <div className="summary-card">
-            <div className="card-header">
-              <span className="card-title">Top Priority {activeTab === 'Cafe' ? 'Café' : activeTab}</span>
-              <img src={uptimeIcon} alt="" className="card-icon" />
-            </div>
-            <div>
-              <div className="card-value" style={{ fontSize: "18px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {highestRanked ? getCleanName(highestRanked.name) : "N/A"}
-              </div>
-              <div className="card-subtext">
-                {highestRanked ? `Rank priority: ${highestRanked.rating || 'N/A'}` : "Set priority in configuration"}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Search and Filters */}
-        <div className="search-bar-container">
-          <div className="search-input-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input
-              type="text"
-              placeholder={`Search ${activeTab === 'Cafe' ? 'cafés' : activeTab === 'Restaurant' ? 'restaurants' : 'malls'} by Name, Station, or Address...`}
-              className="search-input"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* List Table Section */}
-        <div className="cafes-list-section">
-          <h3 className="table-header">{activeTab === 'Cafe' ? 'Café' : activeTab} Locations</h3>
 
           {loading ? (
-            <LoadingSpinner />
+            <div style={{ padding: "16px 24px" }}><LoadingSpinner /></div>
           ) : filteredCafes.length === 0 ? (
-            <div className="empty-state">
-              <p>{searchTerm ? `No ${activeTab === 'Cafe' ? 'cafés' : activeTab.toLowerCase() + 's'} found matching "${searchTerm}"` : `No ${activeTab === 'Cafe' ? 'cafés' : activeTab.toLowerCase() + 's'} configured in the system.`}</p>
+            <div className="cc-empty">
+              <div className="cc-empty-icon">{activeTab === "Cafe" ? "☕" : activeTab === "Restaurant" ? "🍽️" : "🏬"}</div>
+              <h3>
+                {searchTerm
+                  ? `No ${tabLabelPlural} matching "${searchTerm}"`
+                  : `No ${tabLabelPlural} Configured`}
+              </h3>
+              <p>
+                {searchTerm
+                  ? "Try adjusting your search term."
+                  : `${tabLabel} configuration data will appear here once available.`}
+              </p>
             </div>
           ) : (
-            <table className="cafes-table">
-              <thead>
-                <tr>
-                  <th className="table-th">{activeTab === 'Cafe' ? 'Café' : activeTab} Details</th>
-                  <th className="table-th">Associated Station</th>
-                  <th className="table-th" style={{ textAlign: "center" }}>Rank Priority</th>
-                  <th className="table-th" style={{ textAlign: "center" }}>Status</th>
-                  <th className="table-th">Directions</th>
-                  <th className="table-th" style={{ textAlign: "center" }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCafes.map((cafe) => (
-                  <tr key={cafe.id} className="table-row">
-                    <td className="table-td">
-                      <div className="td-name">{getCleanName(cafe.name)}</div>
-                      <div style={{ fontSize: "11px", color: "#6B7280", marginTop: "4px" }}>{cafe.address || "No address entered"}</div>
-                    </td>
-                    <td className="table-td td-station">
-                      {cafe.stationName || `Station ID: ${cafe.stationId}`}
-                    </td>
-                    <td className="table-td" style={{ textAlign: "center" }}>
-                      <span className="priority-badge">{cafe.rating || "0.0"}</span>
-                    </td>
-                    <td className="table-td" style={{ textAlign: "center" }}>
-                      <button
-                        className="status-toggle"
-                        onClick={() => handleToggleActiveState(cafe)}
-                        title="Click to toggle active status"
-                      >
-                        <span className={`status-badge ${cafe.openNow ? "status-active" : "status-inactive"}`}>
-                          {cafe.openNow ? "Open" : "Closed"}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="table-td">
-                      {cafe.googleMapsUri ? (
-                        <a href={cafe.googleMapsUri} target="_blank" rel="noopener noreferrer" className="link-text">
-                          View on Maps
-                        </a>
-                      ) : (
-                        <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No link</span>
-                      )}
-                    </td>
-                    <td className="table-td" style={{ textAlign: "center" }}>
-                      <div className="action-buttons" style={{ justifyContent: "center" }}>
-                        <button className="icon-btn" onClick={() => openEditModal(cafe)} title="Edit Configuration">
-                          <img src={editIcon} alt="Edit" className="icon-img" />
-                        </button>
-                        <button
-                          className="icon-btn icon-btn-delete"
-                          onClick={() => handleDeleteCafe(cafe)}
-                          title="Delete Configuration"
-                        >
-                          <img src={deleteIcon} alt="Delete" className="icon-img" />
-                        </button>
-                      </div>
-                    </td>
+            <div className="cc-table-scroll">
+              <table className="cc-table">
+                <thead>
+                  <tr>
+                    <th>{tabLabel} Details</th>
+                    <th>Associated Station</th>
+                    <th style={{ textAlign: "center" }}>Rank Priority</th>
+                    <th style={{ textAlign: "center" }}>Status</th>
+                    <th>Directions</th>
+                    <th style={{ textAlign: "center" }}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredCafes.map((cafe) => (
+                    <tr key={cafe.id}>
+                      <td>
+                        <div className="cc-cell-name">{getCleanName(cafe.name)}</div>
+                        <div className="cc-cell-sub">{cafe.address || "No address entered"}</div>
+                      </td>
+                      <td>
+                        <span className="cc-cell-station">
+                          {cafe.stationName || `Station ID: ${cafe.stationId}`}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <span className="cc-priority">{cafe.rating || "0.0"}</span>
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <button
+                          className={`cc-badge ${cafe.openNow ? "cc-badge-open" : "cc-badge-closed"}`}
+                          onClick={() => handleToggleActiveState(cafe)}
+                          title="Click to toggle active status"
+                        >
+                          {cafe.openNow ? "Open" : "Closed"}
+                        </button>
+                      </td>
+                      <td>
+                        {cafe.googleMapsUri ? (
+                          <a href={cafe.googleMapsUri} target="_blank" rel="noopener noreferrer" className="cc-map-link">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            View on Maps
+                          </a>
+                        ) : (
+                          <span style={{ color: "#9CA3AF", fontStyle: "italic", fontSize: "13px" }}>No link</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <div className="cc-action-row">
+                          <button className="cc-icon-btn" onClick={() => openEditModal(cafe)} title="Edit Configuration">
+                            <img src={editIcon} alt="Edit" className="cc-icon-img" />
+                          </button>
+                          <button className="cc-icon-btn cc-icon-btn-del" onClick={() => handleDeleteCafe(cafe)} title="Delete Configuration">
+                            <img src={deleteIcon} alt="Delete" className="cc-icon-img" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>

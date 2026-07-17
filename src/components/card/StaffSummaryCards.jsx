@@ -38,7 +38,7 @@ const StaffSummaryCards = ({ stats = {} }) => {
       )
     },
     {
-      title: "Admin Staff",
+      title: "Support Staff",
       value: stats.staff || "0",
       color: "#3b82f6",
       icon: (
