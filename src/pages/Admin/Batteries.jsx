@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function BatteriesPage({ baseUrl: propBaseUrl }) {
@@ -84,6 +84,12 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const [batteries, setBatteries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // --- Excel Bulk Upload state ---
+  const excelFileInputRef = useRef(null);
+  const [excelUploading, setExcelUploading] = useState(false);
+  const [excelUploadResult, setExcelUploadResult] = useState(null); // null | { success, data, error }
+  const [excelFileError, setExcelFileError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [warrantyYearFilter, setWarrantyYearFilter] = useState("All");
   const [productCategoryFilter, setProductCategoryFilter] = useState("All");
@@ -331,6 +337,93 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       }
       return updated;
     });
+  };
+
+  // --- Excel upload handler ---
+  const handleExcelFileChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    // Reset the input so the same file can be re-selected if needed
+    if (excelFileInputRef.current) excelFileInputRef.current.value = "";
+
+    setExcelFileError(null);
+
+    if (!file) {
+      setExcelFileError("No file selected. Please choose an Excel file (.xlsx or .xls).");
+      return;
+    }
+
+    const allowedExtensions = [".xlsx", ".xls"];
+    const fileName = file.name.toLowerCase();
+    const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+    if (!isValidExtension) {
+      setExcelFileError("Invalid file type. Only .xlsx and .xls files are accepted.");
+      return;
+    }
+
+    if (file.size === 0) {
+      setExcelFileError("The selected file is empty. Please upload a valid Excel file.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/");
+      return;
+    }
+
+    setExcelUploading(true);
+    setExcelUploadResult(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${baseUrl}/battery-data/admin/register/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+          // NOTE: Do NOT set Content-Type — browser sets it automatically with the multipart boundary
+        },
+        body: formData
+      });
+
+      const rawBody = await response.text();
+      console.log("[EXCEL UPLOAD] Status:", response.status, "| Body:", rawBody);
+
+      let parsedData = null;
+      try {
+        parsedData = JSON.parse(rawBody);
+      } catch {
+        parsedData = null;
+      }
+
+      if (response.ok) {
+        setExcelUploadResult({ success: true, data: parsedData || {} });
+        fetchBatteries(); // Refresh the battery list
+      } else {
+        let errorMsg = "Upload failed. Please try again.";
+        if (parsedData) {
+          errorMsg = parsedData.message || parsedData.error || parsedData.detail || errorMsg;
+        } else if (rawBody) {
+          errorMsg = rawBody;
+        }
+        setExcelUploadResult({ success: false, error: errorMsg, data: parsedData || {} });
+      }
+    } catch (err) {
+      console.error("[EXCEL UPLOAD] Network/Server error:", err);
+      setExcelUploadResult({
+        success: false,
+        error: err.message || "A network or server error occurred. Please check your connection and try again.",
+        data: {}
+      });
+    } finally {
+      setExcelUploading(false);
+    }
+  };
+
+  const handleExcelUploadResult = () => {
+    setExcelUploadResult(null);
+    setExcelFileError(null);
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -881,6 +974,12 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           color: #111827;
           margin: 0;
         }
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
         .register-btn {
           display: flex;
           align-items: center;
@@ -902,6 +1001,308 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         }
         .register-btn:active {
           transform: translateY(0);
+        }
+        .upload-excel-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 22px;
+          background: #ffffff;
+          color: #065F46;
+          border: 1.5px solid #10B981;
+          border-radius: 9999px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          font-family: inherit;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .upload-excel-btn:hover {
+          background: #ECFDF5;
+          border-color: #059669;
+          color: #064E3B;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 16px rgba(16, 185, 129, 0.15);
+        }
+        .upload-excel-btn:active {
+          transform: translateY(0);
+        }
+        .upload-excel-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
+        }
+        /* Excel Upload Result Modal */
+        .excel-modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1100;
+          padding: 20px;
+          box-sizing: border-box;
+        }
+        .excel-modal-content {
+          background: #ffffff;
+          border-radius: 20px;
+          width: 680px;
+          max-width: 100%;
+          max-height: 90vh;
+          overflow-y: auto;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+          padding: 32px;
+          box-sizing: border-box;
+          animation: fadeInPage 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .excel-modal-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          margin-bottom: 20px;
+          gap: 12px;
+        }
+        .excel-modal-title {
+          font-size: 20px;
+          font-weight: 700;
+          color: #111827;
+          margin: 0;
+          line-height: 1.3;
+        }
+        .excel-modal-close-btn {
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #9CA3AF;
+          padding: 4px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 0.2s, background 0.2s;
+          flex-shrink: 0;
+        }
+        .excel-modal-close-btn:hover {
+          color: #111827;
+          background: #F3F4F6;
+        }
+        .excel-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        @media (max-width: 480px) {
+          .excel-summary-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        .excel-summary-card {
+          background: #F9FAFB;
+          border: 1px solid #E5E7EB;
+          border-radius: 12px;
+          padding: 14px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .excel-summary-label {
+          font-size: 12px;
+          color: #6B7280;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .excel-summary-value {
+          font-size: 24px;
+          font-weight: 700;
+          color: #111827;
+          line-height: 1.2;
+        }
+        .excel-summary-value.success-color { color: #059669; }
+        .excel-summary-value.error-color { color: #DC2626; }
+        .excel-summary-value.skip-color { color: #D97706; }
+        .excel-error-table-wrapper {
+          margin-top: 16px;
+          border-radius: 10px;
+          border: 1px solid #FEE2E2;
+          overflow: hidden;
+          overflow-x: auto;
+        }
+        .excel-error-section-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #111827;
+          margin: 0 0 10px 0;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .excel-error-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+        }
+        .excel-error-table th {
+          text-align: left;
+          padding: 10px 14px;
+          background: #FEF2F2;
+          color: #991B1B;
+          font-weight: 600;
+          font-size: 12px;
+          border-bottom: 1px solid #FEE2E2;
+        }
+        .excel-error-table td {
+          padding: 10px 14px;
+          border-bottom: 1px solid #FEE2E2;
+          color: #374151;
+          vertical-align: top;
+          word-break: break-word;
+        }
+        .excel-error-table tr:last-child td {
+          border-bottom: none;
+        }
+        .excel-error-table tr:nth-child(even) td {
+          background: #FFF7F7;
+        }
+        .excel-registered-table-wrapper {
+          margin-top: 16px;
+          border-radius: 10px;
+          border: 1px solid #D1FAE5;
+          overflow: hidden;
+          overflow-x: auto;
+          max-height: 220px;
+        }
+        .excel-registered-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+        }
+        .excel-registered-table th {
+          text-align: left;
+          padding: 10px 14px;
+          background: #ECFDF5;
+          color: #065F46;
+          font-weight: 600;
+          font-size: 12px;
+          border-bottom: 1px solid #D1FAE5;
+          position: sticky;
+          top: 0;
+        }
+        .excel-registered-table td {
+          padding: 10px 14px;
+          border-bottom: 1px solid #D1FAE5;
+          color: #374151;
+          word-break: break-word;
+        }
+        .excel-registered-table tr:last-child td {
+          border-bottom: none;
+        }
+        .excel-registered-table tr:nth-child(even) td {
+          background: #F0FDF4;
+        }
+        /* Spinner */
+        @keyframes excel-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .excel-spinner {
+          display: inline-block;
+          width: 18px;
+          height: 18px;
+          border: 2.5px solid rgba(16, 185, 129, 0.3);
+          border-top-color: #10B981;
+          border-radius: 50%;
+          animation: excel-spin 0.7s linear infinite;
+          flex-shrink: 0;
+        }
+        /* Uploading overlay */
+        .excel-uploading-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1200;
+        }
+        .excel-uploading-card {
+          background: #ffffff;
+          border-radius: 20px;
+          padding: 36px 40px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 16px;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+          min-width: 260px;
+        }
+        .excel-uploading-spinner {
+          width: 48px;
+          height: 48px;
+          border: 4px solid rgba(16, 185, 129, 0.2);
+          border-top-color: #10B981;
+          border-radius: 50%;
+          animation: excel-spin 0.8s linear infinite;
+        }
+        .excel-uploading-text {
+          font-size: 16px;
+          font-weight: 600;
+          color: #111827;
+          margin: 0;
+        }
+        .excel-uploading-subtext {
+          font-size: 13px;
+          color: #6B7280;
+          margin: 0;
+          text-align: center;
+        }
+        .excel-alert-success {
+          background: #ECFDF5;
+          border: 1px solid #A7F3D0;
+          border-radius: 10px;
+          padding: 12px 16px;
+          color: #065F46;
+          font-size: 14px;
+          font-weight: 500;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .excel-alert-error {
+          background: #FEF2F2;
+          border: 1px solid #FECACA;
+          border-radius: 10px;
+          padding: 12px 16px;
+          color: #991B1B;
+          font-size: 14px;
+          font-weight: 500;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+        }
+        .excel-file-error {
+          background: #FEF2F2;
+          border: 1px solid #FECACA;
+          border-radius: 8px;
+          padding: 10px 14px;
+          color: #991B1B;
+          font-size: 13px;
+          font-weight: 500;
+          margin-top: 8px;
+          display: inline-flex;
+          align-items: flex-start;
+          gap: 6px;
         }
         .maint-btn {
           padding: 10px 20px;
@@ -1501,18 +1902,61 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         }
       `}</style>
 
+      {/* Hidden Excel file input */}
+      <input
+        ref={excelFileInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        style={{ display: "none" }}
+        onChange={handleExcelFileChange}
+        id="excel-bulk-upload-input"
+      />
+
       <div className="batteries-container">
         <div className="header-row">
           <div className="header-left">
             <h2>Battery Inventory</h2>
           </div>
-          <button className="register-btn" onClick={handleOpenModal}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Register Battery
-          </button>
+          <div className="header-actions">
+            {excelFileError && (
+              <div className="excel-file-error">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                {excelFileError}
+              </div>
+            )}
+            <button
+              id="excel-bulk-upload-btn"
+              className="upload-excel-btn"
+              onClick={() => {
+                setExcelFileError(null);
+                excelFileInputRef.current && excelFileInputRef.current.click();
+              }}
+              disabled={excelUploading}
+              title="Upload an Excel file (.xlsx or .xls) to bulk register batteries"
+            >
+              {excelUploading ? (
+                <span className="excel-spinner" />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+              )}
+              {excelUploading ? "Uploading..." : "Upload Excel"}
+            </button>
+            <button className="register-btn" onClick={handleOpenModal} id="register-battery-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Register Battery
+            </button>
+          </div>
         </div>
 
         <div className="stats-grid">
@@ -2537,6 +2981,211 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                 }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Excel Uploading Overlay ===== */}
+      {excelUploading && (
+        <div className="excel-uploading-overlay">
+          <div className="excel-uploading-card">
+            <div className="excel-uploading-spinner" />
+            <p className="excel-uploading-text">Uploading Excel File…</p>
+            <p className="excel-uploading-subtext">Please wait while your file is being processed.<br />This may take a few moments.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Excel Upload Result Modal ===== */}
+      {excelUploadResult && (
+        <div className="excel-modal-overlay" onClick={handleExcelUploadResult}>
+          <div className="excel-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="excel-modal-header">
+              <h3 className="excel-modal-title">
+                {excelUploadResult.success ? "✅ Bulk Upload Complete" : "⚠️ Upload Result"}
+              </h3>
+              <button
+                type="button"
+                className="excel-modal-close-btn"
+                onClick={handleExcelUploadResult}
+                aria-label="Close"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            {/* Success / Error Alert */}
+            {excelUploadResult.success ? (
+              <div className="excel-alert-success">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Battery data uploaded successfully! The battery list has been refreshed.
+              </div>
+            ) : (
+              <div className="excel-alert-error">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>
+                  {excelUploadResult.error || "Upload failed. Please review the details below and try again."}
+                </span>
+              </div>
+            )}
+
+            {/* Summary Statistics */}
+            {excelUploadResult.data && (
+              <>
+                {(excelUploadResult.data.totalRowsProcessed !== undefined ||
+                  excelUploadResult.data.successCount !== undefined ||
+                  excelUploadResult.data.skippedCount !== undefined) && (
+                  <div className="excel-summary-grid">
+                    {excelUploadResult.data.totalRowsProcessed !== undefined && (
+                      <div className="excel-summary-card">
+                        <span className="excel-summary-label">Total Rows Processed</span>
+                        <span className="excel-summary-value">
+                          {excelUploadResult.data.totalRowsProcessed ?? 0}
+                        </span>
+                      </div>
+                    )}
+                    {excelUploadResult.data.successCount !== undefined && (
+                      <div className="excel-summary-card">
+                        <span className="excel-summary-label">Success Count</span>
+                        <span className="excel-summary-value success-color">
+                          {excelUploadResult.data.successCount ?? 0}
+                        </span>
+                      </div>
+                    )}
+                    {excelUploadResult.data.skippedCount !== undefined && (
+                      <div className="excel-summary-card">
+                        <span className="excel-summary-label">Skipped Count</span>
+                        <span className="excel-summary-value skip-color">
+                          {excelUploadResult.data.skippedCount ?? 0}
+                        </span>
+                      </div>
+                    )}
+                    {excelUploadResult.data.errors !== undefined && (
+                      <div className="excel-summary-card">
+                        <span className="excel-summary-label">Error Count</span>
+                        <span className="excel-summary-value error-color">
+                          {Array.isArray(excelUploadResult.data.errors)
+                            ? excelUploadResult.data.errors.length
+                            : 0}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Registered Batteries Table */}
+                {Array.isArray(excelUploadResult.data.registeredBatteries) &&
+                  excelUploadResult.data.registeredBatteries.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p className="excel-error-section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                      Registered Batteries ({excelUploadResult.data.registeredBatteries.length})
+                    </p>
+                    <div className="excel-registered-table-wrapper">
+                      <table className="excel-registered-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Barcode</th>
+                            <th>Customer Name</th>
+                            <th>Invoice Number</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {excelUploadResult.data.registeredBatteries.map((bat, idx) => (
+                            <tr key={idx}>
+                              <td style={{ color: '#6B7280', fontWeight: 500 }}>{idx + 1}</td>
+                              <td style={{ fontWeight: 600 }}>{bat.barcode || bat.serialNumber || "-"}</td>
+                              <td>{bat.customerName || "-"}</td>
+                              <td>{bat.invoiceNumber || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Errors Table */}
+                {Array.isArray(excelUploadResult.data.errors) &&
+                  excelUploadResult.data.errors.length > 0 && (
+                  <div>
+                    <p className="excel-error-section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                      </svg>
+                      Errors ({excelUploadResult.data.errors.length})
+                    </p>
+                    <div className="excel-error-table-wrapper">
+                      <table className="excel-error-table">
+                        <thead>
+                          <tr>
+                            <th>Row #</th>
+                            <th>Barcode</th>
+                            <th>Error Message</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {excelUploadResult.data.errors.map((err, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600, color: '#DC2626', whiteSpace: 'nowrap' }}>
+                                {err.rowNumber ?? err.row ?? (idx + 1)}
+                              </td>
+                              <td style={{ fontWeight: 500 }}>
+                                {err.barcode || err.serialNumber || err.barcodeNumber || "-"}
+                              </td>
+                              <td>{err.errorMessage || err.message || err.error || err.reason || String(err)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="form-actions" style={{ marginTop: 24, borderTop: '1px solid #E5E7EB', paddingTop: 20 }}>
+              <button
+                type="button"
+                className="action-btn"
+                onClick={handleExcelUploadResult}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="upload-excel-btn"
+                style={{ borderRadius: 8 }}
+                onClick={() => {
+                  handleExcelUploadResult();
+                  setTimeout(() => {
+                    setExcelFileError(null);
+                    excelFileInputRef.current && excelFileInputRef.current.click();
+                  }, 100);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                Upload Another File
               </button>
             </div>
           </div>
