@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 
-const AddStaffForm = ({ onClose }) => {
+const AddStaffForm = ({ onClose, defaultRole = "ADMIN", onSuccess }) => {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     mobile: "",
-    role: "ADMIN"
+    role: defaultRole
   });
   const [loading, setLoading] = useState(false);
   const baseUrl = import.meta.env.VITE_API_URL;
@@ -17,13 +17,17 @@ const AddStaffForm = ({ onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.name.trim() || !formData.email.trim() || !formData.mobile.trim() || !formData.password.trim()) {
+      alert("Please fill in all required fields.");
+      return;
+    }
     setLoading(true);
     const token = localStorage.getItem("token");
     try {
       const signupPayload = {
-        name: formData.name,
-        email: formData.email,
-        mobile: formData.mobile,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        mobile: formData.mobile.trim(),
         password: formData.password,
         confirmPassword: formData.password,
       };
@@ -55,7 +59,7 @@ const AddStaffForm = ({ onClose }) => {
       }
 
       const adminsList = await allAdminsRes.json();
-      const newAdmin = adminsList.find(a => a.email.toLowerCase() === formData.email.toLowerCase());
+      const newAdmin = adminsList.find(a => a.email.toLowerCase() === formData.email.trim().toLowerCase());
 
       if (!newAdmin) {
         throw new Error("User registered, but not found in list. Please update role manually.");
@@ -74,7 +78,17 @@ const AddStaffForm = ({ onClose }) => {
       });
 
       if (roleResponse.ok) {
-        alert(`${formData.role === "ADMIN_STAFF" ? "Staff" : formData.role === "DEALER" ? "Dealer" : "Admin"} registered and role assigned successfully!`);
+        const roleLabel = 
+          formData.role === "SALES_ADMIN" ? "Sales Admin" :
+          formData.role === "PRODUCTION_ADMIN" ? "Production Admin" :
+          formData.role === "SCM_ADMIN" ? "SCM Admin" :
+          formData.role === "ADMIN_STAFF" ? "Admin Staff" :
+          formData.role === "DEALER" ? "Dealer" : "Administrator";
+        if (onSuccess) {
+          onSuccess(`${roleLabel} registered successfully!`);
+        } else {
+          alert(`${roleLabel} registered and role assigned successfully!`);
+        }
         onClose();
       } else {
         const errorText = await roleResponse.text();
@@ -100,58 +114,73 @@ const AddStaffForm = ({ onClose }) => {
         fontFamily: "Lexend, sans-serif"
       }}
     >
-      <h2 style={{ fontSize: "24px", fontWeight: "700", marginBottom: "8px" }}>Register</h2>
-      <p style={{ fontSize: "14px", color: "#666", marginBottom: "24px" }}>Add a new administrator or dealer to the system</p>
+      <h2 style={{ fontSize: "24px", fontWeight: "700", marginBottom: "8px" }}>Create User Account</h2>
+      <p style={{ fontSize: "14px", color: "#666", marginBottom: "24px" }}>Add a new administrator, staff, or role-based user</p>
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        <input
-          type="text"
-          name="name"
-          placeholder="Full Name"
-          required
-          value={formData.name}
-          onChange={handleChange}
-          style={{ padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none" }}
-        />
-        <input
-          type="email"
-          name="email"
-          placeholder="Email Address"
-          required
-          value={formData.email}
-          onChange={handleChange}
-          style={{ padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none" }}
-        />
-        <input
-          type="text"
-          name="mobile"
-          placeholder="Mobile Number"
-          required
-          value={formData.mobile}
-          onChange={handleChange}
-          style={{ padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none" }}
-        />
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          required
-          value={formData.password}
-          onChange={handleChange}
-          style={{ padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none" }}
-        />
+        <div>
+          <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>Full Name</label>
+          <input
+            type="text"
+            name="name"
+            placeholder="Full Name"
+            required
+            value={formData.name}
+            onChange={handleChange}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>Email Address</label>
+          <input
+            type="email"
+            name="email"
+            placeholder="Email Address"
+            required
+            value={formData.email}
+            onChange={handleChange}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>Mobile Number</label>
+          <input
+            type="text"
+            name="mobile"
+            placeholder="Mobile Number"
+            required
+            value={formData.mobile}
+            onChange={handleChange}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>Password</label>
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            required
+            value={formData.password}
+            onChange={handleChange}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
 
-        <div style={{ marginTop: "8px" }}>
-          <label style={{ fontSize: "13px", fontWeight: "600", color: "#111", display: "block", marginBottom: "8px" }}>Role:</label>
+        <div>
+          <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>Role:</label>
           <select
             name="role"
             value={formData.role}
             onChange={handleChange}
-            style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", background: "#fff", outline: "none" }}
+            style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "1px solid #ddd", fontSize: "14px", background: "#fff", outline: "none", boxSizing: "border-box" }}
           >
             <option value="ADMIN">Administrator</option>
+            <option value="ADMIN_STAFF">Admin Staff</option>
+            <option value="SALES_ADMIN">Sales Admin</option>
+            <option value="PRODUCTION_ADMIN">Production Admin</option>
+            <option value="SCM_ADMIN">SCM Admin</option>
             <option value="DEALER">Dealer</option>
-            <option value="ADMIN_STAFF">Staff (Admin Staff)</option>
           </select>
         </div>
 
@@ -177,4 +206,5 @@ const AddStaffForm = ({ onClose }) => {
 };
 
 export default AddStaffForm;
+
 

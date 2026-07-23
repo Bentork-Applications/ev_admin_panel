@@ -80,7 +80,13 @@ export default function AdminLogin() {
         }
 
         let role = "ADMIN";
-        if (authorities.includes("DEALER")) {
+        if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+          role = "SALES_ADMIN";
+        } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+          role = "PRODUCTION_ADMIN";
+        } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+          role = "SCM_ADMIN";
+        } else if (authorities.includes("DEALER")) {
           role = "DEALER";
         } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
           role = "ADMIN_STAFF";

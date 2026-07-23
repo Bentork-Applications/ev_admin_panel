@@ -83,8 +83,11 @@ const StaffEdit = ({ staff, onClose }) => {
           style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ddd", fontSize: "14px", outline: "none" }}
         >
           <option value="ADMIN">Administrator</option>
+          <option value="ADMIN_STAFF">Admin Staff</option>
+          <option value="SALES_ADMIN">Sales Admin</option>
+          <option value="PRODUCTION_ADMIN">Production Admin</option>
+          <option value="SCM_ADMIN">SCM Admin</option>
           <option value="DEALER">Dealer</option>
-          <option value="ADMIN_STAFF">Staff (Admin Staff)</option>
         </select>
       </div>
 
@@ -94,7 +97,11 @@ const StaffEdit = ({ staff, onClose }) => {
           <div>
             <h4 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>{selectedRole}</h4>
             <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#666" }}>
-              {selectedRole === "ADMIN" ? "Full system access with all administrative privileges" : "Can manage users and specific operations."}
+              {selectedRole === "ADMIN" ? "Full system access with all administrative privileges" :
+               selectedRole === "SALES_ADMIN" ? "Access restricted to Sales Order Tracking and operations" :
+               selectedRole === "PRODUCTION_ADMIN" ? "Access restricted to Production Order Tracking and workflow" :
+               selectedRole === "SCM_ADMIN" ? "Access restricted to Supply Chain & Logistics Order Tracking" :
+               "Can manage users and specific operations."}
             </p>
           </div>
         </div>

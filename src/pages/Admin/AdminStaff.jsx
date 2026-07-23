@@ -666,7 +666,10 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
             >
               <option value="ALL">All Roles</option>
               <option value="ADMIN">Administrator</option>
-              <option value="ADMIN_STAFF">Staff</option>
+              <option value="ADMIN_STAFF">Admin Staff</option>
+              <option value="SALES_ADMIN">Sales Admin</option>
+              <option value="PRODUCTION_ADMIN">Production Admin</option>
+              <option value="SCM_ADMIN">SCM Admin</option>
             </select>
             <select
               style={{
@@ -730,7 +733,12 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
                             color: style.color === '#065F46' ? '#0369A1' : style.color,
                             border: `1px solid ${style.background === '#D1FAE5' ? '#A7F3D0' : style.background === '#DBEAFE' ? '#BAE6FD' : '#E5E7EB'}`
                           }}>
-                          {staff.role === 'ADMIN' || staff.role === 'admin' ? 'Administrator' : staff.role === 'ADMIN_STAFF' || staff.role === 'admin_staff' ? 'Staff' : staff.role || 'Admin'}
+                          {staff.role === 'ADMIN' || staff.role === 'admin' ? 'Administrator' : 
+                           staff.role === 'ADMIN_STAFF' || staff.role === 'admin_staff' ? 'Admin Staff' :
+                           staff.role === 'SALES_ADMIN' ? 'Sales Admin' :
+                           staff.role === 'PRODUCTION_ADMIN' ? 'Production Admin' :
+                           staff.role === 'SCM_ADMIN' ? 'SCM Admin' :
+                           staff.role || 'Admin'}
                           </span>
                         </td>
                         <td onClick={() => setSelectedStaffForDrawer(staff)}>

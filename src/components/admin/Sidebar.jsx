@@ -40,7 +40,13 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           authorities.push(payload.roles.toUpperCase());
         }
       }
-      if (authorities.includes("DEALER")) {
+      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+        resolvedRole = "SALES_ADMIN";
+      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+        resolvedRole = "PRODUCTION_ADMIN";
+      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+        resolvedRole = "SCM_ADMIN";
+      } else if (authorities.includes("DEALER")) {
         resolvedRole = "DEALER";
       } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
         resolvedRole = "ADMIN_STAFF";
@@ -77,7 +83,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
     {
       title: "Overview",
       items: [
-        { name: "Dashboard", icon: dashboardIcon, path: "/dashboard", roles: ["ADMIN", "DEALER", "ADMIN_STAFF"] }
+        { name: "Dashboard", icon: dashboardIcon, path: "/dashboard", roles: ["ADMIN", "DEALER", "ADMIN_STAFF", "SALES_ADMIN", "PRODUCTION_ADMIN", "SCM_ADMIN"] }
       ]
     },
     {
@@ -109,15 +115,21 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           name: "Order Tracking",
           icon: sessionsIcon,
           path: "/dashboard/orders",
-          roles: ["ADMIN", "ADMIN_STAFF"],
+          roles: ["ADMIN", "ADMIN_STAFF", "SALES_ADMIN", "PRODUCTION_ADMIN", "SCM_ADMIN"],
           getPendingCount: async (baseUrl, token) => {
             try {
-              const response = await fetch(`${baseUrl}/orders/admin/status/pending`, {
+              let endpoint = `${baseUrl}/orders/admin/all`;
+              const role = localStorage.getItem("userRole") || "";
+              if (role === "SCM_ADMIN") endpoint = `${baseUrl}/orders/scm/orders`;
+              else if (role === "PRODUCTION_ADMIN") endpoint = `${baseUrl}/orders/production/orders`;
+              else if (role === "SALES_ADMIN") endpoint = `${baseUrl}/orders/sales/my-orders`;
+
+              const response = await fetch(endpoint, {
                 headers: { Authorization: `Bearer ${token}` }
               });
               if (response.ok) {
                 const data = await response.json();
-                return Array.isArray(data) ? data.length : 0;
+                return Array.isArray(data) ? data.filter(o => o.orderStatus === "sales_registered" || o.orderStatus === "in_production").length : 0;
               }
             } catch (err) {
               console.error("Error fetching pending orders count:", err);
@@ -158,7 +170,10 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
         },
         { name: "Dealers", icon: staffIcon, path: "/dashboard/dealers", roles: ["ADMIN"] },
         { name: "Login Users", icon: staffIcon, path: "/dashboard/login-users", roles: ["ADMIN"] },
-        { name: "Admin Staff", icon: staffIcon, path: "/dashboard/staff", roles: ["ADMIN"] }
+        { name: "Admin Staff", icon: staffIcon, path: "/dashboard/staff", roles: ["ADMIN"] },
+        { name: "Sales Admin", icon: staffIcon, path: "/dashboard/sales-admin", roles: ["ADMIN"] },
+        { name: "Production Admin", icon: staffIcon, path: "/dashboard/production-admin", roles: ["ADMIN"] },
+        { name: "SCM Admin", icon: staffIcon, path: "/dashboard/scm-admin", roles: ["ADMIN"] }
       ]
     },
     {
@@ -203,7 +218,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
       title: "Account",
       items: [
         { name: "Dealer Profile", icon: staffIcon, path: "/dashboard/profile", roles: ["DEALER"] },
-        { name: "Log Out", icon: logoutIcon, path: null, roles: ["ADMIN", "DEALER", "ADMIN_STAFF"], isLogout: true }
+        { name: "Log Out", icon: logoutIcon, path: null, roles: ["ADMIN", "DEALER", "ADMIN_STAFF", "SALES_ADMIN", "PRODUCTION_ADMIN", "SCM_ADMIN"], isLogout: true }
       ]
     }
   ];

@@ -7,7 +7,7 @@ import LogoutModal from "../../components/admin/LogoutModal";
 import VectorIcon from "../../assets/icons/stafficon/Vector-3.svg";
 import StationIcon from "../../assets/icons/station.svg";
 import AdminIcon from "../../assets/icons/admin.svg";
-import UserIcon from "../../assets/icons/users.svg";import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import UserIcon from "../../assets/icons/users.svg"; import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
 // Pages
 const Stations = React.lazy(() => import("./Stations"));
 const Charger = React.lazy(() => import("./Charger"));
@@ -19,6 +19,9 @@ const Revenue = React.lazy(() => import("./Revenue"));
 const Maintenance = React.lazy(() => import("./Maintenance"));
 const MaintenanceDashboardPage = React.lazy(() => import("./MaintenanceDashboard"));
 const AdminStaff = React.lazy(() => import("./AdminStaff"));
+const SalesAdmin = React.lazy(() => import("./SalesAdmin"));
+const ProductionAdmin = React.lazy(() => import("./ProductionAdmin"));
+const ScmAdmin = React.lazy(() => import("./ScmAdmin"));
 const SlotBookings = React.lazy(() => import("./SlotBookings"));
 const Dealers = React.lazy(() => import("./Dealers"));
 const LoginUsers = React.lazy(() => import("./LoginUsers"));
@@ -28,6 +31,9 @@ const SupportRequests = React.lazy(() => import("./SupportRequests"));
 const Batteries = React.lazy(() => import("./Batteries"));
 const Orders = React.lazy(() => import("./Orders"));
 const WarrantyClaims = React.lazy(() => import("./WarrantyClaims"));
+const SalesDashboard = React.lazy(() => import("./dashboards/SalesDashboard"));
+const ProductionDashboard = React.lazy(() => import("./dashboards/ProductionDashboard"));
+const ScmDashboard = React.lazy(() => import("./dashboards/ScmDashboard"));
 
 const LoadingSpinner = () => (
   <div className="loading-spinner">
@@ -121,7 +127,13 @@ export default function Dashboard({ onLogout }) {
           authorities.push(payload.roles.toUpperCase());
         }
       }
-      if (authorities.includes("DEALER")) {
+      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+        resolvedRole = "SALES_ADMIN";
+      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+        resolvedRole = "PRODUCTION_ADMIN";
+      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+        resolvedRole = "SCM_ADMIN";
+      } else if (authorities.includes("DEALER")) {
         resolvedRole = "DEALER";
       } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
         resolvedRole = "ADMIN_STAFF";
@@ -222,7 +234,7 @@ export default function Dashboard({ onLogout }) {
     const totalB = computedBatteries.length;
     const availB = computedBatteries.filter(b => b.status === "Available").length;
     const activeW = computedBatteries.filter(b => b.warrantyActive).length;
-    
+
     const submittedC = rawClaims.length;
     const pendingC = rawClaims.filter(c => c.status === "request_created").length;
     const underServiceB = computedBatteries.filter(b => b.status === "Under Service").length;
@@ -419,7 +431,7 @@ export default function Dashboard({ onLogout }) {
           );
 
           await Promise.all(promises);
-          
+
           setRawClaims(claims);
           setRawBatteries(batteries);
 
@@ -1077,274 +1089,285 @@ export default function Dashboard({ onLogout }) {
               <Route
                 index
                 element={
-                  <div style={{ padding: "10px 20px" }}>
-                    <div style={{ marginBottom: "24px" }}>
-                      <p style={{ fontSize: "14px", color: "#6B7280", margin: "0 0 4px 0", fontWeight: "500" }}>
-                        {getGreeting()}{isAdminStaff ? `, ${staffName}` : ""}, <span style={{ color: "#27C786", fontWeight: "600" }}>{isDealer ? "Dealer!" : isAdminStaff ? "Staff Member!" : "Admin!"}</span>
-                      </p>
-                      <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#111827", margin: 0 }}>
-                        {isDealer ? "Dealer Dashboard" : isAdminStaff ? "Staff Dashboard" : "Fleet Overview Dashboard"}
-                      </h1>
-                      <div style={{ fontSize: "13px", color: "#9CA3AF", marginTop: "4px", fontWeight: "500" }}>
-                        {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  userRole === "SALES_ADMIN" ? (
+                    <SalesDashboard />
+                  ) : userRole === "PRODUCTION_ADMIN" ? (
+                    <ProductionDashboard />
+                  ) : userRole === "SCM_ADMIN" ? (
+                    <ScmDashboard />
+                  ) : (
+                    <div style={{ padding: "10px 20px" }}>
+                      <div style={{ marginBottom: "24px" }}>
+                        <p style={{ fontSize: "14px", color: "#6B7280", margin: "0 0 4px 0", fontWeight: "500" }}>
+                          {getGreeting()}{isAdminStaff ? `, ${staffName}` : ""}, <span style={{ color: "#27C786", fontWeight: "600" }}>{isDealer ? "Dealer!" : isAdminStaff ? "Staff Member!" : "Admin!"}</span>
+                        </p>
+                        <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#111827", margin: 0 }}>
+                          {isDealer ? "Dealer Dashboard" : isAdminStaff ? "Staff Dashboard" : "Fleet Overview Dashboard"}
+                        </h1>
+                        <div style={{ fontSize: "13px", color: "#9CA3AF", marginTop: "4px", fontWeight: "500" }}>
+                          {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </div>
                       </div>
-                    </div>
-                    {loading ? (
-                      <>
-                        <div className="cards-container">
-                          {Array.from({ length: isDealer ? 4 : isAdminStaff ? 6 : 7 }).map((_, i) => (
-                            <div key={i} className="skeleton-card">
-                              <div className="skeleton-card-icon skeleton-shimmer"></div>
-                              <div className="skeleton-card-info">
-                                <div className="skeleton-text-sm skeleton-shimmer"></div>
-                                <div className="skeleton-text-lg skeleton-shimmer" style={{ width: i % 2 === 0 ? "45%" : "30%" }}></div>
-                                <div className="skeleton-text-xs skeleton-shimmer"></div>
+                      {loading ? (
+                        <>
+                          <div className="cards-container">
+                            {Array.from({ length: isDealer ? 4 : isAdminStaff ? 6 : 7 }).map((_, i) => (
+                              <div key={i} className="skeleton-card">
+                                <div className="skeleton-card-icon skeleton-shimmer"></div>
+                                <div className="skeleton-card-info">
+                                  <div className="skeleton-text-sm skeleton-shimmer"></div>
+                                  <div className="skeleton-text-lg skeleton-shimmer" style={{ width: i % 2 === 0 ? "45%" : "30%" }}></div>
+                                  <div className="skeleton-text-xs skeleton-shimmer"></div>
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {!isAdminStaff && (
-                          <div className="middle-section-grid">
-                            <div className="skeleton-chart-container">
-                              <div className="skeleton-chart-header">
-                                <div className="skeleton-chart-title skeleton-shimmer"></div>
-                                <div className="skeleton-chart-dropdown skeleton-shimmer"></div>
-                              </div>
-                              <div className="skeleton-chart-body skeleton-shimmer"></div>
-                            </div>
-                            <div className="skeleton-quick-actions">
-                              <div className="skeleton-quick-title skeleton-shimmer"></div>
-                              <div className="skeleton-quick-btn skeleton-shimmer"></div>
-                              <div className="skeleton-quick-btn skeleton-shimmer"></div>
-                              <div className="skeleton-quick-btn skeleton-shimmer"></div>
-                              <div className="skeleton-quick-btn skeleton-shimmer"></div>
-                            </div>
+                            ))}
                           </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div className="cards-container">
-                          {dashboardCards.filter(c => !c.hidden).map((card, index) => (
-                            <div
-                              key={index}
-                              className="card-box animated-fade-in"
-                              style={{ animationDelay: `${index * 60}ms` }}
-                              onClick={() => handleCardClick(card.title)}
-                            >
-                              <div className="card-icon-circle">
-                                {getCardIcon(card.title)}
+
+                          {!isAdminStaff && (
+                            <div className="middle-section-grid">
+                              <div className="skeleton-chart-container">
+                                <div className="skeleton-chart-header">
+                                  <div className="skeleton-chart-title skeleton-shimmer"></div>
+                                  <div className="skeleton-chart-dropdown skeleton-shimmer"></div>
+                                </div>
+                                <div className="skeleton-chart-body skeleton-shimmer"></div>
                               </div>
-                              <div className="card-info-group">
-                                <span className="card-box-title">{card.title}</span>
-                                <span className="card-box-value">
-                                  <AnimatedNumber value={card.value} />
-                                </span>
-                                <span className="card-box-subtext">{card.value1}</span>
-                              </div>
-                              <div className="card-box-arrow">
-                                ↑
+                              <div className="skeleton-quick-actions">
+                                <div className="skeleton-quick-title skeleton-shimmer"></div>
+                                <div className="skeleton-quick-btn skeleton-shimmer"></div>
+                                <div className="skeleton-quick-btn skeleton-shimmer"></div>
+                                <div className="skeleton-quick-btn skeleton-shimmer"></div>
+                                <div className="skeleton-quick-btn skeleton-shimmer"></div>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div className="cards-container">
+                            {dashboardCards.filter(c => !c.hidden).map((card, index) => (
+                              <div
+                                key={index}
+                                className="card-box animated-fade-in"
+                                style={{ animationDelay: `${index * 60}ms` }}
+                                onClick={() => handleCardClick(card.title)}
+                              >
+                                <div className="card-icon-circle">
+                                  {getCardIcon(card.title)}
+                                </div>
+                                <div className="card-info-group">
+                                  <span className="card-box-title">{card.title}</span>
+                                  <span className="card-box-value">
+                                    <AnimatedNumber value={card.value} />
+                                  </span>
+                                  <span className="card-box-subtext">{card.value1}</span>
+                                </div>
+                                <div className="card-box-arrow">
+                                  ↑
+                                </div>
+                              </div>
+                            ))}
+                          </div>
 
-                        {/* Helper function to render empty states in staff charts */}
-                        {(() => {
-                          const renderEmptyState = (message) => (
-                            <div className="empty-state-container">
-                              <span className="empty-state-icon" style={{ fontSize: "36px" }}>📊</span>
-                              <span className="empty-state-text" style={{ fontSize: "14px", color: "#6B7280" }}>{message}</span>
-                            </div>
-                          );
+                          {/* Helper function to render empty states in staff charts */}
+                          {(() => {
+                            const renderEmptyState = (message) => (
+                              <div className="empty-state-container">
+                                <span className="empty-state-icon" style={{ fontSize: "36px" }}>📊</span>
+                                <span className="empty-state-text" style={{ fontSize: "14px", color: "#6B7280" }}>{message}</span>
+                              </div>
+                            );
 
-                          return (
-                            <>
-                              {!isAdminStaff && (
-                                <div className="middle-section-grid animated-fade-in" style={{ animationDelay: "250ms" }}>
-                                  <div className="overview-chart-container">
-                                    <OverviewChart
-                                      users={!isDealer ? getCardValue("Total Users") : null}
-                                      revenue={getCardValue("Total Revenue")}
-                                      sessions={getCardValue("Total Sessions")}
-                                      energy={!isDealer ? getCardValue("Units Consumed") : null}
-                                    />
-                                  </div>
-                                  <div className="quick-actions-container">
-                                    <div className="quick-actions-card">
-                                      <h3>Quick Actions</h3>
-                                      <div className="action-buttons-list">
-                                        <button className="action-btn-item" onClick={() => handleQuickAction("Add Station")}>
-                                          <span>+</span> Add Station
-                                        </button>
-                                        <button className="action-btn-item" onClick={() => handleQuickAction("Register Dealer")}>
-                                          <span>+</span> Register Dealer
-                                        </button>
-                                        <button className="action-btn-item" onClick={() => handleQuickAction("Add User")}>
-                                          <span>+</span> Add User
-                                        </button>
-                                        <button className="action-btn-item" onClick={() => handleQuickAction("Raise Ticket")}>
-                                          <span>+</span> Raise Ticket
-                                        </button>
+                            return (
+                              <>
+                                {!isAdminStaff && (
+                                  <div className="middle-section-grid animated-fade-in" style={{ animationDelay: "250ms" }}>
+                                    <div className="overview-chart-container">
+                                      <OverviewChart
+                                        users={!isDealer ? getCardValue("Total Users") : null}
+                                        revenue={getCardValue("Total Revenue")}
+                                        sessions={getCardValue("Total Sessions")}
+                                        energy={!isDealer ? getCardValue("Units Consumed") : null}
+                                      />
+                                    </div>
+                                    <div className="quick-actions-container">
+                                      <div className="quick-actions-card">
+                                        <h3>Quick Actions</h3>
+                                        <div className="action-buttons-list">
+                                          <button className="action-btn-item" onClick={() => handleQuickAction("Add Station")}>
+                                            <span>+</span> Add Station
+                                          </button>
+                                          <button className="action-btn-item" onClick={() => handleQuickAction("Register Dealer")}>
+                                            <span>+</span> Register Dealer
+                                          </button>
+                                          <button className="action-btn-item" onClick={() => handleQuickAction("Add User")}>
+                                            <span>+</span> Add User
+                                          </button>
+                                          <button className="action-btn-item" onClick={() => handleQuickAction("Raise Ticket")}>
+                                            <span>+</span> Raise Ticket
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {isAdminStaff && (
-                                <div className="staff-dashboard-grid animated-fade-in" style={{ animationDelay: "250ms", marginTop: "24px" }}>
-                                  <div className="staff-analytics-section">
-                                    {/* 1. Donut Chart Box */}
-                                    <div className="staff-card">
-                                      <div className="staff-card-header">
-                                        <div>
-                                          <h3 className="staff-card-title">Battery Inventory Status</h3>
-                                          <span className="staff-card-subtitle" style={{ fontSize: "11px", color: "#6B7280" }}>Current stock allocation</span>
+                                {isAdminStaff && (
+                                  <div className="staff-dashboard-grid animated-fade-in" style={{ animationDelay: "250ms", marginTop: "24px" }}>
+                                    <div className="staff-analytics-section">
+                                      {/* 1. Donut Chart Box */}
+                                      <div className="staff-card">
+                                        <div className="staff-card-header">
+                                          <div>
+                                            <h3 className="staff-card-title">Battery Inventory Status</h3>
+                                            <span className="staff-card-subtitle" style={{ fontSize: "11px", color: "#6B7280" }}>Current stock allocation</span>
+                                          </div>
+                                        </div>
+                                        {rawBatteries.length === 0 ? (
+                                          renderEmptyState("No Battery Inventory data available.")
+                                        ) : (
+                                          <>
+                                            <ResponsiveContainer width="100%" height={240}>
+                                              <PieChart>
+                                                <Pie
+                                                  data={staffStats.statusData}
+                                                  cx="50%"
+                                                  cy="50%"
+                                                  innerRadius={60}
+                                                  outerRadius={80}
+                                                  paddingAngle={5}
+                                                  dataKey="value"
+                                                >
+                                                  {staffStats.statusData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                  ))}
+                                                </Pie>
+                                                <Tooltip formatter={(value) => [`${value} Batteries`, 'Count']} />
+                                              </PieChart>
+                                            </ResponsiveContainer>
+                                            <div className="staff-donut-legend">
+                                              {staffStats.statusData.map((entry, index) => (
+                                                <div key={index} className="legend-item">
+                                                  <div className="legend-color" style={{ background: entry.color }}></div>
+                                                  <span>{entry.name} ({entry.value})</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+
+                                      {/* 2. Charts Row */}
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                                        <div className="staff-card">
+                                          <div className="staff-card-header">
+                                            <div>
+                                              <h3 className="staff-card-title">Warranty Claims Trend</h3>
+                                              <span className="staff-card-subtitle" style={{ fontSize: "11px", color: "#6B7280" }}>Last 7 Days</span>
+                                            </div>
+                                          </div>
+                                          {rawClaims.length === 0 ? (
+                                            renderEmptyState("No claims submitted in the last 7 days.")
+                                          ) : (
+                                            <ResponsiveContainer width="100%" height={220}>
+                                              <LineChart data={staffStats.trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                                <XAxis dataKey="date" stroke="#9CA3AF" fontSize={11} tickLine={false} />
+                                                <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} allowDecimals={false} />
+                                                <Tooltip />
+                                                <Line type="monotone" dataKey="claims" stroke="#3B82F6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff' }} activeDot={{ r: 6 }} />
+                                              </LineChart>
+                                            </ResponsiveContainer>
+                                          )}
+                                        </div>
+
+                                        <div className="staff-card">
+                                          <div className="staff-card-header">
+                                            <div>
+                                              <h3 className="staff-card-title">Claims by Status</h3>
+                                              <span className="staff-card-subtitle" style={{ fontSize: "11px", color: "#6B7280" }}>Status distribution</span>
+                                            </div>
+                                          </div>
+                                          {rawClaims.length === 0 ? (
+                                            renderEmptyState("No claims data available.")
+                                          ) : (
+                                            <ResponsiveContainer width="100%" height={220}>
+                                              <BarChart data={staffStats.statusChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                                <XAxis dataKey="status" stroke="#9CA3AF" fontSize={11} tickLine={false} />
+                                                <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} allowDecimals={false} />
+                                                <Tooltip cursor={{ fill: 'rgba(243, 244, 246, 0.5)' }} />
+                                                <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                                                  {staffStats.statusChartData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                  ))}
+                                                </Bar>
+                                              </BarChart>
+                                            </ResponsiveContainer>
+                                          )}
                                         </div>
                                       </div>
-                                      {rawBatteries.length === 0 ? (
-                                        renderEmptyState("No Battery Inventory data available.")
-                                      ) : (
-                                        <>
-                                          <ResponsiveContainer width="100%" height={240}>
-                                            <PieChart>
-                                              <Pie
-                                                data={staffStats.statusData}
-                                                cx="50%"
-                                                cy="50%"
-                                                innerRadius={60}
-                                                outerRadius={80}
-                                                paddingAngle={5}
-                                                dataKey="value"
-                                              >
-                                                {staffStats.statusData.map((entry, index) => (
-                                                  <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                              </Pie>
-                                              <Tooltip formatter={(value) => [`${value} Batteries`, 'Count']} />
-                                            </PieChart>
-                                          </ResponsiveContainer>
-                                          <div className="staff-donut-legend">
-                                            {staffStats.statusData.map((entry, index) => (
-                                              <div key={index} className="legend-item">
-                                                <div className="legend-color" style={{ background: entry.color }}></div>
-                                                <span>{entry.name} ({entry.value})</span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                                      {/* Quick Actions Card */}
+                                      <div className="staff-card">
+                                        <div className="staff-card-header">
+                                          <h3 className="staff-card-title">Quick Actions</h3>
+                                        </div>
+                                        <div className="action-buttons-list">
+                                          <button className="action-btn-item" onClick={() => navigate("batteries")}>
+                                            <span style={{ fontSize: "16px" }}>🔋</span> View Battery Inventory
+                                          </button>
+                                          <button className="action-btn-item" onClick={() => navigate("warranty-claims", { state: { openCreateModal: true } })}>
+                                            <span style={{ fontSize: "16px" }}>📝</span> Submit Warranty Claim
+                                          </button>
+                                          <button className="action-btn-item" onClick={() => navigate("warranty-claims")}>
+                                            <span style={{ fontSize: "16px" }}>📋</span> View My Warranty Claims
+                                          </button>
+                                          <button className="action-btn-item" onClick={() => setShowQRScanner(true)}>
+                                            <span style={{ fontSize: "16px" }}>📷</span> Scan Battery QR Code
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Recent Activity Card */}
+                                      <div className="staff-card">
+                                        <div className="staff-card-header">
+                                          <h3 className="staff-card-title">Recent Activity</h3>
+                                        </div>
+                                        {staffStats.recentActivities.length === 0 ? (
+                                          renderEmptyState("No recent activity logged.")
+                                        ) : (
+                                          <div className="activity-timeline" style={{ maxHeight: "380px", overflowY: "auto", paddingRight: "4px" }}>
+                                            {staffStats.recentActivities.map((act) => (
+                                              <div key={act.id} className="activity-node">
+                                                <div className="activity-dot">
+                                                  {act.type === "New Battery Added" ? "🔋" : act.type === "Warranty Claim Submitted" ? "📝" : act.type === "Claim Status Updated" ? "⚙️" : "🛠️"}
+                                                </div>
+                                                <div className="activity-node-content">
+                                                  <span className="activity-node-title">{act.type}</span>
+                                                  <span className="activity-node-desc">{act.text}</span>
+                                                  <span className="activity-node-time">{act.timestamp.toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                                                </div>
                                               </div>
                                             ))}
                                           </div>
-                                        </>
-                                      )}
-                                    </div>
-
-                                    {/* 2. Charts Row */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                                      <div className="staff-card">
-                                        <div className="staff-card-header">
-                                          <div>
-                                            <h3 className="staff-card-title">Warranty Claims Trend</h3>
-                                            <span className="staff-card-subtitle" style={{ fontSize: "11px", color: "#6B7280" }}>Last 7 Days</span>
-                                          </div>
-                                        </div>
-                                        {rawClaims.length === 0 ? (
-                                          renderEmptyState("No claims submitted in the last 7 days.")
-                                        ) : (
-                                          <ResponsiveContainer width="100%" height={220}>
-                                            <LineChart data={staffStats.trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                              <XAxis dataKey="date" stroke="#9CA3AF" fontSize={11} tickLine={false} />
-                                              <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} allowDecimals={false} />
-                                              <Tooltip />
-                                              <Line type="monotone" dataKey="claims" stroke="#3B82F6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff' }} activeDot={{ r: 6 }} />
-                                            </LineChart>
-                                          </ResponsiveContainer>
-                                        )}
-                                      </div>
-
-                                      <div className="staff-card">
-                                        <div className="staff-card-header">
-                                          <div>
-                                            <h3 className="staff-card-title">Claims by Status</h3>
-                                            <span className="staff-card-subtitle" style={{ fontSize: "11px", color: "#6B7280" }}>Status distribution</span>
-                                          </div>
-                                        </div>
-                                        {rawClaims.length === 0 ? (
-                                          renderEmptyState("No claims data available.")
-                                        ) : (
-                                          <ResponsiveContainer width="100%" height={220}>
-                                            <BarChart data={staffStats.statusChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                              <XAxis dataKey="status" stroke="#9CA3AF" fontSize={11} tickLine={false} />
-                                              <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} allowDecimals={false} />
-                                              <Tooltip cursor={{ fill: 'rgba(243, 244, 246, 0.5)' }} />
-                                              <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                                                {staffStats.statusChartData.map((entry, index) => (
-                                                  <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                              </Bar>
-                                            </BarChart>
-                                          </ResponsiveContainer>
                                         )}
                                       </div>
                                     </div>
                                   </div>
-
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                                    {/* Quick Actions Card */}
-                                    <div className="staff-card">
-                                      <div className="staff-card-header">
-                                        <h3 className="staff-card-title">Quick Actions</h3>
-                                      </div>
-                                      <div className="action-buttons-list">
-                                        <button className="action-btn-item" onClick={() => navigate("batteries")}>
-                                          <span style={{ fontSize: "16px" }}>🔋</span> View Battery Inventory
-                                        </button>
-                                        <button className="action-btn-item" onClick={() => navigate("warranty-claims", { state: { openCreateModal: true } })}>
-                                          <span style={{ fontSize: "16px" }}>📝</span> Submit Warranty Claim
-                                        </button>
-                                        <button className="action-btn-item" onClick={() => navigate("warranty-claims")}>
-                                          <span style={{ fontSize: "16px" }}>📋</span> View My Warranty Claims
-                                        </button>
-                                        <button className="action-btn-item" onClick={() => setShowQRScanner(true)}>
-                                          <span style={{ fontSize: "16px" }}>📷</span> Scan Battery QR Code
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Recent Activity Card */}
-                                    <div className="staff-card">
-                                      <div className="staff-card-header">
-                                        <h3 className="staff-card-title">Recent Activity</h3>
-                                      </div>
-                                      {staffStats.recentActivities.length === 0 ? (
-                                        renderEmptyState("No recent activity logged.")
-                                      ) : (
-                                        <div className="activity-timeline" style={{ maxHeight: "380px", overflowY: "auto", paddingRight: "4px" }}>
-                                          {staffStats.recentActivities.map((act) => (
-                                            <div key={act.id} className="activity-node">
-                                              <div className="activity-dot">
-                                                {act.type === "New Battery Added" ? "🔋" : act.type === "Warranty Claim Submitted" ? "📝" : act.type === "Claim Status Updated" ? "⚙️" : "🛠️"}
-                                              </div>
-                                              <div className="activity-node-content">
-                                                <span className="activity-node-title">{act.type}</span>
-                                                <span className="activity-node-desc">{act.text}</span>
-                                                <span className="activity-node-time">{act.timestamp.toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </>
-                    )}
-                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )
                 }
               />
+
+
+
 
               {/* Role Protected Routes */}
               {userRole === "ADMIN" && (
@@ -1362,6 +1385,9 @@ export default function Dashboard({ onLogout }) {
                   <Route path="login-users" element={<LoginUsers baseUrl={baseUrl} />} />
                   <Route path="plans" element={<Plans baseUrl={baseUrl} />} />
                   <Route path="staff" element={<AdminStaff baseUrl={baseUrl} />} />
+                  <Route path="sales-admin" element={<SalesAdmin baseUrl={baseUrl} />} />
+                  <Route path="production-admin" element={<ProductionAdmin baseUrl={baseUrl} />} />
+                  <Route path="scm-admin" element={<ScmAdmin baseUrl={baseUrl} />} />
                   <Route path="dealers" element={<Dealers baseUrl={baseUrl} />} />
                   <Route path="cafes" element={<CafeConfig baseUrl={baseUrl} />} />
                   <Route path="batteries" element={<Batteries baseUrl={baseUrl} />} />
@@ -1409,26 +1435,32 @@ export default function Dashboard({ onLogout }) {
                 </>
               )}
 
+              {(userRole === "SALES_ADMIN" || userRole === "PRODUCTION_ADMIN" || userRole === "SCM_ADMIN") && (
+                <>
+                  <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
+                </>
+              )}
+
               {/* Catch-all for unauthorized routes */}
-              <Route path="*" element={<Navigate to="" replace />} />
-            </Routes>
-          </React.Suspense>
-        </main>
-      </div>
+              < Route path="*" element={< Navigate to="" replace />} />
+            </Routes >
+          </React.Suspense >
+        </main >
+      </div >
 
       {showQRScanner && (
         <div className="scanner-modal-overlay" onClick={() => { setShowQRScanner(false); setQrCodeInput(""); setQrScanResult(null); }}>
           <div className="scanner-modal-box" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Scan Battery QR Code</h3>
-              <button 
-                onClick={() => { setShowQRScanner(false); setQrCodeInput(""); setQrScanResult(null); }} 
+              <button
+                onClick={() => { setShowQRScanner(false); setQrCodeInput(""); setQrScanResult(null); }}
                 style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#6B7280' }}
               >
                 ×
               </button>
             </div>
-            
+
             {!qrScanResult && (
               <div style={{ position: 'relative', width: '100%', height: 160, background: '#111827', borderRadius: 8, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
                 <div style={{ position: 'absolute', width: 120, height: 120, border: '2px solid #27C786', borderRadius: 8 }}></div>
@@ -1460,10 +1492,10 @@ export default function Dashboard({ onLogout }) {
               <div className="form-group" style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 13, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 6 }}>Enter Barcode Manually</label>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. BAT001" 
-                    value={qrCodeInput} 
+                  <input
+                    type="text"
+                    placeholder="e.g. BAT001"
+                    value={qrCodeInput}
                     onChange={(e) => setQrCodeInput(e.target.value)}
                     style={{ flex: 1, padding: '8px 12px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 14 }}
                     required
@@ -1473,9 +1505,9 @@ export default function Dashboard({ onLogout }) {
               </div>
 
               {!qrScanResult && (
-                <button 
-                  type="button" 
-                  className="sec-btn" 
+                <button
+                  type="button"
+                  className="sec-btn"
                   onClick={() => {
                     if (rawBatteries.length > 0) {
                       const randomB = rawBatteries[Math.floor(Math.random() * rawBatteries.length)];
@@ -1514,8 +1546,8 @@ export default function Dashboard({ onLogout }) {
                     ✖ {qrScanResult.msg}
                   </div>
                 )}
-                
-                <button 
+
+                <button
                   onClick={() => { setQrScanResult(null); setQrCodeInput(""); }}
                   className="sec-btn"
                   style={{ width: '100%', marginTop: 12, padding: '6px 12px', fontSize: 12 }}
@@ -1531,6 +1563,6 @@ export default function Dashboard({ onLogout }) {
       {showLogout && (
         <LogoutModal onClose={() => setShowLogout(false)} onConfirm={handleLogout} />
       )}
-    </div>
+    </div >
   );
 }
