@@ -135,6 +135,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     return specLine;
   };
 
+  const [recordPaymentAmount, setRecordPaymentAmount] = useState("");
+
   // Form Data States
   const [salesFormData, setSalesFormData] = useState({
     assignedUserId: null,
@@ -149,7 +151,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     productDetails: "02V 3Ah Chemistry = NMC",
     partQuantity: 1,
     expectedDeliveryDate: "",
-    paymentStatus: "pending",
+    totalInvoiceAmount: "",
+    receivedAmount: "",
     priority: "medium",
     gstNumber: "",
     address: "",
@@ -340,15 +343,21 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       errors.expectedDeliveryDate = "Expected delivery date is required";
     }
 
-    if (!data.paymentStatus) errors.paymentStatus = "Payment status is required";
-    if (!data.priority) errors.priority = "Priority is required";
+    const totalAmt = parseFloat(data.totalInvoiceAmount);
+    if (isNaN(totalAmt) || totalAmt <= 0) {
+      errors.totalInvoiceAmount = "Total invoice amount must be a positive number";
+    }
 
-    if (data.gstNumber && data.gstNumber.trim()) {
-      const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}$/;
-      if (!gstRegex.test(data.gstNumber.trim())) {
-        errors.gstNumber = "Invalid GST number format (15-character GSTIN format required)";
+    if (data.receivedAmount !== undefined && data.receivedAmount !== "") {
+      const recAmt = parseFloat(data.receivedAmount);
+      if (isNaN(recAmt) || recAmt < 0) {
+        errors.receivedAmount = "Received amount cannot be negative";
+      } else if (recAmt > totalAmt) {
+        errors.receivedAmount = "Received amount cannot exceed total invoice amount";
       }
     }
+
+    if (!data.priority) errors.priority = "Priority is required";
 
     return errors;
   };
@@ -398,10 +407,11 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         quantity: Number(salesFormData.partQuantity) || 1,
         partQuantity: Number(salesFormData.partQuantity) || 1,
         expectedDeliveryDate: salesFormData.expectedDeliveryDate,
-        paymentStatus: salesFormData.paymentStatus,
         priority: salesFormData.priority,
         gstNumber: salesFormData.gstNumber?.trim() || null,
         address: salesFormData.address?.trim() || null,
+        totalInvoiceAmount: Number(salesFormData.totalInvoiceAmount) || 0,
+        receivedAmount: Number(salesFormData.receivedAmount) || 0,
       };
 
       const created = await orderService.salesCreateOrder(payload);
@@ -419,7 +429,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         productDetails: "02V 3Ah Chemistry = NMC",
         partQuantity: 1,
         expectedDeliveryDate: "",
-        paymentStatus: "pending",
+        totalInvoiceAmount: "",
+        receivedAmount: "",
         priority: "medium",
         gstNumber: "",
         address: "",
@@ -451,7 +462,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       quantity: qty,
       partQuantity: qty,
       expectedDeliveryDate: order.expectedDeliveryDate || "",
-      paymentStatus: order.paymentStatus || "pending",
+      totalInvoiceAmount: order.totalInvoiceAmount || "",
+      receivedAmount: order.receivedAmount || "",
       priority: order.priority || "medium",
       gstNumber: order.gstNumber || "",
       address: order.address || "",
@@ -510,6 +522,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         ...editOrderData,
         quantity: Number(editOrderData.partQuantity) || Number(editOrderData.quantity) || 1,
         partQuantity: Number(editOrderData.partQuantity) || Number(editOrderData.quantity) || 1,
+        totalInvoiceAmount: Number(editOrderData.totalInvoiceAmount) || 0,
+        receivedAmount: Number(editOrderData.receivedAmount) || 0,
       };
       const updated = await orderService.salesUpdateOrder(editOrderData.id, payload);
       showToast(`Order ${updated.orderNumber || editOrderData.orderNumber} updated successfully!`, "success");
@@ -525,14 +539,40 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     }
   };
 
+  const handleRecordIncrementalPayment = async (e) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+    const amt = parseFloat(recordPaymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      showToast("Please enter a valid positive payment amount", "error");
+      return;
+    }
+    if (amt > (selectedOrder.pendingAmount || 0)) {
+      showToast(`Payment amount cannot exceed the pending amount of ₹${(selectedOrder.pendingAmount || 0).toLocaleString("en-IN")}`, "error");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const updated = await orderService.salesRecordPayment(selectedOrder.id, amt);
+      showToast("Payment recorded successfully!", "success");
+      setRecordPaymentAmount("");
+      setSelectedOrder(updated);
+      fetchOrders();
+    } catch (err) {
+      showToast(err.message || "Failed to record payment", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // --- PRODUCTION ADMIN HANDLERS ---
   const handleUpdateProductionStatus = async (orderId, targetStatus) => {
     // Payment-based production approval check
     const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrder?.id === orderId ? selectedOrder : null);
     if (targetOrder && (targetStatus === "in_progress" || targetStatus === "in_production" || targetStatus === "testing" || targetStatus === "completed")) {
-      const isPaid = (targetOrder.paymentStatus || "").toLowerCase() === "paid";
+      const isPaid = (targetOrder.paymentStatus || "").toLowerCase() === "paid" && (Number(targetOrder.pendingAmount) || 0) === 0;
       if (!isPaid) {
-        showToast("Order cannot be sent to Production until the payment is marked as Paid.", "error");
+        showToast("Order cannot be sent to Production until the pending amount is 0.", "error");
         return;
       }
     }
@@ -1663,6 +1703,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                 <th>Order # & PI</th>
                 <th>Customer & Contact</th>
                 <th>Product Details</th>
+                <th>Address</th>
                 <th>Order Status</th>
                 <th>Production Status</th>
                 <th>Barcode & Tracking</th>
@@ -1697,6 +1738,13 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     <td>
                       <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: '#374151' }} title={order.productDetails}>
                         {order.productDetails || "—"}
+                      </div>
+                    </td>
+
+                    {/* Address */}
+                    <td>
+                      <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: '#374151' }} title={order.address}>
+                        {order.address || "—"}
                       </div>
                     </td>
 
@@ -1741,8 +1789,17 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                         <span className="badge-pill" style={{ background: priorityBadge.bg, color: priorityBadge.fg }}>
                           {priorityBadge.label}
                         </span>
-                        <span className={`payment-tag ${order.paymentStatus === "paid" ? "paid" : "pending"}`}>
-                          {order.paymentStatus === "paid" ? "Paid" : "Pending"}
+                        <span className={`payment-tag ${order.paymentStatus === "paid"
+                          ? "paid"
+                          : order.paymentStatus === "partial"
+                            ? "partial"
+                            : "pending"
+                          }`}>
+                          {order.paymentStatus === "paid"
+                            ? "Paid"
+                            : order.paymentStatus === "partial"
+                              ? "Partial"
+                              : "Pending"}
                         </span>
                       </div>
                     </td>
@@ -1790,17 +1847,17 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                               value={order.productionStatus === "in_progress" ? "in_progress" : order.productionStatus === "testing" ? "testing" : order.productionStatus === "completed" ? "completed" : "pending"}
                               onChange={(e) => handleUpdateProductionStatus(order.id, e.target.value)}
                               disabled={submitting}
-                              title={(order.paymentStatus || "").toLowerCase() !== "paid" ? "Order cannot be sent to Production until the payment is marked as Paid." : ""}
+                              title={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "Order cannot be sent to Production until the pending amount is 0." : ""}
                             >
                               <option value="pending">Pending</option>
-                              <option value="in_progress" disabled={(order.paymentStatus || "").toLowerCase() !== "paid"}>
-                                In Production {(order.paymentStatus || "").toLowerCase() !== "paid" ? "(Payment Pending)" : ""}
+                              <option value="in_progress" disabled={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0}>
+                                In Production {(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "(Payment Pending)" : ""}
                               </option>
-                              <option value="testing" disabled={(order.paymentStatus || "").toLowerCase() !== "paid"}>
-                                Testing {(order.paymentStatus || "").toLowerCase() !== "paid" ? "(Payment Pending)" : ""}
+                              <option value="testing" disabled={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0}>
+                                Testing {(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "(Payment Pending)" : ""}
                               </option>
-                              <option value="completed" disabled={(order.paymentStatus || "").toLowerCase() !== "paid"}>
-                                Completed {(order.paymentStatus || "").toLowerCase() !== "paid" ? "(Payment Pending)" : ""}
+                              <option value="completed" disabled={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0}>
+                                Completed {(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "(Payment Pending)" : ""}
                               </option>
                             </select>
                           </div>
@@ -2056,9 +2113,36 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   <div className="detail-item">
                     <span className="label">Payment Status</span>
                     <span className="val">
-                      <span className={`payment-tag ${selectedOrder.paymentStatus === "paid" ? "paid" : "pending"}`}>
-                        {selectedOrder.paymentStatus === "paid" ? "Paid" : "Pending"}
+                      <span className={`payment-tag ${selectedOrder.paymentStatus === "paid"
+                        ? "paid"
+                        : selectedOrder.paymentStatus === "partial"
+                          ? "partial"
+                          : "pending"
+                        }`}>
+                        {selectedOrder.paymentStatus === "paid"
+                          ? "Paid"
+                          : selectedOrder.paymentStatus === "partial"
+                            ? "Partial"
+                            : "Pending"}
                       </span>
+                    </span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="label">Total Invoice Amount</span>
+                    <span className="val highlight" style={{ color: "#1E293B", fontWeight: 600 }}>
+                      ₹{parseFloat(selectedOrder.totalInvoiceAmount || 0).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="label">Received Amount</span>
+                    <span className="val" style={{ color: "#10B981", fontWeight: 600 }}>
+                      ₹{parseFloat(selectedOrder.receivedAmount || 0).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="label">Pending Amount</span>
+                    <span className="val" style={{ color: (selectedOrder.pendingAmount || 0) > 0 ? "#EF4444" : "#10B981", fontWeight: 600 }}>
+                      ₹{parseFloat(selectedOrder.pendingAmount || 0).toLocaleString("en-IN")}
                     </span>
                   </div>
                   <div className="detail-item">
@@ -2082,10 +2166,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                         {getStatusBadge(selectedOrder.orderStatus).label}
                       </span>
                     </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">GST Number</span>
-                    <span className="val highlight">{selectedOrder.gstNumber || "—"}</span>
                   </div>
                   <div className="detail-item full-width" style={{ flexDirection: "column", alignItems: "flex-start" }}>
                     <span className="label" style={{ marginBottom: "4px" }}>Customer Address</span>
@@ -2380,10 +2460,10 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
               {/* Action Toolbar Inside Drawer */}
               {(isSalesAdmin || isProductionAdmin || isScmAdmin || isSuperAdmin) && (
                 <div className="drawer-actions-bar" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {(selectedOrder.paymentStatus || "").toLowerCase() !== "paid" && (selectedOrder.orderStatus === "sales_registered" || selectedOrder.orderStatus === "in_production") && (
+                  {((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) && (selectedOrder.orderStatus === "sales_registered" || selectedOrder.orderStatus === "in_production") && (
                     <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", padding: "10px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                       <AlertTriangle size={16} style={{ color: "#DC2626", flexShrink: 0 }} />
-                      <span>Order cannot be sent to Production until the payment is marked as Paid.</span>
+                      <span>Order cannot be sent to Production until the pending amount is 0.</span>
                     </div>
                   )}
 
@@ -2393,31 +2473,66 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     </button>
                   )}
 
+                  {isSalesAdmin && (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" && (
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Record Incremental Payment</span>
+                      <form onSubmit={handleRecordIncrementalPayment} style={{ display: "flex", gap: "8px", margin: 0 }}>
+                        <div style={{ flex: 1, position: "relative" }}>
+                          <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", color: "#64748B", fontWeight: 600 }}>₹</span>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0.01"
+                            max={selectedOrder.pendingAmount || 0}
+                            placeholder="Enter amount..."
+                            value={recordPaymentAmount}
+                            onChange={(e) => setRecordPaymentAmount(e.target.value)}
+                            style={{ width: "100%", padding: "8px 12px 8px 24px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
+                            required
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="primary-action-btn"
+                          style={{ padding: "0 16px", height: "36px", whiteSpace: "nowrap" }}
+                          disabled={submitting}
+                        >
+                          {submitting ? "Recording..." : "Record"}
+                        </button>
+                      </form>
+                      {selectedOrder.pendingAmount !== undefined && (
+                        <span style={{ fontSize: "11px", color: "#64748B" }}>
+                          Max recordable: ₹{parseFloat(selectedOrder.pendingAmount).toLocaleString("en-IN")}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {isProductionAdmin && (
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button
                         className="status-transition-btn start-prod"
-                        style={{ flex: 1, opacity: (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" ? 0.5 : 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "in_progress" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid"}
-                        title={(selectedOrder.paymentStatus || "").toLowerCase() !== "paid" ? "Order cannot be sent to Production until the payment is marked as Paid." : ""}
+                        style={{ flex: 1, opacity: ((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? 0.5 : 1 }}
+                        disabled={submitting || selectedOrder.productionStatus === "in_progress" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0}
+                        title={((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? "Order cannot be sent to Production until the pending amount is 0." : ""}
                         onClick={() => handleUpdateProductionStatus(selectedOrder.id, "in_progress")}
                       >
                         In Production
                       </button>
                       <button
                         className="status-transition-btn"
-                        style={{ flex: 1, background: "#E0F2FE", color: "#0369A1", border: "1px solid #7DD3FC", opacity: (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" ? 0.5 : 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "testing" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid"}
-                        title={(selectedOrder.paymentStatus || "").toLowerCase() !== "paid" ? "Order cannot be sent to Production until the payment is marked as Paid." : ""}
+                        style={{ flex: 1, background: "#E0F2FE", color: "#0369A1", border: "1px solid #7DD3FC", opacity: ((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? 0.5 : 1 }}
+                        disabled={submitting || selectedOrder.productionStatus === "testing" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0}
+                        title={((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? "Order cannot be sent to Production until the pending amount is 0." : ""}
                         onClick={() => handleUpdateProductionStatus(selectedOrder.id, "testing")}
                       >
                         Testing
                       </button>
                       <button
                         className="status-transition-btn complete-prod"
-                        style={{ flex: 1, opacity: (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" ? 0.5 : 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "completed" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid"}
-                        title={(selectedOrder.paymentStatus || "").toLowerCase() !== "paid" ? "Order cannot be sent to Production until the payment is marked as Paid." : ""}
+                        style={{ flex: 1, opacity: ((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? 0.5 : 1 }}
+                        disabled={submitting || selectedOrder.productionStatus === "completed" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0}
+                        title={((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? "Order cannot be sent to Production until the pending amount is 0." : ""}
                         onClick={() => handleUpdateProductionStatus(selectedOrder.id, "completed")}
                       >
                         Completed
@@ -2656,17 +2771,49 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     />
                     {salesFormErrors.expectedDeliveryDate && <span className="field-error">{salesFormErrors.expectedDeliveryDate}</span>}
                   </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Total Invoice Amount (Including Tax) (₹) *</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      placeholder="e.g. 50000"
+                      value={salesFormData.totalInvoiceAmount}
+                      onChange={(e) => setSalesFormData({ ...salesFormData, totalInvoiceAmount: e.target.value })}
+                    />
+                    {salesFormErrors.totalInvoiceAmount && <span className="field-error">{salesFormErrors.totalInvoiceAmount}</span>}
+                  </div>
 
                   <div className="form-group">
-                    <label>Payment Status *</label>
-                    <select
-                      value={salesFormData.paymentStatus}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, paymentStatus: e.target.value })}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="paid">Paid</option>
-                    </select>
-                    {salesFormErrors.paymentStatus && <span className="field-error">{salesFormErrors.paymentStatus}</span>}
+                    <label>Received Amount (₹)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="e.g. 20000 (Defaults to 0)"
+                      value={salesFormData.receivedAmount}
+                      onChange={(e) => setSalesFormData({ ...salesFormData, receivedAmount: e.target.value })}
+                    />
+                    {salesFormErrors.receivedAmount && <span className="field-error">{salesFormErrors.receivedAmount}</span>}
+                  </div>
+
+                  <div className="form-group">
+                    <label>Pending Amount (₹) (Calculated)</label>
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value={(() => {
+                        const total = parseFloat(salesFormData.totalInvoiceAmount) || 0;
+                        const received = parseFloat(salesFormData.receivedAmount) || 0;
+                        const pending = Math.max(0, total - received);
+                        return `₹ ${pending.toLocaleString("en-IN")}`;
+                      })()}
+                      style={{ background: "#F1F5F9", color: "#64748B", cursor: "not-allowed" }}
+                    />
                   </div>
                 </div>
 
@@ -2683,18 +2830,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   {salesFormErrors.priority && <span className="field-error">{salesFormErrors.priority}</span>}
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>GST Number (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 22AAAAA0000A1Z5"
-                      value={salesFormData.gstNumber || ""}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, gstNumber: e.target.value.toUpperCase() })}
-                    />
-                    {salesFormErrors.gstNumber && <span className="field-error">{salesFormErrors.gstNumber}</span>}
-                  </div>
-                </div>
+
 
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                   <label>Customer Address (Optional)</label>
@@ -2784,17 +2920,49 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     />
                     {editFormErrors.expectedDeliveryDate && <span className="field-error">{editFormErrors.expectedDeliveryDate}</span>}
                   </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Total Invoice Amount (Including Tax) (₹) *</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      placeholder="e.g. 50000"
+                      value={editOrderData.totalInvoiceAmount}
+                      onChange={(e) => setEditOrderData({ ...editOrderData, totalInvoiceAmount: e.target.value })}
+                    />
+                    {editFormErrors.totalInvoiceAmount && <span className="field-error">{editFormErrors.totalInvoiceAmount}</span>}
+                  </div>
 
                   <div className="form-group">
-                    <label>Payment Status *</label>
-                    <select
-                      value={editOrderData.paymentStatus}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, paymentStatus: e.target.value })}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="paid">Paid</option>
-                    </select>
-                    {editFormErrors.paymentStatus && <span className="field-error">{editFormErrors.paymentStatus}</span>}
+                    <label>Received Amount (₹)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="e.g. 20000"
+                      value={editOrderData.receivedAmount}
+                      onChange={(e) => setEditOrderData({ ...editOrderData, receivedAmount: e.target.value })}
+                    />
+                    {editFormErrors.receivedAmount && <span className="field-error">{editFormErrors.receivedAmount}</span>}
+                  </div>
+
+                  <div className="form-group">
+                    <label>Pending Amount (₹) (Calculated)</label>
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value={(() => {
+                        const total = parseFloat(editOrderData.totalInvoiceAmount) || 0;
+                        const received = parseFloat(editOrderData.receivedAmount) || 0;
+                        const pending = Math.max(0, total - received);
+                        return `₹ ${pending.toLocaleString("en-IN")}`;
+                      })()}
+                      style={{ background: "#F1F5F9", color: "#64748B", cursor: "not-allowed" }}
+                    />
                   </div>
                 </div>
 
@@ -2811,18 +2979,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   {editFormErrors.priority && <span className="field-error">{editFormErrors.priority}</span>}
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>GST Number (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 22AAAAA0000A1Z5"
-                      value={editOrderData.gstNumber || ""}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, gstNumber: e.target.value.toUpperCase() })}
-                    />
-                    {editFormErrors.gstNumber && <span className="field-error">{editFormErrors.gstNumber}</span>}
-                  </div>
-                </div>
+
 
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                   <label>Customer Address (Optional)</label>
@@ -3375,6 +3532,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           border-radius: 4px;
         }
         .payment-tag.paid { background: #DCFCE7; color: #166534; }
+        .payment-tag.partial { background: #FFEDD5; color: #9A3412; }
         .payment-tag.pending { background: #FEF3C7; color: #92400E; }
 
         .prod-status-tag {

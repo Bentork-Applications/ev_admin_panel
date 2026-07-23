@@ -71,6 +71,15 @@ export const orderService = {
     }
   },
 
+  salesRecordPayment: async (id, amount) => {
+    try {
+      const res = await axios.put(`${getBaseUrl()}/orders/sales/${id}/record-payment`, { amount }, getAuthHeaders());
+      return res.data;
+    } catch (err) {
+      handleResponseError(err);
+    }
+  },
+
   // ==================== PRODUCTION ADMIN ====================
   productionGetOrders: async () => {
     try {
