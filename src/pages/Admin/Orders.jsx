@@ -109,13 +109,40 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   const [warrantyModalData, setWarrantyModalData] = useState(null);
 
   // Product Details Parser & Formatter Helpers
+  const PROJECT_OPTIONS = [
+    "Solar Battery",
+    "EV Battery",
+    "Inverter Battery",
+    "Robotics Battery",
+    "Defence Battery",
+    "Medical Battery",
+    "Spray Pump Battery",
+    "Other"
+  ];
+
   const parseProductDetails = (str = "") => {
-    if (!str) return { voltage: "02", capacity: "3", chemistry: "NMC", notes: "" };
+    if (!str) return { project: "EV Battery", customProject: "", voltage: "02", capacity: "3", chemistry: "NMC", notes: "" };
+    let project = "EV Battery";
+    let customProject = "";
+
+    const matchedOption = PROJECT_OPTIONS.find((opt) => str.toLowerCase().includes(opt.toLowerCase()));
+    if (matchedOption) {
+      project = matchedOption;
+    } else if (str.includes(" - ")) {
+      const parts = str.split(" - ");
+      if (parts[0] && parts[0].trim()) {
+        project = "Other";
+        customProject = parts[0].trim();
+      }
+    }
+
     const vMatch = str.match(/(\d+)\s*V/i);
     const ahMatch = str.match(/(\d+)\s*Ah/i);
     const chemMatch = str.match(/Chemistry\s*=\s*([A-Za-z0-9\s-]+)/i);
     const notesMatch = str.match(/\(([^)]+)\)/);
     return {
+      project,
+      customProject,
       voltage: vMatch ? vMatch[1] : "",
       capacity: ahMatch ? ahMatch[1] : "",
       chemistry: chemMatch ? chemMatch[1].trim() : "NMC",
@@ -123,17 +150,28 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     };
   };
 
-  const formatProductDetails = ({ voltage, capacity, chemistry, notes }) => {
+  const formatProductDetails = ({ project, customProject, voltage, capacity, chemistry, notes }) => {
+    const proj = project === "Other" ? (customProject || "Other") : (project || "EV Battery");
     const v = voltage !== undefined && voltage !== "" ? `${voltage.toString().padStart(2, "0")}V` : "";
     const ah = capacity !== undefined && capacity !== "" ? `${capacity}Ah` : "";
     const chem = chemistry ? `Chemistry = ${chemistry}` : "";
     const mainSpecs = [v, ah].filter(Boolean).join(" ");
     const specLine = [mainSpecs, chem].filter(Boolean).join("  ");
-    if (notes && notes.trim()) {
-      return `${specLine}${specLine ? " " : ""}(${notes.trim()})`;
-    }
-    return specLine;
+    const fullSpec = notes && notes.trim() ? `${specLine}${specLine ? " " : ""}(${notes.trim()})` : specLine;
+    return `${proj} - ${fullSpec}`;
   };
+
+  const createDefaultOrderItem = () => ({
+    id: Date.now() + Math.random(),
+    project: "EV Battery",
+    customProject: "",
+    voltage: "02",
+    capacity: "3",
+    chemistry: "NMC",
+    notes: "",
+    productDetails: "EV Battery - 02V 3Ah Chemistry = NMC",
+    quantity: 1
+  });
 
   const [recordPaymentAmount, setRecordPaymentAmount] = useState("");
 
@@ -144,12 +182,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     customerEmail: "",
     mobileNumber: "",
     piNumber: "",
-    voltage: "02",
-    capacity: "3",
-    chemistry: "NMC",
-    notes: "",
-    productDetails: "02V 3Ah Chemistry = NMC",
-    partQuantity: 1,
+    orderItems: [createDefaultOrderItem()],
     expectedDeliveryDate: "",
     totalInvoiceAmount: "",
     receivedAmount: "",
@@ -191,26 +224,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
 
   // Drawer Inline Product Details Edit State
   const [isEditingDrawerProductDetails, setIsEditingDrawerProductDetails] = useState(false);
-  const [drawerProductSpecs, setDrawerProductSpecs] = useState({
-    voltage: "02",
-    capacity: "3",
-    chemistry: "NMC",
-    notes: "",
-    productDetails: "02V 3Ah Chemistry = NMC"
-  });
+  const [drawerOrderItems, setDrawerOrderItems] = useState([]);
 
   const [scmFormData, setScmFormData] = useState({
-    barcodeType: "single", // "single" | "range"
-    barcode: "",
-    startBarcode: "",
-    endBarcode: "",
+    invoiceNumber: "",
     courierName: "",
     trackingId: "",
-    serviceWarrantyMonths: 12,
-    fullWarrantyMonths: 24,
-    warrantyStartDate: new Date().toISOString().split("T")[0],
-    invoiceNumber: "",
   });
+  const [scmItemDetails, setScmItemDetails] = useState([]);
   const [scmFormErrors, setScmFormErrors] = useState({});
   const [orderForScm, setOrderForScm] = useState(null);
 
@@ -239,14 +260,34 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           data = await orderService.scmGetOrders();
         }
       }
-      const enriched = (Array.isArray(data) ? data : []).map((order) => {
-        const localStatus = localStorage.getItem(`order_status_${order.id}`);
-        return {
-          ...order,
-          orderStatus: localStatus || order.orderStatus,
-        };
+
+      // Merge API results with locally cached production orders so completed orders stay visible
+      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+      const dataArray = Array.isArray(data) ? data : [];
+
+      const mergedMap = new Map();
+      localCache.forEach((o) => {
+        if (o && (o.id || o.orderNumber)) {
+          mergedMap.set(o.id || o.orderNumber, o);
+        }
       });
-      setOrders(enriched);
+      dataArray.forEach((o) => {
+        if (o && (o.id || o.orderNumber)) {
+          const key = o.id || o.orderNumber;
+          const existing = mergedMap.get(key) || {};
+          const localStatus = localStorage.getItem(`order_status_${o.id}`);
+          mergedMap.set(key, { ...existing, ...o, orderStatus: localStatus || o.orderStatus });
+        }
+      });
+
+      const mergedList = Array.from(mergedMap.values());
+      try {
+        localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
+      } catch (e) {
+        console.warn("Failed to update production_orders_cache:", e);
+      }
+
+      setOrders(mergedList);
     } catch (err) {
       console.error("Failed to fetch orders:", err);
       setError(err.message || "Failed to load orders");
@@ -328,9 +369,19 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     if (!data.piNumber?.trim()) errors.piNumber = "P.I. Number is required";
 
     const vStr = data.voltage !== undefined ? String(data.voltage).trim() : "";
-    const cStr = data.capacity !== undefined ? String(data.capacity).trim() : "";
-    if (!vStr && !cStr && !data.productDetails?.trim()) {
-      errors.productDetails = "Voltage, Capacity (Ah), and Chemistry are required";
+    if (!data.orderItems || !Array.isArray(data.orderItems) || data.orderItems.length === 0) {
+      errors.orderItems = "At least one product line item is required";
+    } else {
+      data.orderItems.forEach((item, idx) => {
+        const vStr = item.voltage !== undefined ? String(item.voltage).trim() : "";
+        const cStr = item.capacity !== undefined ? String(item.capacity).trim() : "";
+        if (!vStr && !cStr && !item.productDetails?.trim()) {
+          errors[`orderItem_${idx}`] = `Voltage, Capacity (Ah), and Chemistry are required for Item #${idx + 1}`;
+        }
+        if (!item.quantity || Number(item.quantity) < 1) {
+          errors[`orderItemQty_${idx}`] = `Quantity must be at least 1 for Item #${idx + 1}`;
+        }
+      });
     }
 
     if (!data.mobileNumber?.trim()) {
@@ -397,15 +448,24 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       }
       if (!targetUserId) targetUserId = 1;
 
+      const firstItem = salesFormData.orderItems[0] || {};
+      const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
+
       const payload = {
         assignedUserId: Number(targetUserId),
         customerName: salesFormData.customerName.trim(),
         customerEmail: salesFormData.customerEmail?.trim() || "",
         piNumber: salesFormData.piNumber.trim(),
-        productDetails: salesFormData.productDetails.trim(),
+        project: firstProject,
+        orderItems: salesFormData.orderItems.map((item) => {
+          const itemProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
+          return {
+            project: itemProject,
+            productDetails: formatProductDetails({ ...item, project: itemProject }).trim(),
+            quantity: Math.max(1, Number(item.quantity) || 1)
+          };
+        }),
         mobileNumber: salesFormData.mobileNumber.trim(),
-        quantity: Number(salesFormData.partQuantity) || 1,
-        partQuantity: Number(salesFormData.partQuantity) || 1,
         expectedDeliveryDate: salesFormData.expectedDeliveryDate,
         priority: salesFormData.priority,
         gstNumber: salesFormData.gstNumber?.trim() || null,
@@ -422,12 +482,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         customerEmail: "",
         mobileNumber: "",
         piNumber: "",
-        voltage: "02",
-        capacity: "3",
-        chemistry: "NMC",
-        notes: "",
-        productDetails: "02V 3Ah Chemistry = NMC",
-        partQuantity: 1,
+        orderItems: [createDefaultOrderItem()],
         expectedDeliveryDate: "",
         totalInvoiceAmount: "",
         receivedAmount: "",
@@ -445,22 +500,46 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   };
 
   const openEditSalesModal = (order) => {
-    const qty = order.quantity ?? order.partQuantity ?? 1;
-    const parsed = parseProductDetails(order.productDetails || "");
+    let items = [];
+    if (Array.isArray(order.orderItems) && order.orderItems.length > 0) {
+      items = order.orderItems.map((it, idx) => {
+        const parsed = parseProductDetails(it.productDetails || "");
+        return {
+          id: it.id || Date.now() + idx,
+          project: it.project || parsed.project || "EV Battery",
+          customProject: parsed.customProject || "",
+          voltage: parsed.voltage || "02",
+          capacity: parsed.capacity || "3",
+          chemistry: parsed.chemistry || "NMC",
+          notes: parsed.notes || "",
+          productDetails: it.productDetails || formatProductDetails({ ...parsed, project: it.project || parsed.project }),
+          quantity: Math.max(1, Number(it.quantity) || 1)
+        };
+      });
+    } else {
+      const qty = order.quantity ?? order.partQuantity ?? 1;
+      const parsed = parseProductDetails(order.productDetails || "");
+      items = [{
+        id: 1,
+        project: order.project || parsed.project || "EV Battery",
+        customProject: parsed.customProject || "",
+        voltage: parsed.voltage || "02",
+        capacity: parsed.capacity || "3",
+        chemistry: parsed.chemistry || "NMC",
+        notes: parsed.notes || "",
+        productDetails: order.productDetails || formatProductDetails({ ...parsed, project: order.project || parsed.project }),
+        quantity: qty
+      }];
+    }
+
     setEditOrderData({
       id: order.id,
       orderNumber: order.orderNumber,
       customerName: order.customerName || "",
       customerEmail: order.customerEmail || "",
       piNumber: order.piNumber || "",
-      voltage: parsed.voltage || "02",
-      capacity: parsed.capacity || "3",
-      chemistry: parsed.chemistry || "NMC",
-      notes: parsed.notes || "",
-      productDetails: order.productDetails || formatProductDetails({ voltage: parsed.voltage || "02", capacity: parsed.capacity || "3", chemistry: parsed.chemistry || "NMC", notes: parsed.notes || "" }),
+      orderItems: items,
       mobileNumber: order.mobileNumber || "",
-      quantity: qty,
-      partQuantity: qty,
       expectedDeliveryDate: order.expectedDeliveryDate || "",
       totalInvoiceAmount: order.totalInvoiceAmount || "",
       receivedAmount: order.receivedAmount || "",
@@ -472,18 +551,64 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     setShowEditModal(true);
   };
 
+  const openDrawerItemsEdit = () => {
+    if (!selectedOrder) return;
+    let items = [];
+    if (Array.isArray(selectedOrder.orderItems) && selectedOrder.orderItems.length > 0) {
+      items = selectedOrder.orderItems.map((it, idx) => {
+        const parsed = parseProductDetails(it.productDetails || "");
+        return {
+          id: it.id || Date.now() + idx,
+          project: it.project || parsed.project || "EV Battery",
+          customProject: parsed.customProject || "",
+          voltage: parsed.voltage || "02",
+          capacity: parsed.capacity || "3",
+          chemistry: parsed.chemistry || "NMC",
+          notes: parsed.notes || "",
+          productDetails: it.productDetails || formatProductDetails({ ...parsed, project: it.project || parsed.project }),
+          quantity: Math.max(1, Number(it.quantity) || 1)
+        };
+      });
+    } else {
+      const qty = selectedOrder.quantity ?? selectedOrder.partQuantity ?? 1;
+      const parsed = parseProductDetails(selectedOrder.productDetails || "");
+      items = [{
+        id: 1,
+        project: selectedOrder.project || parsed.project || "EV Battery",
+        customProject: parsed.customProject || "",
+        voltage: parsed.voltage || "02",
+        capacity: parsed.capacity || "3",
+        chemistry: parsed.chemistry || "NMC",
+        notes: parsed.notes || "",
+        productDetails: selectedOrder.productDetails || formatProductDetails({ ...parsed, project: selectedOrder.project || parsed.project }),
+        quantity: qty
+      }];
+    }
+    setDrawerOrderItems(items);
+    setIsEditingDrawerProductDetails(true);
+  };
+
   const handleSaveDrawerProductDetails = async () => {
     if (!selectedOrder) return;
-    const formatted = formatProductDetails(drawerProductSpecs);
-    if (!drawerProductSpecs.voltage?.toString().trim() || !drawerProductSpecs.capacity?.toString().trim()) {
-      showToast("Voltage and Capacity (Ah) are required", "error");
+    if (!drawerOrderItems || drawerOrderItems.length === 0) {
+      showToast("At least one product item is required", "error");
       return;
     }
     setSubmitting(true);
     try {
+      const formattedItems = drawerOrderItems.map((item) => {
+        const itemProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
+        return {
+          project: itemProject,
+          productDetails: formatProductDetails({ ...item, project: itemProject }).trim(),
+          quantity: Math.max(1, Number(item.quantity) || 1)
+        };
+      });
+      const firstProject = formattedItems[0]?.project || "EV Battery";
       const payload = {
         ...selectedOrder,
-        productDetails: formatted
+        project: firstProject,
+        orderItems: formattedItems
       };
       let updated;
       try {
@@ -492,11 +617,11 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         try {
           updated = await orderService.scmUpdateDetails(selectedOrder.id, payload);
         } catch (err2) {
-          updated = { ...selectedOrder, productDetails: formatted };
+          updated = { ...selectedOrder, project: firstProject, orderItems: formattedItems };
         }
       }
-      setSelectedOrder({ ...selectedOrder, productDetails: formatted });
-      showToast("Product details updated successfully!", "success");
+      setSelectedOrder(updated || { ...selectedOrder, project: firstProject, orderItems: formattedItems });
+      showToast("Product line items updated successfully!", "success");
       setIsEditingDrawerProductDetails(false);
       fetchOrders();
     } catch (err) {
@@ -518,10 +643,20 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     setSubmitting(true);
 
     try {
+      const firstItem = editOrderData.orderItems[0] || {};
+      const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
+
       const payload = {
         ...editOrderData,
-        quantity: Number(editOrderData.partQuantity) || Number(editOrderData.quantity) || 1,
-        partQuantity: Number(editOrderData.partQuantity) || Number(editOrderData.quantity) || 1,
+        project: firstProject,
+        orderItems: editOrderData.orderItems.map((item) => {
+          const itemProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
+          return {
+            project: itemProject,
+            productDetails: formatProductDetails({ ...item, project: itemProject }).trim(),
+            quantity: Math.max(1, Number(item.quantity) || 1)
+          };
+        }),
         totalInvoiceAmount: Number(editOrderData.totalInvoiceAmount) || 0,
         receivedAmount: Number(editOrderData.receivedAmount) || 0,
       };
@@ -567,22 +702,38 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
 
   // --- PRODUCTION ADMIN HANDLERS ---
   const handleUpdateProductionStatus = async (orderId, targetStatus) => {
-    // Payment-based production approval check
-    const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrder?.id === orderId ? selectedOrder : null);
-    if (targetOrder && (targetStatus === "in_progress" || targetStatus === "in_production" || targetStatus === "testing" || targetStatus === "completed")) {
-      const isPaid = (targetOrder.paymentStatus || "").toLowerCase() === "paid" && (Number(targetOrder.pendingAmount) || 0) === 0;
-      if (!isPaid) {
-        showToast("Order cannot be sent to Production until the pending amount is 0.", "error");
-        return;
-      }
-    }
-
     setSubmitting(true);
     try {
       const updated = await orderService.productionUpdateStatus(orderId, { productionStatus: targetStatus });
       showToast(`Production status updated to '${targetStatus.replace("_", " ")}'`, "success");
+
+      // Persist status and order in local cache so completed orders remain visible in frontend
+      const resolvedOrderStatus = targetStatus === "completed" ? "production_complete" : "in_production";
+      localStorage.setItem(`order_status_${orderId}`, resolvedOrderStatus);
+
+      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+      const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrder?.id === orderId ? selectedOrder : null);
+      const orderToSave = {
+        ...(targetOrder || {}),
+        ...(updated || {}),
+        id: orderId,
+        productionStatus: targetStatus,
+        orderStatus: resolvedOrderStatus,
+        productionCompletedAt: targetStatus === "completed" ? new Date().toISOString() : targetOrder?.productionCompletedAt
+      };
+      
+      const updatedCacheMap = new Map();
+      localCache.forEach(o => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
+      updatedCacheMap.set(orderId, orderToSave);
+
+      try {
+        localStorage.setItem("production_orders_cache", JSON.stringify(Array.from(updatedCacheMap.values())));
+      } catch (e) {
+        console.warn("Failed to write production_orders_cache:", e);
+      }
+
       if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder(updated);
+        setSelectedOrder((prev) => ({ ...prev, ...orderToSave }));
       }
       fetchOrders();
     } catch (err) {
@@ -616,46 +767,81 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   // --- SCM ADMIN HANDLERS ---
   const openScmModal = (order) => {
     setOrderForScm(order);
-    const qty = Math.max(1, Number(order.quantity) || 1);
-    let startBc = order.startBarcode || "";
-    let endBc = order.endBarcode || "";
-
-    if (!startBc) {
-      if (Array.isArray(order.barcodes) && order.barcodes.length > 0) {
-        startBc = order.barcodes[0];
-        endBc = order.barcodes[order.barcodes.length - 1];
-      } else if (order.barcode) {
-        if (order.barcode.includes(" - ")) {
-          const parts = order.barcode.split(" - ").map((s) => s.trim());
-          startBc = parts[0];
-          endBc = parts[parts.length - 1];
-        } else {
-          startBc = order.barcode;
-        }
-      }
-    }
-
-    if (startBc && !endBc) {
-      const seq = generateBarcodeSequence(startBc, qty);
-      endBc = seq[seq.length - 1];
-    }
-
-    if (!startBc && !endBc) {
-      startBc = "BAR001";
-      const seq = generateBarcodeSequence(startBc, qty);
-      endBc = seq[seq.length - 1];
-    }
-
+    
+    // Top-level shared shipment fields
     setScmFormData({
-      startBarcode: startBc,
-      endBarcode: endBc,
+      invoiceNumber: order.invoiceNumber || "",
       courierName: order.courierName || "",
       trackingId: order.trackingId || "",
-      serviceWarrantyMonths: order.serviceWarrantyMonths ?? 12,
-      fullWarrantyMonths: order.fullWarrantyMonths ?? 24,
-      warrantyStartDate: order.warrantyStartDate || new Date().toISOString().split("T")[0],
-      invoiceNumber: order.invoiceNumber || "",
     });
+
+    let itemDetailsList = [];
+    if (Array.isArray(order.orderItems) && order.orderItems.length > 0) {
+      itemDetailsList = order.orderItems.map((it, idx) => {
+        const itemQty = Math.max(1, Number(it.quantity) || 1);
+        let startBc = it.startBarcode || "";
+        let endBc = it.endBarcode || "";
+
+        if (!startBc) {
+          if (Array.isArray(it.barcodes) && it.barcodes.length > 0) {
+            startBc = it.barcodes[0];
+            endBc = it.barcodes[it.barcodes.length - 1];
+          } else if (it.barcode) {
+            if (it.barcode.includes(" - ")) {
+              const parts = it.barcode.split(" - ").map((s) => s.trim());
+              startBc = parts[0];
+              endBc = parts[parts.length - 1];
+            } else {
+              startBc = it.barcode;
+            }
+          }
+        }
+
+        return {
+          id: it.id || `item_${idx + 1}`,
+          orderItemId: it.id || null,
+          productDetails: it.productDetails || "EV Battery Unit",
+          quantity: itemQty,
+          startBarcode: startBc,
+          endBarcode: endBc,
+          warrantyStartDate: it.warrantyStartDate || "",
+          warrantyEndDate: it.warrantyEndDate || ""
+        };
+      });
+    } else {
+      // Legacy single-product order
+      const itemQty = Math.max(1, Number(order.quantity || order.partQuantity) || 1);
+      let startBc = order.startBarcode || "";
+      let endBc = order.endBarcode || "";
+
+      if (!startBc) {
+        if (Array.isArray(order.barcodes) && order.barcodes.length > 0) {
+          startBc = order.barcodes[0];
+          endBc = order.barcodes[order.barcodes.length - 1];
+        } else if (order.barcode) {
+          if (order.barcode.includes(" - ")) {
+            const parts = order.barcode.split(" - ").map((s) => s.trim());
+            startBc = parts[0];
+            endBc = parts[parts.length - 1];
+          } else {
+            startBc = order.barcode;
+          }
+        }
+      }
+
+      itemDetailsList = [{
+        id: "legacy_1",
+        orderItemId: null,
+        productDetails: order.productDetails || "Standard EV Battery Pack",
+        quantity: itemQty,
+        startBarcode: startBc,
+        endBarcode: endBc,
+        warrantyStartDate: order.warrantyStartDate || "",
+        warrantyEndDate: order.warrantyEndDate || ""
+      }];
+    }
+
+    setScmItemDetails(itemDetailsList);
     setScmFormErrors({});
     setShowScmModal(true);
   };
@@ -669,48 +855,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     e.preventDefault();
     if (!orderForScm) return;
 
-    const qty = Math.max(1, Number(orderForScm.quantity) || 1);
     const errors = {};
-
-    const startStr = scmFormData.startBarcode?.trim() || "";
-    const endStr = scmFormData.endBarcode?.trim() || "";
-
-    if (!startStr) {
-      errors.startBarcode = "Start Barcode is required";
-    }
-    if (!endStr) {
-      errors.endBarcode = "End Barcode is required";
-    }
-
-    let generatedBarcodes = [];
-    if (startStr && endStr) {
-      const matchStart = startStr.match(/^(.*?)(\d+)$/);
-      const matchEnd = endStr.match(/^(.*?)(\d+)$/);
-
-      if (matchStart && matchEnd) {
-        const prefixStart = matchStart[1];
-        const numStart = parseInt(matchStart[2], 10);
-        const prefixEnd = matchEnd[1];
-        const numEnd = parseInt(matchEnd[2], 10);
-
-        if (prefixStart !== prefixEnd) {
-          errors.endBarcode = `Prefix mismatch: '${prefixStart}' vs '${prefixEnd}'`;
-        } else if (numEnd < numStart) {
-          errors.endBarcode = "End Barcode must not be smaller than Start Barcode";
-        } else {
-          const rangeCount = numEnd - numStart + 1;
-          if (rangeCount !== qty) {
-            errors.endBarcode = `Barcode range contains ${rangeCount} barcodes, but order quantity requires ${qty}`;
-          } else {
-            generatedBarcodes = generateBarcodeSequence(startStr, qty);
-          }
-        }
-      } else if (startStr > endStr) {
-        errors.endBarcode = "End Barcode must not be smaller than Start Barcode";
-      } else {
-        generatedBarcodes = generateBarcodeSequence(startStr, qty);
-      }
-    }
 
     if (!scmFormData.invoiceNumber?.trim()) {
       errors.invoiceNumber = "Invoice Number is required";
@@ -718,12 +863,84 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     if (!scmFormData.trackingId?.trim()) {
       errors.trackingId = "Tracking ID is required";
     }
-    if (scmFormData.serviceWarrantyMonths === "" || scmFormData.serviceWarrantyMonths === null || scmFormData.serviceWarrantyMonths < 0) {
-      errors.serviceWarrantyMonths = "Service warranty must be 0 or more months";
-    }
-    if (scmFormData.fullWarrantyMonths === "" || scmFormData.fullWarrantyMonths === null || scmFormData.fullWarrantyMonths < 0) {
-      errors.fullWarrantyMonths = "Full warranty must be 0 or more months";
-    }
+
+    const updatedItems = [];
+    scmItemDetails.forEach((item, idx) => {
+      const itemQty = Math.max(1, Number(item.quantity) || 1);
+      let startStr = item.startBarcode?.trim() || "";
+      let endStr = item.endBarcode?.trim() || "";
+
+      if (itemQty === 1) {
+        if (!startStr) {
+          errors[`startBarcode_${idx}`] = "Barcode is required";
+        } else {
+          endStr = startStr; // Automatically treat Start Barcode as End Barcode for single unit
+        }
+      } else {
+        if (!startStr) {
+          errors[`startBarcode_${idx}`] = "Start Barcode is required";
+        }
+        if (!endStr) {
+          errors[`endBarcode_${idx}`] = "End Barcode is required";
+        }
+      }
+
+      let itemBarcodes = [];
+      if (startStr && endStr) {
+        if (itemQty === 1) {
+          itemBarcodes = [startStr];
+        } else {
+          const matchStart = startStr.match(/^(.*?)(\d+)$/);
+          const matchEnd = endStr.match(/^(.*?)(\d+)$/);
+
+          if (matchStart && matchEnd) {
+            const prefixStart = matchStart[1];
+            const numStart = parseInt(matchStart[2], 10);
+            const prefixEnd = matchEnd[1];
+            const numEnd = parseInt(matchEnd[2], 10);
+
+            if (prefixStart !== prefixEnd) {
+              errors[`endBarcode_${idx}`] = `Prefix mismatch: '${prefixStart}' vs '${prefixEnd}'`;
+            } else if (numEnd < numStart) {
+              errors[`endBarcode_${idx}`] = "End Barcode must not be smaller than Start Barcode";
+            } else {
+              const rangeCount = numEnd - numStart + 1;
+              if (rangeCount !== itemQty) {
+                errors[`endBarcode_${idx}`] = `Range contains ${rangeCount} barcode(s), but product quantity requires ${itemQty}`;
+              } else {
+                itemBarcodes = generateBarcodeSequence(startStr, itemQty);
+              }
+            }
+          } else if (startStr > endStr) {
+            errors[`endBarcode_${idx}`] = "End Barcode must not be smaller than Start Barcode";
+          } else {
+            itemBarcodes = generateBarcodeSequence(startStr, itemQty);
+          }
+        }
+      }
+
+      if (!item.warrantyStartDate) {
+        errors[`warrantyStartDate_${idx}`] = "Warranty Start Date is required";
+      }
+      if (!item.warrantyEndDate) {
+        errors[`warrantyEndDate_${idx}`] = "Warranty End Date is required";
+      }
+
+      const itemPayload = {
+        productDetails: item.productDetails?.trim() || orderForScm?.productDetails || "EV Battery Unit",
+        quantity: itemQty,
+        startBarcode: startStr,
+        endBarcode: endStr,
+        barcodes: itemBarcodes.length > 0 ? itemBarcodes : [startStr],
+        barcode: itemQty === 1 ? startStr : `${startStr} - ${endStr}`,
+        warrantyStartDate: item.warrantyStartDate,
+        warrantyEndDate: item.warrantyEndDate
+      };
+      if (item.orderItemId && !isNaN(Number(item.orderItemId))) {
+        itemPayload.id = Number(item.orderItemId);
+      }
+      updatedItems.push(itemPayload);
+    });
 
     if (Object.keys(errors).length > 0) {
       setScmFormErrors(errors);
@@ -733,32 +950,64 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     setSubmitting(true);
 
     try {
-      const barcodeStr = qty === 1 ? startStr : `${startStr} - ${endStr}`;
+      const firstItem = updatedItems[0] || {};
+      const lastItem = updatedItems[updatedItems.length - 1] || firstItem;
+      const allBarcodes = updatedItems.flatMap((item) => item.barcodes || []);
+      const startBc = firstItem.startBarcode || (allBarcodes[0] || "BAR001");
+      const endBc = lastItem.endBarcode || (allBarcodes[allBarcodes.length - 1] || startBc);
+      const barcodeStr = allBarcodes.length <= 1 ? startBc : `${startBc} - ${endBc}`;
+      const todayStr = new Date().toISOString().split("T")[0];
+
       const payload = {
         invoiceNumber: scmFormData.invoiceNumber.trim(),
-        barcodes: generatedBarcodes.length > 0 ? generatedBarcodes : [startStr],
-        startBarcode: startStr,
-        endBarcode: endStr,
+        trackingId: scmFormData.trackingId.trim(),
+        courierName: scmFormData.courierName?.trim() || "Standard",
+        serviceWarrantyMonths: Number(orderForScm?.serviceWarrantyMonths ?? 12),
+        fullWarrantyMonths: Number(orderForScm?.fullWarrantyMonths ?? 24),
+        orderItems: updatedItems,
+        // Legacy top-level fallback fields aggregated across all items
+        startBarcode: startBc,
+        endBarcode: endBc,
         barcode: barcodeStr,
-        serviceWarrantyMonths: Number(scmFormData.serviceWarrantyMonths),
-        fullWarrantyMonths: Number(scmFormData.fullWarrantyMonths),
-        trackingId: scmFormData.trackingId.trim()
+        barcodes: allBarcodes.length > 0 ? allBarcodes : [startBc],
+        warrantyStartDate: firstItem.warrantyStartDate || todayStr,
+        warrantyEndDate: firstItem.warrantyEndDate || todayStr
       };
-
-      if (scmFormData.courierName?.trim()) {
-        payload.courierName = scmFormData.courierName.trim();
-      }
 
       const updated = await orderService.scmUpdateDetails(orderForScm.id, payload);
       showToast(`SCM details saved and marked as SCM Complete for ${orderForScm.orderNumber}`, "success");
       setShowScmModal(false);
+
+      // Persist SCM Complete status in local storage & cache
+      localStorage.setItem(`order_status_${orderForScm.id}`, "scm_complete");
+      const orderToSave = {
+        ...(orderForScm || {}),
+        ...(updated || {}),
+        id: orderForScm.id,
+        orderStatus: "scm_complete",
+        scmCompletedAt: new Date().toISOString(),
+        ...payload
+      };
+
+      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+      const updatedCacheMap = new Map();
+      localCache.forEach(o => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
+      updatedCacheMap.set(orderForScm.id, orderToSave);
+
+      try {
+        localStorage.setItem("production_orders_cache", JSON.stringify(Array.from(updatedCacheMap.values())));
+      } catch (e) {
+        console.warn("Failed to write production_orders_cache:", e);
+      }
+
       if (selectedOrder && selectedOrder.id === orderForScm.id) {
-        setSelectedOrder(updated);
+        setSelectedOrder((prev) => ({ ...prev, ...orderToSave }));
       }
       fetchOrders();
     } catch (err) {
       showToast(err.message || "Failed to complete SCM details", "error");
     } finally {
+      setSubmitting(false);
     }
   };
 
@@ -767,8 +1016,28 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     try {
       const updated = await orderService.scmDispatchOrder(orderId);
       showToast(`Order dispatched successfully!`, "success");
+
+      localStorage.setItem(`order_status_${orderId}`, "dispatched");
+      const orderToSave = {
+        ...(updated || {}),
+        id: orderId,
+        orderStatus: "dispatched",
+        dispatchedAt: new Date().toISOString()
+      };
+
+      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+      const updatedCacheMap = new Map();
+      localCache.forEach((o) => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
+      updatedCacheMap.set(orderId, { ...(updatedCacheMap.get(orderId) || {}), ...orderToSave });
+
+      try {
+        localStorage.setItem("production_orders_cache", JSON.stringify(Array.from(updatedCacheMap.values())));
+      } catch (e) {
+        console.warn("Failed to write production_orders_cache:", e);
+      }
+
       if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder(updated);
+        setSelectedOrder((prev) => ({ ...prev, ...orderToSave }));
       }
       fetchOrders();
     } catch (err) {
@@ -845,6 +1114,11 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     const updatedDateStr = order.updatedAt ? new Date(order.updatedAt).toLocaleDateString("en-IN", { dateStyle: "medium" }) : new Date().toLocaleDateString("en-IN", { dateStyle: "medium" });
     const genTimeStr = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 
+    const itemsList = Array.isArray(order.orderItems) && order.orderItems.length > 0
+      ? order.orderItems
+      : [{ productDetails: order.productDetails || "Standard EV Battery Pack", quantity: order.quantity || order.partQuantity || 1 }];
+    const totalUnits = itemsList.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -870,38 +1144,31 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
               align-items: flex-start;
               border-bottom: 3px solid #1E3A8A;
               padding-bottom: 14px;
-              margin-bottom: 16px;
+              margin-bottom: 20px;
             }
             .company-brand {
-              font-size: 26px;
+              font-size: 22px;
               font-weight: 800;
               color: #1E3A8A;
-              letter-spacing: -0.5px;
+              letter-spacing: 0.5px;
             }
             .company-sub {
               font-size: 12px;
+              color: #475569;
               font-weight: 600;
-              color: #2563EB;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-              margin-top: 2px;
             }
             .company-info {
               font-size: 11px;
               color: #64748B;
-              margin-top: 6px;
-              line-height: 1.4;
+              margin-top: 4px;
             }
             .report-badge {
               background: #1E3A8A;
               color: #FFFFFF;
               padding: 6px 14px;
-              border-radius: 6px;
               font-size: 12px;
               font-weight: 700;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              text-align: right;
+              border-radius: 6px;
               display: inline-block;
             }
             .report-meta {
@@ -925,57 +1192,37 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
             }
             .grid-3 {
               display: grid;
-              grid-template-columns: 1fr 1fr 1fr;
-              gap: 12px;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 10px;
             }
             .data-card {
               background: #F8FAFC;
               border: 1px solid #E2E8F0;
-              border-radius: 8px;
               padding: 10px 12px;
+              border-radius: 8px;
             }
             .data-label {
               font-size: 10px;
-              font-weight: 600;
-              color: #64748B;
               text-transform: uppercase;
-              margin-bottom: 2px;
+              color: #64748B;
+              font-weight: 700;
+              letter-spacing: 0.5px;
             }
             .data-value {
-              font-size: 13px;
+              font-size: 14px;
               font-weight: 700;
               color: #0F172A;
+              margin-top: 2px;
             }
-            .highlight { color: #2563EB; }
-            .success { color: #059669; }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 8px;
-              margin-bottom: 14px;
-            }
-            th {
-              background: #1E3A8A;
-              color: #FFFFFF;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-              padding: 8px 12px;
-              text-align: left;
-            }
-            td {
-              padding: 8px 12px;
-              border-bottom: 1px solid #E2E8F0;
-              font-size: 12px;
-            }
-            tr:nth-child(even) { background: #F8FAFC; }
+            .data-value.highlight { color: #1E3A8A; }
+            .data-value.success { color: #047857; }
             .qc-box {
               background: #ECFDF5;
               border: 1px solid #A7F3D0;
+              padding: 12px 14px;
               border-radius: 8px;
-              padding: 10px 14px;
+              margin-top: 14px;
               color: #065F46;
-              margin-top: 8px;
             }
             .status-tag {
               display: inline-block;
@@ -1028,14 +1275,13 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
             <button class="btn-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
           </div>
 
-          <!-- Header Banner -->
           <div class="header">
             <div>
               <div class="company-brand">BENTORK INDUSTRIES LLP</div>
-              <div class="company-sub"> Battery Systems & Technology Division</div>
+              <div class="company-sub">Battery Systems & Technology Division</div>
               <div class="company-info">
                S. No. 24/2, Jadhavrao Industrial Estate, Nanded City Sinhgad Rd, Pune, Maharashtra 411068<br/>
-                Email: @bentork.com | Web: https://bentork.com
+                Email: info@bentork.com | Web: https://bentork.com
               </div>
             </div>
             <div>
@@ -1047,7 +1293,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
             </div>
           </div>
 
-          <!-- Customer & Sales Section -->
           <div class="section-title">1. Customer & Sales Details</div>
           <div class="grid-3">
             <div class="data-card">
@@ -1062,26 +1307,36 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
               <div class="data-label">Mobile Number</div>
               <div class="data-value">${order.mobileNumber || "—"}</div>
             </div>
-            <div class="data-card">
-              <div class="data-label">Customer Email</div>
-              <div class="data-value">${order.customerEmail || "—"}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Order Date</div>
-              <div class="data-value">${createdDateStr}</div>
-            </div>
-
           </div>
 
           <div style="margin-top: 10px;" class="data-card">
-            <div class="data-label">Product Details & Specifications</div>
-            <div class="data-value" style="font-size: 13px; color: #1E293B;">${order.productDetails || "Standard EV Battery Pack"}</div>
-            <div style="font-size: 11px; color: #64748B; margin-top: 4px;">
-              Quantity: <strong>${order.quantity || order.partQuantity || 1} Units</strong> &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${order.paymentStatus || "PAID"}</strong>
-            </div>
+            <div class="data-label">Product Line Items (${itemsList.length}) &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${order.paymentStatus || "PAID"}</strong></div>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px;">
+              <thead>
+                <tr style="background: #F1F5F9; color: #475569; text-transform: uppercase; font-size: 10px;">
+                  <th style="padding: 6px 10px; text-align: left;">#</th>
+                  <th style="padding: 6px 10px; text-align: left;">Product Details & Specifications</th>
+                  <th style="padding: 6px 10px; text-align: right;">Quantity</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsList.map((it, idx) => `
+                  <tr style="border-top: 1px solid #E2E8F0;">
+                    <td style="padding: 6px 10px; color: #64748B;">${idx + 1}</td>
+                    <td style="padding: 6px 10px; font-weight: 600; color: #1E293B;">${it.productDetails || "EV Battery Unit"}</td>
+                    <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: #1D4ED8;">${it.quantity} Units</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr style="background: #F8FAFC; font-weight: 700; border-top: 2px solid #CBD5E1;">
+                  <td colspan="2" style="padding: 6px 10px; color: #334155;">Total Batch Quantity</td>
+                  <td style="padding: 6px 10px; text-align: right; color: #1D4ED8;">${totalUnits} Units</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
 
-          <!-- Production Details -->
           <div class="section-title">2. Production & Manufacturing Details</div>
           <div class="grid-3">
             <div class="data-card">
@@ -1090,7 +1345,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
             </div>
             <div class="data-card">
               <div class="data-label">Batch Quantity</div>
-              <div class="data-value">${order.quantity || 1} Units</div>
+              <div class="data-value">${totalUnits} Units</div>
             </div>
             <div class="data-card">
               <div class="data-label">Completion Date</div>
@@ -1216,7 +1471,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
 
   // --- FILTER & PAGINATION ---
   const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
+    const list = orders.filter((o) => {
       // Super Admin Stage Tab Filter
       if (isSuperAdmin && adminStageTab !== "ALL") {
         if (adminStageTab === "SALES" && o.orderStatus !== "sales_registered") return false;
@@ -1264,6 +1519,18 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       }
 
       return matchesSearch && matchesStatus && matchesPriority && matchesDate;
+    });
+
+    // Sort newest records first (latest created/updated at top)
+    return list.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : b.createdDate ? new Date(b.createdDate).getTime() : b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      if (timeA !== timeB && timeA > 0 && timeB > 0) {
+        return timeB - timeA;
+      }
+      const numA = Number(String(a.id || a.orderNumber || "").replace(/\D/g, "")) || 0;
+      const numB = Number(String(b.id || b.orderNumber || "").replace(/\D/g, "")) || 0;
+      return numB - numA;
     });
   }, [orders, adminStageTab, searchQuery, statusFilter, priorityFilter, startDate, endDate, isSuperAdmin]);
 
@@ -1391,105 +1658,197 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     );
   };
 
-  const renderProductDetailsEditor = (data, onChange, errors) => {
-    const updateSpecs = (updates) => {
-      const updated = { ...data, ...updates };
-      const formatted = formatProductDetails(updated);
-      onChange({ ...updated, productDetails: formatted });
+  const renderOrderItemsEditor = (data, onChange, errors) => {
+    const items = Array.isArray(data.orderItems) && data.orderItems.length > 0
+      ? data.orderItems
+      : [createDefaultOrderItem()];
+
+    const updateItem = (index, updates) => {
+      const newItems = [...items];
+      const item = { ...newItems[index], ...updates };
+      item.productDetails = formatProductDetails(item);
+      newItems[index] = item;
+      onChange({ ...data, orderItems: newItems });
     };
 
-    const formattedVoltage = data.voltage !== undefined && data.voltage !== "" ? String(data.voltage).padStart(2, "0") : "02";
-    const formattedCapacity = data.capacity !== undefined && data.capacity !== "" ? data.capacity : "3";
-    const selectedChemistry = data.chemistry || "NMC";
-    const notesText = data.notes || "";
+    const addItem = () => {
+      const newItems = [...items, createDefaultOrderItem()];
+      onChange({ ...data, orderItems: newItems });
+    };
+
+    const removeItem = (index) => {
+      if (items.length <= 1) return;
+      const newItems = items.filter((_, i) => i !== index);
+      onChange({ ...data, orderItems: newItems });
+    };
+
+    const totalQuantitySum = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
 
     return (
-      <div className="product-details-editor" style={{ background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0", marginTop: "6px", marginBottom: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "12px" }}>
-          {/* Voltage Input */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="text"
-              placeholder="02"
-              value={data.voltage}
-              onChange={(e) => updateSpecs({ voltage: e.target.value })}
-              style={{
-                width: "60px",
-                padding: "8px 10px",
-                border: "1px solid #CBD5E1",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#0F172A",
-                textAlign: "center",
-                outline: "none",
-                background: "#FFFFFF"
-              }}
-            />
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "#334155" }}>V</span>
-          </div>
-
-          {/* Capacity Input */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="number"
-              min="0"
-              placeholder="3"
-              value={data.capacity}
-              onChange={(e) => updateSpecs({ capacity: e.target.value })}
-              style={{
-                width: "70px",
-                padding: "8px 10px",
-                border: "1px solid #CBD5E1",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#0F172A",
-                textAlign: "center",
-                outline: "none",
-                background: "#FFFFFF"
-              }}
-            />
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "#334155" }}>Ah</span>
-          </div>
-
-          {/* Chemistry Dropdown */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginLeft: "12px" }}>
-            <span style={{ fontSize: "15px", fontWeight: 700, color: "#334155" }}>Chemistry</span>
-            <select
-              value={selectedChemistry}
-              onChange={(e) => updateSpecs({ chemistry: e.target.value })}
-              style={{
-                padding: "8px 16px",
-                border: "1px solid #CBD5E1",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#0F172A",
-                background: "#FFFFFF",
-                outline: "none",
-                cursor: "pointer"
-              }}
-            >
-              <option value="NMC">NMC</option>
-              <option value="LiFePO4">LiFePO4</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Live Preview Bar */}
-        <div style={{ fontSize: "13px", color: "#64748B", fontWeight: 500, display: "flex", alignItems: "center", gap: "24px", paddingTop: "4px" }}>
-          <span>
-            Preview: <strong style={{ color: "#0F172A", fontWeight: 700 }}>{formattedVoltage}V {formattedCapacity}Ah</strong>
+      <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0", marginTop: "6px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <span style={{ fontSize: "14px", fontWeight: 700, color: "#1E293B" }}>
+            Product Line Items ({items.length})
           </span>
-          <span>
-            <strong style={{ color: "#0F172A", fontWeight: 700 }}>Chemistry = {selectedChemistry}</strong>
-            {notesText.trim() ? <span style={{ color: "#475569", fontWeight: 500 }}> ({notesText.trim()})</span> : ""}
+          <span style={{ fontSize: "12px", background: "#EFF6FF", color: "#1D4ED8", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
+            Total Batch Quantity: {totalQuantitySum} units
           </span>
         </div>
 
-        {errors?.productDetails && <span className="field-error" style={{ marginTop: "6px", display: "block" }}>{errors.productDetails}</span>}
+        {items.map((item, idx) => {
+          const selectedProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
+          const formattedVoltage = item.voltage !== undefined && item.voltage !== "" ? String(item.voltage).padStart(2, "0") : "02";
+          const formattedCapacity = item.capacity !== undefined && item.capacity !== "" ? item.capacity : "3";
+          const selectedChemistry = item.chemistry || "NMC";
+          const notesText = item.notes || "";
+
+          return (
+            <div key={item.id || idx} style={{ background: "#FFFFFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1", marginBottom: idx === items.length - 1 ? "12px" : "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#334155" }}>
+                  Item #{idx + 1}
+                </span>
+                {items.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(idx)}
+                    style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FCA5A5", borderRadius: "6px", padding: "3px 8px", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}
+                  >
+                    Remove Item
+                  </button>
+                )}
+              </div>
+
+              {/* Project Selection Row */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "220px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1E293B", whiteSpace: "nowrap" }}>Select Project *:</label>
+                  <select
+                    value={item.project || "EV Battery"}
+                    onChange={(e) => updateItem(idx, { project: e.target.value })}
+                    style={{ flex: 1, padding: "6px 10px", border: "1px solid #94A3B8", borderRadius: "6px", fontSize: "13px", fontWeight: 600, color: "#0F172A", background: "#FFFFFF" }}
+                  >
+                    {PROJECT_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {item.project === "Other" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: "180px" }}>
+                    <label style={{ fontSize: "12px", color: "#475569", whiteSpace: "nowrap" }}>Battery Name:</label>
+                    <input
+                      type="text"
+                      placeholder="Enter custom battery name..."
+                      value={item.customProject || ""}
+                      onChange={(e) => updateItem(idx, { customProject: e.target.value })}
+                      style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px" }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "10px" }}>
+                {/* Voltage */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <label style={{ fontSize: "12px", color: "#64748B" }}>Volts:</label>
+                  <input
+                    type="text"
+                    placeholder="02"
+                    value={item.voltage}
+                    onChange={(e) => updateItem(idx, { voltage: e.target.value })}
+                    style={{ width: "55px", padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", fontWeight: 600, textAlign: "center" }}
+                  />
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#334155" }}>V</span>
+                </div>
+
+                {/* Capacity */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <label style={{ fontSize: "12px", color: "#64748B" }}>Capacity:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="3"
+                    value={item.capacity}
+                    onChange={(e) => updateItem(idx, { capacity: e.target.value })}
+                    style={{ width: "65px", padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", fontWeight: 600, textAlign: "center" }}
+                  />
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#334155" }}>Ah</span>
+                </div>
+
+                {/* Chemistry */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <label style={{ fontSize: "12px", color: "#64748B" }}>Chem:</label>
+                  <select
+                    value={selectedChemistry}
+                    onChange={(e) => updateItem(idx, { chemistry: e.target.value })}
+                    style={{ padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", fontWeight: 600, color: "#0F172A", background: "#FFFFFF" }}
+                  >
+                    <option value="NMC">NMC</option>
+                    <option value="LiFePO4">LiFePO4</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: "140px" }}>
+                  <label style={{ fontSize: "12px", color: "#64748B" }}>Notes:</label>
+                  <input
+                    type="text"
+                    placeholder="Optional specs..."
+                    value={item.notes || ""}
+                    onChange={(e) => updateItem(idx, { notes: e.target.value })}
+                    style={{ width: "100%", padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px" }}
+                  />
+                </div>
+
+                {/* Item Quantity */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <label style={{ fontSize: "12px", color: "#1E293B", fontWeight: 700 }}>Qty *:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={(e) => updateItem(idx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                    style={{ width: "65px", padding: "6px 8px", border: "1px solid #3B82F6", borderRadius: "6px", fontSize: "13px", fontWeight: 700, textAlign: "center", color: "#1D4ED8", background: "#EFF6FF" }}
+                  />
+                </div>
+              </div>
+
+              {/* Spec preview string */}
+              <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 500 }}>
+                Spec String: <strong style={{ color: "#0F172A" }}>{selectedProject} — {formattedVoltage}V {formattedCapacity}Ah Chemistry = {selectedChemistry}{notesText.trim() ? ` (${notesText.trim()})` : ""}</strong>
+              </div>
+
+              {errors?.[`orderItem_${idx}`] && <span className="field-error" style={{ marginTop: "4px", display: "block" }}>{errors[`orderItem_${idx}`]}</span>}
+              {errors?.[`orderItemQty_${idx}`] && <span className="field-error" style={{ marginTop: "4px", display: "block" }}>{errors[`orderItemQty_${idx}`]}</span>}
+            </div>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={addItem}
+          style={{
+            background: "#FFFFFF",
+            color: "#2563EB",
+            border: "1px dashed #3B82F6",
+            borderRadius: "8px",
+            padding: "8px 14px",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            width: "100%",
+            justifyContent: "center"
+          }}
+        >
+          + Add Product Line Item
+        </button>
+
+        {errors?.orderItems && <span className="field-error" style={{ marginTop: "8px", display: "block" }}>{errors.orderItems}</span>}
       </div>
     );
   };
@@ -1736,9 +2095,30 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
 
                     {/* Product Details */}
                     <td>
-                      <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: '#374151' }} title={order.productDetails}>
-                        {order.productDetails || "—"}
-                      </div>
+                      {Array.isArray(order.orderItems) && order.orderItems.length > 0 ? (
+                        <div>
+                          <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600, color: '#1E293B' }} title={order.orderItems.map(it => `${it.productDetails || ''} (Qty: ${it.quantity})`).join(', ')}>
+                            {order.orderItems[0].productDetails || "—"}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#2563EB", fontWeight: 600, marginTop: "2px" }}>
+                            {order.orderItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} units
+                            {order.orderItems.length > 1 && (
+                              <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "1px 6px", borderRadius: "10px", marginLeft: "4px", fontSize: "10px" }}>
+                                {order.orderItems.length} items
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: '#374151' }} title={order.productDetails}>
+                            {order.productDetails || "—"}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                            {order.quantity || order.partQuantity || 1} units
+                          </div>
+                        </div>
+                      )}
                     </td>
 
                     {/* Address */}
@@ -1801,6 +2181,11 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                               ? "Partial"
                               : "Pending"}
                         </span>
+                        {(isSalesAdmin || isSuperAdmin) && (
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: (Number(order.pendingAmount) || (order.paymentStatus === "paid" ? 0 : 1)) > 0 ? "#DC2626" : "#059669", marginTop: "2px" }}>
+                            Pending: ₹{parseFloat(order.pendingAmount !== undefined && order.pendingAmount !== null ? order.pendingAmount : (order.paymentStatus === "paid" ? 0 : (order.totalAmount || order.totalPrice || 0))).toLocaleString("en-IN")}
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -1847,18 +2232,11 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                               value={order.productionStatus === "in_progress" ? "in_progress" : order.productionStatus === "testing" ? "testing" : order.productionStatus === "completed" ? "completed" : "pending"}
                               onChange={(e) => handleUpdateProductionStatus(order.id, e.target.value)}
                               disabled={submitting}
-                              title={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "Order cannot be sent to Production until the pending amount is 0." : ""}
                             >
                               <option value="pending">Pending</option>
-                              <option value="in_progress" disabled={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0}>
-                                In Production {(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "(Payment Pending)" : ""}
-                              </option>
-                              <option value="testing" disabled={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0}>
-                                Testing {(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "(Payment Pending)" : ""}
-                              </option>
-                              <option value="completed" disabled={(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0}>
-                                Completed {(order.paymentStatus || "").toLowerCase() !== "paid" || (Number(order.pendingAmount) || 0) > 0 ? "(Payment Pending)" : ""}
-                              </option>
+                              <option value="in_progress">In Production</option>
+                              <option value="testing">Testing</option>
+                              <option value="completed">Completed</option>
                             </select>
                           </div>
                         )}
@@ -2028,17 +2406,12 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   </div>
                   <div className="detail-item full-width" style={{ flexDirection: "column", alignItems: "flex-start" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: "8px" }}>
-                      <span className="label" style={{ fontWeight: 600, color: "#475569" }}>Product Details & Specifications</span>
+                      <span className="label" style={{ fontWeight: 600, color: "#475569" }}>
+                        Product Line Items ({selectedOrder.orderItems?.length || 1})
+                      </span>
                       {!isEditingDrawerProductDetails ? (
                         <button
-                          onClick={() => {
-                            const parsed = parseProductDetails(selectedOrder.productDetails || "");
-                            setDrawerProductSpecs({
-                              ...parsed,
-                              productDetails: selectedOrder.productDetails || formatProductDetails(parsed)
-                            });
-                            setIsEditingDrawerProductDetails(true);
-                          }}
+                          onClick={openDrawerItemsEdit}
                           style={{
                             background: "#EFF6FF",
                             color: "#2563EB",
@@ -2053,7 +2426,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                             gap: "4px"
                           }}
                         >
-                          <Edit2 size={12} /> Edit Specs
+                          <Edit2 size={12} /> Edit Line Items
                         </button>
                       ) : (
                         <div style={{ display: "flex", gap: "8px" }}>
@@ -2093,18 +2466,49 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     </div>
 
                     {!isEditingDrawerProductDetails ? (
-                      <span className="val" style={{ fontWeight: 600, color: "#0F172A", fontSize: "14px", background: "#F8FAFC", padding: "10px 14px", borderRadius: "8px", border: "1px solid #E2E8F0", width: "100%", boxSizing: "border-box" }}>
-                        {selectedOrder.productDetails || "—"}
-                      </span>
+                      <div style={{ width: "100%" }}>
+                        {selectedOrder.orderItems && selectedOrder.orderItems.length > 0 ? (
+                          <div style={{ border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden", background: "#F8FAFC" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                              <thead>
+                                <tr style={{ background: "#F1F5F9", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
+                                  <th style={{ padding: "8px 12px", textAlign: "left" }}>#</th>
+                                  <th style={{ padding: "8px 12px", textAlign: "left" }}>Product Specification</th>
+                                  <th style={{ padding: "8px 12px", textAlign: "right" }}>Quantity</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedOrder.orderItems.map((it, idx) => (
+                                  <tr key={it.id || idx} style={{ borderTop: "1px solid #E2E8F0" }}>
+                                    <td style={{ padding: "8px 12px", color: "#64748B", fontWeight: 600 }}>{idx + 1}</td>
+                                    <td style={{ padding: "8px 12px", color: "#0F172A", fontWeight: 600 }}>{it.productDetails || "—"}</td>
+                                    <td style={{ padding: "8px 12px", textAlign: "right", color: "#2563EB", fontWeight: 700 }}>{it.quantity} units</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div style={{ background: "#F8FAFC", padding: "10px 14px", borderRadius: "8px", border: "1px solid #E2E8F0", width: "100%", boxSizing: "border-box" }}>
+                            <span style={{ fontWeight: 600, color: "#0F172A", fontSize: "14px" }}>
+                              {selectedOrder.productDetails || "—"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div style={{ width: "100%" }}>
-                        {renderProductDetailsEditor(drawerProductSpecs, setDrawerProductSpecs)}
+                        {renderOrderItemsEditor({ orderItems: drawerOrderItems }, (updated) => setDrawerOrderItems(updated.orderItems), editFormErrors)}
                       </div>
                     )}
                   </div>
                   <div className="detail-item">
-                    <span className="label">Part Quantity</span>
-                    <span className="val highlight">{selectedOrder.partQuantity ?? 1} Parts/Units</span>
+                    <span className="label">Total Quantity</span>
+                    <span className="val highlight">
+                      {selectedOrder.orderItems && selectedOrder.orderItems.length > 0
+                        ? selectedOrder.orderItems.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0)
+                        : (selectedOrder.partQuantity ?? selectedOrder.quantity ?? 1)} Units
+                    </span>
                   </div>
                   <div className="detail-item">
                     <span className="label">Expected Delivery Date</span>
@@ -2139,12 +2543,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                       ₹{parseFloat(selectedOrder.receivedAmount || 0).toLocaleString("en-IN")}
                     </span>
                   </div>
-                  <div className="detail-item">
-                    <span className="label">Pending Amount</span>
-                    <span className="val" style={{ color: (selectedOrder.pendingAmount || 0) > 0 ? "#EF4444" : "#10B981", fontWeight: 600 }}>
-                      ₹{parseFloat(selectedOrder.pendingAmount || 0).toLocaleString("en-IN")}
-                    </span>
-                  </div>
+                  {(isSalesAdmin || isSuperAdmin) && (
+                    <div className="detail-item">
+                      <span className="label">Pending Amount</span>
+                      <span className="val" style={{ color: (selectedOrder.pendingAmount || 0) > 0 ? "#EF4444" : "#10B981", fontWeight: 600 }}>
+                        ₹{parseFloat(selectedOrder.pendingAmount || 0).toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
                   <div className="detail-item">
                     <span className="label">Priority</span>
                     <span className="val">
@@ -2203,192 +2609,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                 </div>
               </div>
 
-              {/* SCM Shipping & Pricing Details (For SCM Admin and Superadmin) */}
-              {(isScmAdmin || isSuperAdmin) && (
-                <div className="drawer-section scm-shipping-pricing-section" style={{ border: "1px solid #E2E8F0", padding: "14px", borderRadius: "8px", background: "#F8FAFC", marginBottom: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                    <h4 className="section-title" style={{ margin: 0, borderLeft: "none", background: "none", padding: 0, display: "flex", alignItems: "center", gap: "6px", color: "#1E293B", fontWeight: 600 }}>
-                      <MapPin size={16} style={{ color: "#3B82F6" }} /> SCM Shipping & Pricing Details
-                    </h4>
-                    {!isEditingShippingDetails ? (
-                      <button
-                        onClick={() => setIsEditingShippingDetails(true)}
-                        style={{
-                          background: "#EFF6FF",
-                          color: "#2563EB",
-                          border: "1px solid #BFDBFE",
-                          borderRadius: "6px",
-                          padding: "4px 10px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "4px"
-                        }}
-                      >
-                        <Edit2 size={12} /> Edit Details
-                      </button>
-                    ) : (
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button
-                          onClick={handleSaveLocalShippingDetails}
-                          style={{
-                            background: "#10B981",
-                            color: "#FFFFFF",
-                            border: "none",
-                            borderRadius: "6px",
-                            padding: "4px 12px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            cursor: "pointer"
-                          }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setIsEditingShippingDetails(false)}
-                          style={{
-                            background: "#F3F4F6",
-                            color: "#374151",
-                            border: "1px solid #D1D5DB",
-                            borderRadius: "6px",
-                            padding: "4px 10px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            cursor: "pointer"
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
 
-                  {!isEditingShippingDetails ? (
-                    <div className="details-grid">
-                      <div className="detail-item full-width" style={{ display: "flex", flexDirection: "column" }}>
-                        <span className="label">Shipping Address</span>
-                        <span className="val" style={{ whiteSpace: "pre-line" }}>{localShippingAddress || "—"}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">City</span>
-                        <span className="val">{localCity || "—"}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">State</span>
-                        <span className="val">{localState || "—"}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Pincode</span>
-                        <span className="val">{localPincode || "—"}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Unit Price (INR)</span>
-                        <span className="val highlight">₹ {parseFloat(localUnitPrice || 786).toLocaleString("en-IN")}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">GST Rate (%)</span>
-                        <span className="val">{localGstRate || "18"}%</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Courier Partner</span>
-                        <span className="val">{localCourierName || "—"}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Tracking ID</span>
-                        <span className="val highlight">{localTrackingId || "—"}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="edit-shipping-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", background: "#FFFFFF", padding: "12px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
-                      <div className="form-group" style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Shipping Address</label>
-                        <textarea
-                          value={localShippingAddress}
-                          onChange={(e) => setLocalShippingAddress(e.target.value)}
-                          rows={2}
-                          placeholder="Enter delivery address..."
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>City</label>
-                        <input
-                          type="text"
-                          value={localCity}
-                          onChange={(e) => setLocalCity(e.target.value)}
-                          placeholder="Pune"
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>State</label>
-                        <input
-                          type="text"
-                          value={localState}
-                          onChange={(e) => setLocalState(e.target.value)}
-                          placeholder="Maharashtra"
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Pincode</label>
-                        <input
-                          type="text"
-                          value={localPincode}
-                          onChange={(e) => setLocalPincode(e.target.value)}
-                          placeholder="411001"
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Unit Price (₹)</label>
-                        <input
-                          type="number"
-                          value={localUnitPrice}
-                          onChange={(e) => setLocalUnitPrice(e.target.value)}
-                          placeholder="786"
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>GST Rate (%)</label>
-                        <select
-                          value={localGstRate}
-                          onChange={(e) => setLocalGstRate(e.target.value)}
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        >
-                          <option value="5">5%</option>
-                          <option value="12">12%</option>
-                          <option value="18">18%</option>
-                          <option value="28">28%</option>
-                        </select>
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Courier Partner</label>
-                        <input
-                          type="text"
-                          value={localCourierName}
-                          onChange={(e) => setLocalCourierName(e.target.value)}
-                          placeholder="DTDC Express"
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <label style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Tracking ID</label>
-                        <input
-                          type="text"
-                          value={localTrackingId}
-                          onChange={(e) => setLocalTrackingId(e.target.value)}
-                          placeholder="TRK123456"
-                          style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* SCM & Logistics Information */}
               <div className="drawer-section">
@@ -2460,12 +2681,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
               {/* Action Toolbar Inside Drawer */}
               {(isSalesAdmin || isProductionAdmin || isScmAdmin || isSuperAdmin) && (
                 <div className="drawer-actions-bar" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) && (selectedOrder.orderStatus === "sales_registered" || selectedOrder.orderStatus === "in_production") && (
-                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", padding: "10px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                      <AlertTriangle size={16} style={{ color: "#DC2626", flexShrink: 0 }} />
-                      <span>Order cannot be sent to Production until the pending amount is 0.</span>
-                    </div>
-                  )}
 
                   {isSalesAdmin && selectedOrder.orderStatus === "sales_registered" && (
                     <button className="primary-action-btn full-w" onClick={() => openEditSalesModal(selectedOrder)}>
@@ -2512,27 +2727,24 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button
                         className="status-transition-btn start-prod"
-                        style={{ flex: 1, opacity: ((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? 0.5 : 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "in_progress" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0}
-                        title={((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? "Order cannot be sent to Production until the pending amount is 0." : ""}
+                        style={{ flex: 1, opacity: 1 }}
+                        disabled={submitting || selectedOrder.productionStatus === "in_progress"}
                         onClick={() => handleUpdateProductionStatus(selectedOrder.id, "in_progress")}
                       >
                         In Production
                       </button>
                       <button
                         className="status-transition-btn"
-                        style={{ flex: 1, background: "#E0F2FE", color: "#0369A1", border: "1px solid #7DD3FC", opacity: ((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? 0.5 : 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "testing" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0}
-                        title={((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? "Order cannot be sent to Production until the pending amount is 0." : ""}
+                        style={{ flex: 1, background: "#E0F2FE", color: "#0369A1", border: "1px solid #7DD3FC", opacity: 1 }}
+                        disabled={submitting || selectedOrder.productionStatus === "testing"}
                         onClick={() => handleUpdateProductionStatus(selectedOrder.id, "testing")}
                       >
                         Testing
                       </button>
                       <button
                         className="status-transition-btn complete-prod"
-                        style={{ flex: 1, opacity: ((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? 0.5 : 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "completed" || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0}
-                        title={((selectedOrder.paymentStatus || "").toLowerCase() !== "paid" || (Number(selectedOrder.pendingAmount) || 0) > 0) ? "Order cannot be sent to Production until the pending amount is 0." : ""}
+                        style={{ flex: 1, opacity: 1 }}
+                        disabled={submitting || selectedOrder.productionStatus === "completed"}
                         onClick={() => handleUpdateProductionStatus(selectedOrder.id, "completed")}
                       >
                         Completed
@@ -2744,21 +2956,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                 </div>
 
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Product Details & Specifications *</label>
-                  {renderProductDetailsEditor(salesFormData, setSalesFormData, salesFormErrors)}
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Part Quantity (Units / Parts) *</label>
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="e.g. 1"
-                      value={salesFormData.partQuantity}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, partQuantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                    />
-                  </div>
+                  <label>Product Line Items & Quantities *</label>
+                  {renderOrderItemsEditor(salesFormData, setSalesFormData, salesFormErrors)}
                 </div>
 
                 <div className="form-row">
@@ -2905,9 +3104,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   </div>
                 </div>
 
-                <div className="form-group">
-                  <label>Product Details & Specifications *</label>
-                  {renderProductDetailsEditor(editOrderData, setEditOrderData, editFormErrors)}
+                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                  <label>Product Line Items & Quantities *</label>
+                  {renderOrderItemsEditor(editOrderData, setEditOrderData, editFormErrors)}
                 </div>
 
                 <div className="form-row">
@@ -3011,7 +3210,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       {/* ========================================================================= */}
       {showScmModal && orderForScm && (
         <div className="modal-overlay" onClick={() => setShowScmModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" style={{ maxWidth: "760px" }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Fill SCM Details ({orderForScm.orderNumber})</h2>
               <button className="close-btn" onClick={() => setShowScmModal(false)}>
@@ -3020,74 +3219,41 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
             </div>
 
             <form onSubmit={handleCompleteScm}>
-              <div className="modal-body">
-                {/* Invoice Number */}
-                <div className="form-group">
-                  <label>Invoice Number *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. INV-2026-999"
-                    value={scmFormData.invoiceNumber}
-                    onChange={(e) => setScmFormData({ ...scmFormData, invoiceNumber: e.target.value })}
-                  />
-                  {scmFormErrors.invoiceNumber && <span className="field-error">{scmFormErrors.invoiceNumber}</span>}
-                </div>
+              <div className="modal-body" style={{ padding: "20px" }}>
+                {/* 1. Common Shipment Information Section */}
+                <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "10px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Truck size={16} /> Common Order Shipment Details
+                  </div>
+                  
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Invoice Number *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. INV-2026-001"
+                        value={scmFormData.invoiceNumber}
+                        onChange={(e) => setScmFormData({ ...scmFormData, invoiceNumber: e.target.value })}
+                      />
+                      {scmFormErrors.invoiceNumber && <span className="field-error">{scmFormErrors.invoiceNumber}</span>}
+                    </div>
 
-                {/* Barcode Range Inputs */}
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Start Barcode *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. BAR001"
-                      value={scmFormData.startBarcode}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const qty = Math.max(1, Number(orderForScm?.quantity) || 1);
-                        let autoEnd = scmFormData.endBarcode;
-                        if (val.trim()) {
-                          const seq = generateBarcodeSequence(val.trim(), qty);
-                          if (seq.length > 0) autoEnd = seq[seq.length - 1];
-                        }
-                        setScmFormData({ ...scmFormData, startBarcode: val, endBarcode: autoEnd });
-                      }}
-                    />
-                    {scmFormErrors.startBarcode && <span className="field-error">{scmFormErrors.startBarcode}</span>}
+                    <div className="form-group">
+                      <label>Courier Name (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. DTDC, BlueDart, FedEx"
+                        value={scmFormData.courierName}
+                        onChange={(e) => setScmFormData({ ...scmFormData, courierName: e.target.value })}
+                      />
+                    </div>
                   </div>
 
-                  <div className="form-group">
-                    <label>End Barcode *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. BAR100"
-                      value={scmFormData.endBarcode}
-                      onChange={(e) => setScmFormData({ ...scmFormData, endBarcode: e.target.value })}
-                    />
-                    {scmFormErrors.endBarcode && <span className="field-error">{scmFormErrors.endBarcode}</span>}
-                  </div>
-                </div>
-
-                {/* Helper Text */}
-                <div style={{ fontSize: "12px", color: "#6B7280", marginTop: "-8px", marginBottom: "16px", lineHeight: "1.4" }}>
-                  Enter the first and last barcode of the batch. Example: BAR001 to BAR100 (Total: {orderForScm.quantity || 1} barcode{(orderForScm.quantity || 1) > 1 ? "s" : ""}).
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Courier Name (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. DTDC, BlueDart, FedEx, DHL"
-                      value={scmFormData.courierName}
-                      onChange={(e) => setScmFormData({ ...scmFormData, courierName: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="form-group">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Tracking ID *</label>
                     <input
                       type="text"
-                      placeholder="e.g. TRK-DTDC-987654"
+                      placeholder="e.g. TRK123456789"
                       value={scmFormData.trackingId}
                       onChange={(e) => setScmFormData({ ...scmFormData, trackingId: e.target.value })}
                     />
@@ -3095,38 +3261,122 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   </div>
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Service Warranty (Months) *</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={scmFormData.serviceWarrantyMonths}
-                      onChange={(e) => setScmFormData({ ...scmFormData, serviceWarrantyMonths: e.target.value })}
-                    />
-                    {scmFormErrors.serviceWarrantyMonths && <span className="field-error">{scmFormErrors.serviceWarrantyMonths}</span>}
+                {/* 2. Product Line Items Barcode & Warranty Section */}
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Barcode size={16} /> Product Line Items — Barcodes & Warranty
                   </div>
 
-                  <div className="form-group">
-                    <label>Full Warranty (Months) *</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={scmFormData.fullWarrantyMonths}
-                      onChange={(e) => setScmFormData({ ...scmFormData, fullWarrantyMonths: e.target.value })}
-                    />
-                    {scmFormErrors.fullWarrantyMonths && <span className="field-error">{scmFormErrors.fullWarrantyMonths}</span>}
-                  </div>
-                </div>
+                  {scmItemDetails.map((item, idx) => {
+                    const updateItemState = (updates) => {
+                      const newItems = [...scmItemDetails];
+                      newItems[idx] = { ...newItems[idx], ...updates };
+                      setScmItemDetails(newItems);
+                    };
 
-                <div className="form-group">
-                  <label>Total Warranty Calculated</label>
-                  <input
-                    type="text"
-                    readOnly
-                    disabled
-                    value={`${(Number(scmFormData.serviceWarrantyMonths) || 0) + (Number(scmFormData.fullWarrantyMonths) || 0)} months`}
-                  />
+                    return (
+                      <div
+                        key={item.id || idx}
+                        style={{
+                          background: "#FFFFFF",
+                          border: "1px solid #CBD5E1",
+                          borderRadius: "10px",
+                          padding: "16px",
+                          marginBottom: idx === scmItemDetails.length - 1 ? "0" : "16px",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.03)"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px" }}>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>
+                            Product #{idx + 1}: {item.productDetails || "EV Battery Unit"}
+                          </span>
+                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#2563EB", background: "#EFF6FF", padding: "2px 8px", borderRadius: "10px" }}>
+                            Qty: {item.quantity || 1} unit{(item.quantity || 1) > 1 ? "s" : ""}
+                          </span>
+                        </div>
+
+                        {/* Barcode Range / Single Barcode Row */}
+                        {(item.quantity || 1) === 1 ? (
+                          <div className="form-group">
+                            <label>Barcode *</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. BAR001"
+                              value={item.startBarcode || ""}
+                              onChange={(e) => updateItemState({ startBarcode: e.target.value, endBarcode: e.target.value })}
+                            />
+                            {scmFormErrors[`startBarcode_${idx}`] && (
+                              <span className="field-error">{scmFormErrors[`startBarcode_${idx}`]}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="form-row">
+                            <div className="form-group">
+                              <label>Start Barcode *</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. BAR001"
+                                value={item.startBarcode || ""}
+                                onChange={(e) => updateItemState({ startBarcode: e.target.value })}
+                              />
+                              {scmFormErrors[`startBarcode_${idx}`] && (
+                                <span className="field-error">{scmFormErrors[`startBarcode_${idx}`]}</span>
+                              )}
+                            </div>
+
+                            <div className="form-group">
+                              <label>End Barcode *</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. BAR005"
+                                value={item.endBarcode || ""}
+                                onChange={(e) => updateItemState({ endBarcode: e.target.value })}
+                              />
+                              {scmFormErrors[`endBarcode_${idx}`] && (
+                                <span className="field-error">{scmFormErrors[`endBarcode_${idx}`]}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Warranty Start & End Dates Row */}
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label>Warranty Start Date *</label>
+                            <input
+                              type="date"
+                              value={item.warrantyStartDate || ""}
+                              onChange={(e) => updateItemState({ warrantyStartDate: e.target.value })}
+                            />
+                            {scmFormErrors[`warrantyStartDate_${idx}`] && (
+                              <span className="field-error">{scmFormErrors[`warrantyStartDate_${idx}`]}</span>
+                            )}
+                          </div>
+
+                          <div className="form-group">
+                            <label>Warranty End Date *</label>
+                            <input
+                              type="date"
+                              value={item.warrantyEndDate || ""}
+                              onChange={(e) => updateItemState({ warrantyEndDate: e.target.value })}
+                            />
+                            {scmFormErrors[`warrantyEndDate_${idx}`] && (
+                              <span className="field-error">{scmFormErrors[`warrantyEndDate_${idx}`]}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Barcode Sequence Info Badge */}
+                        <div style={{ fontSize: "11px", color: "#64748B", background: "#F8FAFC", padding: "6px 10px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                          {(item.quantity || 1) === 1 ? (
+                            <>Barcode: <strong style={{ color: "#1D4ED8" }}>{item.startBarcode || "—"}</strong> (Single Unit)</>
+                          ) : (
+                            <>Range: <strong style={{ color: "#1D4ED8" }}>{item.startBarcode || "—"}</strong> to <strong style={{ color: "#1D4ED8" }}>{item.endBarcode || "—"}</strong> (Total: {item.quantity} barcodes)</>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

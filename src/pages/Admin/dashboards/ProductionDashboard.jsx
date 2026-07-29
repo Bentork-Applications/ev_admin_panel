@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { orderService } from "../../../services/orderService";
-import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import { RefreshCw, ArrowRight, Wrench, CheckCircle2, AlertTriangle, Cpu, Layers } from "lucide-react";
 
 export default function ProductionDashboard() {
@@ -17,10 +17,51 @@ export default function ProductionDashboard() {
       let data = [];
       try {
         data = await orderService.productionGetOrders();
-      } catch (err) {
-        data = await orderService.adminGetAllOrders();
+      } catch (prodErr) {
+        try {
+          data = await orderService.adminGetAllOrders();
+        } catch (adminErr) {
+          console.warn("Failed to fetch production orders:", adminErr);
+        }
       }
-      setOrders(Array.isArray(data) ? data : []);
+
+      // Handle array data or wrapped object ({ orders: [...] }, { data: [...] })
+      const dataArray = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.orders)
+          ? data.orders
+          : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.items)
+              ? data.items
+              : [];
+
+      // Merge with locally stored production order history so completed orders remain visible
+      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+
+      const mergedMap = new Map();
+      localCache.forEach((o) => {
+        if (o && (o.id || o.orderNumber)) {
+          mergedMap.set(o.id || o.orderNumber, o);
+        }
+      });
+      dataArray.forEach((o) => {
+        if (o && (o.id || o.orderNumber)) {
+          const key = o.id || o.orderNumber;
+          const existing = mergedMap.get(key) || {};
+          const localStatus = localStorage.getItem(`order_status_${o.id}`);
+          mergedMap.set(key, { ...existing, ...o, orderStatus: localStatus || o.orderStatus });
+        }
+      });
+
+      const mergedList = Array.from(mergedMap.values());
+      try {
+        localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
+      } catch (e) {
+        console.warn("Failed to update production_orders_cache:", e);
+      }
+
+      setOrders(mergedList);
     } catch (err) {
       console.error("Failed to load production dashboard data:", err);
       setError(err.message || "Failed to load production data");
@@ -44,6 +85,9 @@ export default function ProductionDashboard() {
   ).length;
 
   const totalUnitsInProduction = orders.reduce((sum, o) => {
+    if (Array.isArray(o.orderItems) && o.orderItems.length > 0) {
+      return sum + o.orderItems.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);
+    }
     return sum + (Number(o.quantity) || 1);
   }, 0);
 
@@ -66,6 +110,20 @@ export default function ProductionDashboard() {
     { month: "May", units: 290 },
     { month: "Jun", units: 410 },
   ];
+
+  // Sort orders newest first (latest created/updated at top)
+  const sortedOrders = useMemo(() => {
+    return [...orders].sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : b.createdDate ? new Date(b.createdDate).getTime() : b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      if (timeA !== timeB && timeA > 0 && timeB > 0) {
+        return timeB - timeA;
+      }
+      const numA = Number(String(a.id || a.orderNumber || "").replace(/\D/g, "")) || 0;
+      const numB = Number(String(b.id || b.orderNumber || "").replace(/\D/g, "")) || 0;
+      return numB - numA;
+    });
+  }, [orders]);
 
   return (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
@@ -132,6 +190,16 @@ export default function ProductionDashboard() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", padding: "12px 16px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
+          <AlertTriangle size={18} style={{ color: "#DC2626", flexShrink: 0 }} />
+          <span>{error}</span>
+          <button onClick={fetchProductionData} style={{ marginLeft: "auto", background: "#DC2626", color: "#FFFFFF", border: "none", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "28px" }}>
@@ -211,7 +279,7 @@ export default function ProductionDashboard() {
                 <Tooltip />
                 <Bar dataKey="count" radius={[0, 6, 6, 0]}>
                   {stageData.map((entry, index) => (
-                    <cell key={`cell-${index}`} fill={entry.fill} />
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Bar>
               </BarChart>
@@ -280,11 +348,15 @@ export default function ProductionDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {orders.slice(0, 6).map((order) => (
+                {sortedOrders.slice(0, 6).map((order) => (
                   <tr key={order.id || order.orderNumber} style={{ borderBottom: "1px solid #F3F4F6" }}>
                     <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>{order.orderNumber}</td>
                     <td style={{ padding: "12px 16px", color: "#4B5563" }}>{order.batteryModel || order.product || "EV Battery Unit"}</td>
-                    <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>{order.quantity || 1} units</td>
+                    <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>
+                      {Array.isArray(order.orderItems) && order.orderItems.length > 0
+                        ? `${order.orderItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)} units`
+                        : `${order.quantity || 1} units`}
+                    </td>
                     <td style={{ padding: "12px 16px" }}>
                       <span
                         style={{
@@ -296,14 +368,14 @@ export default function ProductionDashboard() {
                             order.productionStatus === "completed" || order.orderStatus === "production_complete"
                               ? "#ECFDF5"
                               : order.productionStatus === "testing"
-                              ? "#F3E8FF"
-                              : "#FEF3C7",
+                                ? "#F3E8FF"
+                                : "#FEF3C7",
                           color:
                             order.productionStatus === "completed" || order.orderStatus === "production_complete"
                               ? "#047857"
                               : order.productionStatus === "testing"
-                              ? "#6D28D9"
-                              : "#B45309"
+                                ? "#6D28D9"
+                                : "#B45309"
                         }}
                       >
                         {(order.productionStatus || order.orderStatus || "in_progress").replace("_", " ").toUpperCase()}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { orderService } from "../../../services/orderService";
 import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend } from "recharts";
@@ -76,6 +76,20 @@ export default function SalesDashboard() {
       { month: "Mar", count: 12, revenue: 135000 }
     );
   }
+
+  // Sort orders newest first (latest created/updated at top)
+  const sortedOrders = useMemo(() => {
+    return [...orders].sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : b.createdDate ? new Date(b.createdDate).getTime() : b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      if (timeA !== timeB && timeA > 0 && timeB > 0) {
+        return timeB - timeA;
+      }
+      const numA = Number(String(a.id || a.orderNumber || "").replace(/\D/g, "")) || 0;
+      const numB = Number(String(b.id || b.orderNumber || "").replace(/\D/g, "")) || 0;
+      return numB - numA;
+    });
+  }, [orders]);
 
   return (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
@@ -284,20 +298,30 @@ export default function SalesDashboard() {
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Customer Name</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Quantity</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Total Amount</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Pending Amount</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Status</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Priority</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Date</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.slice(0, 5).map((order) => (
-                  <tr key={order.id || order.orderNumber} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>{order.orderNumber}</td>
-                    <td style={{ padding: "12px 16px", color: "#4B5563" }}>{order.customerName || "—"}</td>
-                    <td style={{ padding: "12px 16px", color: "#4B5563" }}>{order.quantity || 1} units</td>
-                    <td style={{ padding: "12px 16px", fontWeight: 600, color: "#10B981" }}>
-                      ₹{parseFloat(order.totalAmount || order.totalPrice || 0).toLocaleString("en-IN")}
-                    </td>
+                {sortedOrders.slice(0, 5).map((order) => {
+                  const pending = parseFloat(order.pendingAmount !== undefined && order.pendingAmount !== null ? order.pendingAmount : (order.paymentStatus === "paid" ? 0 : (order.totalAmount || order.totalPrice || 0)));
+                  return (
+                    <tr key={order.id || order.orderNumber} style={{ borderBottom: "1px solid #F3F4F6" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>{order.orderNumber}</td>
+                      <td style={{ padding: "12px 16px", color: "#4B5563" }}>{order.customerName || "—"}</td>
+                      <td style={{ padding: "12px 16px", color: "#4B5563" }}>
+                        {Array.isArray(order.orderItems) && order.orderItems.length > 0
+                          ? `${order.orderItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)} units (${order.orderItems.length} items)`
+                          : `${order.quantity || 1} units`}
+                      </td>
+                      <td style={{ padding: "12px 16px", fontWeight: 600, color: "#10B981" }}>
+                        ₹{parseFloat(order.totalAmount || order.totalPrice || 0).toLocaleString("en-IN")}
+                      </td>
+                      <td style={{ padding: "12px 16px", fontWeight: 600, color: pending > 0 ? "#DC2626" : "#059669" }}>
+                        ₹{pending.toLocaleString("en-IN")}
+                      </td>
                     <td style={{ padding: "12px 16px" }}>
                       <span
                         style={{
@@ -326,8 +350,9 @@ export default function SalesDashboard() {
                     <td style={{ padding: "12px 16px", color: "#6B7280" }}>
                       {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}
                     </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

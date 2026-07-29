@@ -18,12 +18,23 @@ const handleResponseError = (error) => {
     if (typeof data === "string") {
       throw new Error(data);
     }
-    if (data && data.message) {
-      throw new Error(data.message);
-    }
-    if (data && typeof data === "object") {
-      const messages = Object.values(data).join(", ");
-      if (messages) throw new Error(messages);
+    if (data) {
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        const fieldMsgs = data.errors
+          .map((e) => e.defaultMessage || e.message || `${e.field}: invalid`)
+          .join("; ");
+        if (fieldMsgs) throw new Error(fieldMsgs);
+      }
+      if (data.message) {
+        throw new Error(data.message);
+      }
+      if (typeof data === "object") {
+        const messages = Object.values(data)
+          .map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v)))
+          .filter(Boolean)
+          .join(", ");
+        if (messages) throw new Error(messages);
+      }
     }
     throw new Error(`Server error (${error.response.status})`);
   } else if (error.request) {
@@ -129,9 +140,13 @@ export const orderService = {
 
   scmUpdateDetails: async (id, scmData) => {
     try {
+      console.log(`[orderService] PUT /orders/scm/${id}/complete Payload:`, JSON.stringify(scmData, null, 2));
       const res = await axios.put(`${getBaseUrl()}/orders/scm/${id}/complete`, scmData, getAuthHeaders());
       return res.data;
     } catch (err) {
+      if (err.response) {
+        console.error(`[orderService] PUT /orders/scm/${id}/complete Error ${err.response.status}:`, err.response.data);
+      }
       handleResponseError(err);
     }
   },
