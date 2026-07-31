@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AddStaffForm from "../form/AddStaffForm";
 import StaffEditForm from "../form/staffedit";
+import { useStaffManagement } from "../../../hooks/useStaffManagement";
+import { Toast } from "../../../components/common/Toast";
+import { Pagination } from "../../../components/common/Pagination";
 
 const LoadingSpinner = () => (
   <div style={{ padding: "8px 0" }}>
@@ -35,54 +38,6 @@ const ErrorDisplay = ({ message }) => (
   </div>
 );
 
-const Toast = ({ message, type = "success", onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onClose();
-    }, 3500);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: "24px",
-        right: "24px",
-        zIndex: 9999,
-        background: type === "success" ? "#065F46" : "#991B1B",
-        color: "#fff",
-        padding: "12px 20px",
-        borderRadius: "12px",
-        boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        fontSize: "14px",
-        fontWeight: "500",
-        fontFamily: "'Lexend', sans-serif",
-        animation: "toast-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
-      }}
-    >
-      <span>{type === "success" ? "✓" : "⚠️"}</span>
-      <span>{message}</span>
-      <button
-        onClick={onClose}
-        style={{
-          background: "none",
-          border: "none",
-          color: "#fff",
-          fontSize: "16px",
-          cursor: "pointer",
-          marginLeft: "8px"
-        }}
-      >
-        ✕
-      </button>
-    </div>
-  );
-};
-
 export default function RoleStaffManagement({
   roleKey,
   roleTitle,
@@ -92,97 +47,46 @@ export default function RoleStaffManagement({
   baseUrl: propBaseUrl
 }) {
   const navigate = useNavigate();
-  const [staffData, setStaffData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [isFormOpen, setIsFormOpen] = useState(null);
-  const [editingStaff, setEditingStaff] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [selectedStaffForDrawer, setSelectedStaffForDrawer] = useState(null);
-  const [activeDropdownId, setActiveDropdownId] = useState(null);
-  const [toast, setToast] = useState(null);
-
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const {
+    staffData,
+    loading,
+    error,
+    metrics,
+    filteredStaff,
+    paginatedStaff,
+    searchQuery,
+    setSearchQuery,
+    statusFilter,
+    setStatusFilter,
+    currentPage,
+    setCurrentPage,
+    totalPages,
+    itemsPerPage,
+    isFormOpen,
+    setIsFormOpen,
+    editingStaff,
+    setEditingStaff,
+    selectedStaffForDrawer,
+    setSelectedStaffForDrawer,
+    activeDropdownId,
+    setActiveDropdownId,
+    toast,
+    setToast,
+    showToast,
+    toggleStatus,
+    refresh
+  } = useStaffManagement(roleKey);
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
-
-  const showToast = (message, type = "success") => {
-    setToast({ message, type });
-  };
-
-  const getStaffStatus = (staff) => {
-    const overrides = JSON.parse(localStorage.getItem("admin_staff_status") || "{}");
-    if (overrides[staff.id]) {
-      return overrides[staff.id];
-    }
-    return staff.active !== false ? "Active" : "Suspended";
-  };
 
   useEffect(() => {
     const handleGlobalClick = () => setActiveDropdownId(null);
     window.addEventListener("click", handleGlobalClick);
     return () => window.removeEventListener("click", handleGlobalClick);
-  }, []);
-
-  useEffect(() => {
-    fetchStaffData();
-  }, [roleKey]);
-
-  const fetchStaffData = async () => {
-    setLoading(true);
-    setError(null);
-
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/");
-      return;
-    }
-
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
-
-    try {
-      const res = await fetch(baseUrl + "/admin/alladmin", { headers });
-      if (res.status === 401 || res.status === 403) throw new Error("Auth failed");
-      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-      const records = await res.json();
-      const list = Array.isArray(records) ? records : [];
-      // Filter list specifically for this roleKey
-      const filteredForRole = list.filter(
-        (a) => a.role && a.role.toUpperCase() === roleKey.toUpperCase()
-      );
-      setStaffData(filteredForRole);
-    } catch (err) {
-      console.error("Failed to fetch role staff:", err);
-      if (err.message === "Auth failed") {
-        localStorage.removeItem("token");
-        navigate("/");
-      } else {
-        setError(err.message || "Failed to load staff list");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [setActiveDropdownId]);
 
   const handleToggleStatus = (staff) => {
-    const currentStatus = getStaffStatus(staff);
-    const newStatus = currentStatus === "Active" ? "Suspended" : "Active";
-    if (!window.confirm(`Are you sure you want to change ${staff.name || "this user"}'s status to ${newStatus}?`)) {
-      return;
-    }
-
-    const overrides = JSON.parse(localStorage.getItem("admin_staff_status") || "{}");
-    overrides[staff.id] = newStatus;
-    localStorage.setItem("admin_staff_status", JSON.stringify(overrides));
-
-    setStaffData((prev) => [...prev]);
-    showToast(`${staff.name || "User"} is now ${newStatus}`);
+    toggleStatus(staff);
   };
 
   const handleDeleteStaff = async (staff) => {
@@ -202,7 +106,7 @@ export default function RoleStaffManagement({
 
       if (response.ok) {
         showToast(`${staff.name || "Staff member"} has been deleted successfully.`);
-        fetchStaffData();
+        refresh();
       } else {
         const errorText = await response.text();
         throw new Error(errorText || "Failed to delete staff member");
@@ -216,35 +120,12 @@ export default function RoleStaffManagement({
   const closeForm = () => {
     setIsFormOpen(null);
     setEditingStaff(null);
-    fetchStaffData();
+    refresh();
   };
 
-  // Filtered staff based on search query & status
-  const filteredStaff = staffData.filter((staff) => {
-    const term = searchQuery.toLowerCase();
-    const matchesSearch =
-      (staff.name || "").toLowerCase().includes(term) ||
-      (staff.email || "").toLowerCase().includes(term) ||
-      (staff.mobile || "").toLowerCase().includes(term);
-
-    const statusVal = getStaffStatus(staff);
-    const matchesStatus =
-      statusFilter === "ALL" ||
-      statusVal.toUpperCase() === statusFilter.toUpperCase();
-
-    return matchesSearch && matchesStatus;
-  });
-
-  // Calculate summary metrics
-  const totalCount = staffData.length;
-  const activeCount = staffData.filter((s) => getStaffStatus(s) === "Active").length;
-  const suspendedCount = staffData.filter((s) => getStaffStatus(s) === "Suspended").length;
-
-  // Pagination logic
-  const totalPages = Math.ceil(filteredStaff.length / itemsPerPage) || 1;
-  const validPage = Math.min(Math.max(currentPage, 1), totalPages);
-  const startIndex = (validPage - 1) * itemsPerPage;
-  const paginatedStaff = filteredStaff.slice(startIndex, startIndex + itemsPerPage);
+  const totalCount = metrics.total;
+  const activeCount = metrics.active;
+  const suspendedCount = metrics.suspended;
 
   return (
     <div style={{ width: "100%", minHeight: "100vh", background: "#F9FAFB", position: "relative" }}>

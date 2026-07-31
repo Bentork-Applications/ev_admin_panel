@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { batteryService } from "../../services/batteryService";
 
 export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
@@ -242,23 +243,12 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       return;
     }
     try {
-      const response = await fetch(`${baseUrl}/battery-data/admin/all`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      console.log("[BATTERY PIPELINE] API status:", response.status);
-      if (response.ok) {
-        const data = await response.json();
-        console.log("[BATTERY PIPELINE] 1. API returned records:", data.length, "| IDs:", data.map(d => d.id));
-        console.log("[BATTERY PIPELINE] 1. Sample record:", data[0]);
-        const normalized = Array.isArray(data) ? data : [];
-        setBatteries(normalized);
-        console.log("[BATTERY PIPELINE] 2. setBatteries called with:", normalized.length, "records");
-      } else {
-        throw new Error(`Failed to load batteries (Status: ${response.status})`);
-      }
+      const data = await batteryService.getAllBatteries();
+      const normalized = Array.isArray(data) ? data : [];
+      setBatteries(normalized);
     } catch (err) {
       console.error("[BATTERY PIPELINE] ERROR in fetchBatteries:", err);
-      setError("Failed to load battery inventory. Please try again.");
+      setError(err.message || "Failed to load batteries list");
     } finally {
       setLoading(false);
     }

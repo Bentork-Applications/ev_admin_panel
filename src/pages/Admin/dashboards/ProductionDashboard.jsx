@@ -1,78 +1,62 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { orderService } from "../../../services/orderService";
-import { ResponsiveContainer, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, Legend } from "recharts";
-import { RefreshCw, ArrowRight, Wrench, CheckCircle2, AlertTriangle, Cpu, Layers } from "lucide-react";
+import { useDashboardData } from "../../../hooks/useDashboardData";
+import { StatCard } from "../../../components/common/StatCard";
+import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, Cell, XAxis, YAxis, Tooltip } from "recharts";
+import { RefreshCw, ArrowRight, Wrench, CheckCircle2, Cpu, Layers } from "lucide-react";
 
 export default function ProductionDashboard() {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  const fetchProductionData = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchProductionData = useCallback(async () => {
+    let data = [];
     try {
-      let data = [];
+      data = await orderService.productionGetOrders();
+    } catch (prodErr) {
       try {
-        data = await orderService.productionGetOrders();
-      } catch (prodErr) {
-        try {
-          data = await orderService.adminGetAllOrders();
-        } catch (adminErr) {
-          console.warn("Failed to fetch production orders:", adminErr);
-        }
+        data = await orderService.adminGetAllOrders();
+      } catch (adminErr) {
+        console.warn("Failed to fetch production orders:", adminErr);
       }
-
-      // Handle array data or wrapped object ({ orders: [...] }, { data: [...] })
-      const dataArray = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.orders)
-          ? data.orders
-          : Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data?.items)
-              ? data.items
-              : [];
-
-      // Merge with locally stored production order history so completed orders remain visible
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-
-      const mergedMap = new Map();
-      localCache.forEach((o) => {
-        if (o && (o.id || o.orderNumber)) {
-          mergedMap.set(o.id || o.orderNumber, o);
-        }
-      });
-      dataArray.forEach((o) => {
-        if (o && (o.id || o.orderNumber)) {
-          const key = o.id || o.orderNumber;
-          const existing = mergedMap.get(key) || {};
-          const localStatus = localStorage.getItem(`order_status_${o.id}`);
-          mergedMap.set(key, { ...existing, ...o, orderStatus: localStatus || o.orderStatus });
-        }
-      });
-
-      const mergedList = Array.from(mergedMap.values());
-      try {
-        localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
-      } catch (e) {
-        console.warn("Failed to update production_orders_cache:", e);
-      }
-
-      setOrders(mergedList);
-    } catch (err) {
-      console.error("Failed to load production dashboard data:", err);
-      setError(err.message || "Failed to load production data");
-    } finally {
-      setLoading(false);
     }
-  };
 
-  useEffect(() => {
-    fetchProductionData();
+    const dataArray = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.orders)
+        ? data.orders
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.items)
+            ? data.items
+            : [];
+
+    const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+    const mergedMap = new Map();
+    localCache.forEach((o) => {
+      if (o && (o.id || o.orderNumber)) {
+        mergedMap.set(o.id || o.orderNumber, o);
+      }
+    });
+    dataArray.forEach((o) => {
+      if (o && (o.id || o.orderNumber)) {
+        const key = o.id || o.orderNumber;
+        const existing = mergedMap.get(key) || {};
+        const localStatus = localStorage.getItem(`order_status_${o.id}`);
+        mergedMap.set(key, { ...existing, ...o, orderStatus: localStatus || o.orderStatus });
+      }
+    });
+
+    const mergedList = Array.from(mergedMap.values());
+    try {
+      localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
+    } catch (e) {
+      console.warn("Failed to update production_orders_cache:", e);
+    }
+    return mergedList;
   }, []);
+
+  const { orders, loading, refresh: fetchProductionDataHandler } = useDashboardData(fetchProductionData);
 
   // Compute Production Metrics
   const totalOrders = orders.length;
@@ -98,20 +82,32 @@ export default function ProductionDashboard() {
     { stage: "Sales Registered", count: orders.filter((o) => o.orderStatus === "sales_registered").length, fill: "#F59E0B" },
     { stage: "In Assembly", count: inProductionCount, fill: "#3B82F6" },
     { stage: "Quality Testing", count: testingCount, fill: "#8B5CF6" },
-    { stage: "Prod Complete", count: completedCount, fill: "#10B981" },
+    { stage: "Completed", count: completedCount, fill: "#10B981" },
   ];
 
-  // Chart 2: Output Trend
-  const outputChartData = [
-    { month: "Jan", units: 120 },
-    { month: "Feb", units: 180 },
-    { month: "Mar", units: 250 },
-    { month: "Apr", units: 310 },
-    { month: "May", units: 290 },
-    { month: "Jun", units: 410 },
-  ];
+  // Chart 2: Output Throughput Trend Data
+  const monthlyOutputMap = {};
+  orders.forEach((o) => {
+    const d = o.createdAt ? new Date(o.createdAt) : o.createdDate ? new Date(o.createdDate) : new Date();
+    const month = d.toLocaleString("default", { month: "short" });
+    if (!monthlyOutputMap[month]) monthlyOutputMap[month] = { month, units: 0 };
+    const qty = Array.isArray(o.orderItems) && o.orderItems.length > 0
+      ? o.orderItems.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0)
+      : (Number(o.quantity) || 1);
+    monthlyOutputMap[month].units += qty;
+  });
+  const outputChartData = Object.values(monthlyOutputMap).slice(-6);
+  if (outputChartData.length === 0) {
+    outputChartData.push(
+      { month: "Jan", units: 120 },
+      { month: "Feb", units: 240 },
+      { month: "Mar", units: 380 },
+      { month: "Apr", units: 450 },
+      { month: "May", units: 520 }
+    );
+  }
 
-  // Sort orders newest first (latest created/updated at top)
+  // Sort orders newest first
   const sortedOrders = useMemo(() => {
     return [...orders].sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
@@ -126,10 +122,9 @@ export default function ProductionDashboard() {
   }, [orders]);
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div style={{ padding: "16px 24px", maxWidth: "1400px", margin: "0 auto", boxSizing: "border-box" }}>
       {/* Header Banner */}
-      <div
-        style={{
+      <div className="production-banner" style={{
           background: "linear-gradient(135deg, #78350F 0%, #D97706 100%)",
           borderRadius: "16px",
           padding: "24px 32px",
@@ -139,22 +134,21 @@ export default function ProductionDashboard() {
           justifyContent: "space-between",
           alignItems: "center",
           boxShadow: "0 10px 25px -5px rgba(217, 119, 6, 0.3)"
-        }}
-      >
+        }}>
         <div>
           <span style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px", background: "rgba(255, 255, 255, 0.2)", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
             Production Module Dashboard
           </span>
-          <h1 style={{ fontSize: "26px", fontWeight: 700, marginTop: "8px", marginBottom: "4px", color: "#FFFFFF" }}>
-            Manufacturing & Production Assembly
+          <h1 style={{ fontSize: "24px", fontWeight: 700, marginTop: "8px", marginBottom: "4px", color: "#FFFFFF" }}>
+            Manufacturing & Assembly Pipeline
           </h1>
-          <p style={{ fontSize: "14px", opacity: 0.9, margin: 0 }}>
-            Monitor battery assembly stages, quality testing, batch throughput, and completion queues.
+          <p style={{ fontSize: "13px", opacity: 0.9, margin: 0 }}>
+            Monitor live battery assembly lines, quality assurance testing, throughput rate, and finished inventory.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div className="production-banner-actions" style={{ display: "flex", gap: "12px" }}>
           <button
-            onClick={fetchProductionData}
+            onClick={fetchProductionDataHandler}
             style={{
               background: "rgba(255, 255, 255, 0.15)",
               border: "1px solid rgba(255, 255, 255, 0.3)",
@@ -175,7 +169,7 @@ export default function ProductionDashboard() {
             onClick={() => navigate("/dashboard/orders")}
             style={{
               background: "#FFFFFF",
-              color: "#78350F",
+              color: "#C2410C",
               border: "none",
               padding: "10px 18px",
               borderRadius: "8px",
@@ -191,82 +185,48 @@ export default function ProductionDashboard() {
         </div>
       </div>
 
-      {error && (
-        <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", padding: "12px 16px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
-          <AlertTriangle size={18} style={{ color: "#DC2626", flexShrink: 0 }} />
-          <span>{error}</span>
-          <button onClick={fetchProductionData} style={{ marginLeft: "auto", background: "#DC2626", color: "#FFFFFF", border: "none", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>
-            Retry
-          </button>
-        </div>
-      )}
-
       {/* KPI Cards Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "28px" }}>
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Active In Assembly</span>
-            <div style={{ padding: "8px", background: "#EFF6FF", borderRadius: "8px", color: "#2563EB" }}>
-              <Cpu size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : inProductionCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 500, marginTop: "4px", display: "inline-block" }}>
-            Orders Being Manufactured
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Quality Testing Stage</span>
-            <div style={{ padding: "8px", background: "#F3E8FF", borderRadius: "8px", color: "#8B5CF6" }}>
-              <Wrench size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : testingCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#8B5CF6", marginTop: "4px", display: "inline-block" }}>
-            Under QA Inspection
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Production Complete</span>
-            <div style={{ padding: "8px", background: "#ECFDF5", borderRadius: "8px", color: "#059669" }}>
-              <CheckCircle2 size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : completedCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#059669", marginTop: "4px", display: "inline-block" }}>
-            Ready for SCM Handover
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Total Units Output</span>
-            <div style={{ padding: "8px", background: "#FEF3C7", borderRadius: "8px", color: "#D97706" }}>
-              <Layers size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : totalUnitsInProduction}
-          </div>
-          <span style={{ fontSize: "12px", color: "#D97706", marginTop: "4px", display: "inline-block" }}>
-            Cumulative Units Manufactured
-          </span>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "28px" }}>
+        <StatCard
+          label="Active Assembly Orders"
+          icon={Wrench}
+          value={inProductionCount}
+          subtitle="Currently on Assembly Line"
+          iconBg="#FEF3C7"
+          iconColor="#D97706"
+          loading={loading}
+        />
+        <StatCard
+          label="Completed Batches"
+          icon={CheckCircle2}
+          value={completedCount}
+          subtitle="Ready for SCM / Dispatched"
+          iconBg="#ECFDF5"
+          iconColor="#059669"
+          loading={loading}
+        />
+        <StatCard
+          label="Total Units in Pipeline"
+          icon={Layers}
+          value={totalUnitsInProduction}
+          subtitle="Cumulative Battery Pack Volume"
+          iconBg="#EFF6FF"
+          iconColor="#2563EB"
+          loading={loading}
+        />
+        <StatCard
+          label="Throughput Efficiency"
+          icon={Cpu}
+          value={`${throughputRate}%`}
+          subtitle="Assembly Completion Rate"
+          iconBg="#F3E8FF"
+          iconColor="#7C3AED"
+          loading={loading}
+        />
       </div>
 
       {/* Charts Row */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "28px" }}>
-        {/* Stage Breakdown Bar Chart */}
         <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
           <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#111827", marginBottom: "16px" }}>
             Manufacturing Stage Distribution

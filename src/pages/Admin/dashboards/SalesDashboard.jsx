@@ -1,42 +1,27 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { orderService } from "../../../services/orderService";
+import { useDashboardData } from "../../../hooks/useDashboardData";
+import { StatCard } from "../../../components/common/StatCard";
 import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend } from "recharts";
-import { RefreshCw, ArrowRight, ShoppingCart, TrendingUp, DollarSign, Clock } from "lucide-react";
+import { RefreshCw, ArrowRight, ShoppingCart, TrendingUp, DollarSign, Clock, Eye } from "lucide-react";
 
 export default function SalesDashboard() {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  const fetchSalesData = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchSalesData = useCallback(async () => {
     try {
-      let data = [];
-      try {
-        data = await orderService.salesGetMyOrders();
-      } catch (err) {
-        data = await orderService.adminGetAllOrders();
-      }
-      setOrders(Array.isArray(data) ? data : []);
+      return await orderService.salesGetMyOrders();
     } catch (err) {
-      console.error("Failed to load sales dashboard data:", err);
-      setError(err.message || "Failed to load sales data");
-    } finally {
-      setLoading(false);
+      return await orderService.adminGetAllOrders();
     }
-  };
-
-  useEffect(() => {
-    fetchSalesData();
   }, []);
+
+  const { orders, loading, refresh: fetchSalesDataHandler } = useDashboardData(fetchSalesData);
 
   // Compute Sales Metrics
   const totalOrders = orders.length;
   const salesRegisteredCount = orders.filter((o) => o.orderStatus === "sales_registered").length;
-  const inProductionCount = orders.filter((o) => o.orderStatus === "in_production").length;
   const completedCount = orders.filter((o) => o.orderStatus === "scm_complete" || o.orderStatus === "dispatched").length;
 
   const totalPipelineRevenue = orders.reduce((sum, o) => {
@@ -73,11 +58,13 @@ export default function SalesDashboard() {
     monthlyChartData.push(
       { month: "Jan", count: 4, revenue: 45000 },
       { month: "Feb", count: 7, revenue: 82000 },
-      { month: "Mar", count: 12, revenue: 135000 }
+      { month: "Mar", count: 12, revenue: 135000 },
+      { month: "Apr", count: 16, revenue: 190000 },
+      { month: "May", count: 22, revenue: 275000 }
     );
   }
 
-  // Sort orders newest first (latest created/updated at top)
+  // Sort orders newest first
   const sortedOrders = useMemo(() => {
     return [...orders].sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
@@ -92,35 +79,76 @@ export default function SalesDashboard() {
   }, [orders]);
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div style={{ padding: "16px 24px", maxWidth: "1400px", margin: "0 auto", boxSizing: "border-box" }}>
+      <style>{`
+        .sales-banner {
+          background: linear-gradient(135deg, #1E1B4B 0%, #312E81 40%, #2563EB 100%);
+          border-radius: 16px;
+          padding: 24px 32px;
+          color: #FFFFFF;
+          margin-bottom: 28px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.35);
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .sales-banner-actions {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .sales-charts-grid {
+          display: grid;
+          grid-template-columns: 2fr 1fr;
+          gap: 20px;
+          margin-bottom: 28px;
+        }
+        .sales-table-row {
+          transition: background-color 0.15s ease-in-out;
+        }
+        .sales-table-row:hover {
+          background-color: #F8FAFC !important;
+        }
+        @media (max-width: 1024px) {
+          .sales-charts-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        @media (max-width: 640px) {
+          .sales-banner {
+            padding: 16px 20px;
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .sales-banner-actions {
+            width: 100%;
+            flex-direction: column;
+          }
+          .sales-banner-actions button {
+            width: 100%;
+            justify-content: center;
+          }
+        }
+      `}</style>
+
       {/* Header Banner */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)",
-          borderRadius: "16px",
-          padding: "24px 32px",
-          color: "#FFFFFF",
-          marginBottom: "28px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          boxShadow: "0 10px 25px -5px rgba(59, 130, 246, 0.3)"
-        }}
-      >
+      <div className="sales-banner">
         <div>
           <span style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px", background: "rgba(255, 255, 255, 0.2)", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
             Sales Module Dashboard
           </span>
-          <h1 style={{ fontSize: "26px", fontWeight: 700, marginTop: "8px", marginBottom: "4px", color: "#FFFFFF" }}>
+          <h1 style={{ fontSize: "24px", fontWeight: 700, marginTop: "8px", marginBottom: "4px", color: "#FFFFFF" }}>
             Sales & Demand Management
           </h1>
-          <p style={{ fontSize: "14px", opacity: 0.9, margin: 0 }}>
+          <p style={{ fontSize: "13px", opacity: 0.9, margin: 0 }}>
             Track order intake, customer revenue pipeline, order statuses, and sales performance.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div className="sales-banner-actions">
           <button
-            onClick={fetchSalesData}
+            onClick={fetchSalesDataHandler}
             style={{
               background: "rgba(255, 255, 255, 0.15)",
               border: "1px solid rgba(255, 255, 255, 0.3)",
@@ -132,7 +160,8 @@ export default function SalesDashboard() {
               gap: "8px",
               cursor: "pointer",
               fontWeight: 500,
-              backdropFilter: "blur(4px)"
+              backdropFilter: "blur(4px)",
+              transition: "all 0.2s"
             }}
           >
             <RefreshCw size={16} className={loading ? "spin" : ""} /> Refresh Data
@@ -149,7 +178,8 @@ export default function SalesDashboard() {
               alignItems: "center",
               gap: "8px",
               cursor: "pointer",
-              fontWeight: 600
+              fontWeight: 600,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
             }}
           >
             Manage Orders <ArrowRight size={16} />
@@ -158,70 +188,47 @@ export default function SalesDashboard() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "28px" }}>
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Total Sales Orders</span>
-            <div style={{ padding: "8px", background: "#EFF6FF", borderRadius: "8px", color: "#2563EB" }}>
-              <ShoppingCart size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : totalOrders}
-          </div>
-          <span style={{ fontSize: "12px", color: "#10B981", fontWeight: 500, marginTop: "4px", display: "inline-block" }}>
-            Active Order History
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Pipeline Revenue Value</span>
-            <div style={{ padding: "8px", background: "#ECFDF5", borderRadius: "8px", color: "#059669" }}>
-              <DollarSign size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            ₹{loading ? "..." : totalPipelineRevenue.toLocaleString("en-IN")}
-          </div>
-          <span style={{ fontSize: "12px", color: "#6B7280", marginTop: "4px", display: "inline-block" }}>
-            Cumulative Registered Value
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Registered (Pending Prod)</span>
-            <div style={{ padding: "8px", background: "#FEF3C7", borderRadius: "8px", color: "#D97706" }}>
-              <Clock size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : salesRegisteredCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#D97706", marginTop: "4px", display: "inline-block" }}>
-            Awaiting Production Queue
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Completed & Fulfilled</span>
-            <div style={{ padding: "8px", background: "#F3E8FF", borderRadius: "8px", color: "#7C3AED" }}>
-              <TrendingUp size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : completedCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#10B981", marginTop: "4px", display: "inline-block" }}>
-            SCM & Dispatched Batches
-          </span>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "28px" }}>
+        <StatCard
+          label="Total Sales Orders"
+          icon={ShoppingCart}
+          value={totalOrders}
+          subtitle="Active Order History"
+          iconBg="#EFF6FF"
+          iconColor="#2563EB"
+          loading={loading}
+        />
+        <StatCard
+          label="Pipeline Revenue Value"
+          icon={DollarSign}
+          value={`₹${totalPipelineRevenue.toLocaleString("en-IN")}`}
+          subtitle="Cumulative Registered Value"
+          iconBg="#ECFDF5"
+          iconColor="#059669"
+          loading={loading}
+        />
+        <StatCard
+          label="Registered (Pending Prod)"
+          icon={Clock}
+          value={salesRegisteredCount}
+          subtitle="Awaiting Production Queue"
+          iconBg="#FEF3C7"
+          iconColor="#D97706"
+          loading={loading}
+        />
+        <StatCard
+          label="Completed & Fulfilled"
+          icon={TrendingUp}
+          value={completedCount}
+          subtitle="SCM & Dispatched Batches"
+          iconBg="#F3E8FF"
+          iconColor="#7C3AED"
+          loading={loading}
+        />
       </div>
 
       {/* Charts Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "20px", marginBottom: "28px" }}>
+      <div className="sales-charts-grid">
         {/* Trend Area Chart */}
         <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
           <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#111827", marginBottom: "16px" }}>
@@ -239,7 +246,7 @@ export default function SalesDashboard() {
                 <XAxis dataKey="month" stroke="#9CA3AF" fontSize={12} />
                 <YAxis stroke="#9CA3AF" fontSize={12} />
                 <Tooltip />
-                <Area type="monotone" dataKey="count" name="Order Volume" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#salesGrad)" />
+                <Area type="monotone" dataKey="count" name="Order Volume" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#salesGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -302,13 +309,44 @@ export default function SalesDashboard() {
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Status</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Priority</th>
                   <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Date</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedOrders.slice(0, 5).map((order) => {
+                {sortedOrders.slice(0, 6).map((order) => {
                   const pending = parseFloat(order.pendingAmount !== undefined && order.pendingAmount !== null ? order.pendingAmount : (order.paymentStatus === "paid" ? 0 : (order.totalAmount || order.totalPrice || 0)));
+                  const statusKey = order.orderStatus || "sales_registered";
+                  
+                  let badgeBg = "#EFF6FF";
+                  let badgeColor = "#1D4ED8";
+                  let badgeBorder = "#BFDBFE";
+                  if (statusKey === "in_production") {
+                    badgeBg = "#FEF3C7";
+                    badgeColor = "#B45309";
+                    badgeBorder = "#FDE68A";
+                  } else if (statusKey === "production_complete") {
+                    badgeBg = "#F3E8FF";
+                    badgeColor = "#6D28D9";
+                    badgeBorder = "#DDD6FE";
+                  } else if (statusKey === "scm_complete" || statusKey === "dispatched") {
+                    badgeBg = "#ECFDF5";
+                    badgeColor = "#047857";
+                    badgeBorder = "#A7F3D0";
+                  }
+
+                  const prioKey = (order.priority || "medium").toLowerCase();
+                  let prioBg = "#FEF3C7";
+                  let prioColor = "#D97706";
+                  if (prioKey === "high") {
+                    prioBg = "#FEE2E2";
+                    prioColor = "#DC2626";
+                  } else if (prioKey === "low") {
+                    prioBg = "#ECFDF5";
+                    prioColor = "#059669";
+                  }
+
                   return (
-                    <tr key={order.id || order.orderNumber} style={{ borderBottom: "1px solid #F3F4F6" }}>
+                    <tr key={order.id || order.orderNumber} className="sales-table-row" style={{ borderBottom: "1px solid #F3F4F6" }}>
                       <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>{order.orderNumber}</td>
                       <td style={{ padding: "12px 16px", color: "#4B5563" }}>{order.customerName || "—"}</td>
                       <td style={{ padding: "12px 16px", color: "#4B5563" }}>
@@ -322,34 +360,58 @@ export default function SalesDashboard() {
                       <td style={{ padding: "12px 16px", fontWeight: 600, color: pending > 0 ? "#DC2626" : "#059669" }}>
                         ₹{pending.toLocaleString("en-IN")}
                       </td>
-                    <td style={{ padding: "12px 16px" }}>
-                      <span
-                        style={{
-                          padding: "4px 8px",
-                          borderRadius: "12px",
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          background: order.orderStatus === "sales_registered" ? "#EFF6FF" : "#ECFDF5",
-                          color: order.orderStatus === "sales_registered" ? "#1D4ED8" : "#047857"
-                        }}
-                      >
-                        {(order.orderStatus || "registered").replace("_", " ").toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px 16px" }}>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          color: (order.priority || "").toLowerCase() === "high" ? "#DC2626" : "#059669"
-                        }}
-                      >
-                        {(order.priority || "Medium").toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#6B7280" }}>
-                      {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}
-                    </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "12px",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            background: badgeBg,
+                            color: badgeColor,
+                            border: `1px solid ${badgeBorder}`
+                          }}
+                        >
+                          {statusKey.replace("_", " ").toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span
+                          style={{
+                            padding: "3px 8px",
+                            borderRadius: "10px",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            background: prioBg,
+                            color: prioColor
+                          }}
+                        >
+                          {(order.priority || "Medium").toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#6B7280" }}>
+                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <button
+                          onClick={() => navigate("/dashboard/orders")}
+                          style={{
+                            padding: "4px 10px",
+                            fontSize: "12px",
+                            background: "#EFF6FF",
+                            color: "#2563EB",
+                            border: "1px solid #BFDBFE",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontWeight: 500,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px"
+                          }}
+                        >
+                          <Eye size={13} /> View
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}

@@ -13,7 +13,11 @@ import maintenanceIcon from "../../assets/icons/maintenance.svg";
 import staffIcon from "../../assets/icons/admin.svg";
 import logoutIcon from "../../assets/icons/log.svg";
 
-import LogoutModal from "../../components/admin/LogoutModal"; // ✅ your modal
+import LogoutModal from "../../components/admin/LogoutModal";
+import { warrantyService } from "../../services/warrantyService";
+import { orderService } from "../../services/orderService";
+import { supportService } from "../../services/supportService";
+import { apiClient } from "../../services/apiClient";
 
 export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
@@ -95,15 +99,8 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           icon: maintenanceIcon,
           path: "/dashboard/warranty-claims",
           roles: ["ADMIN", "ADMIN_STAFF"],
-          getPendingCount: async (baseUrl, token) => {
-            const response = await fetch(`${baseUrl}/warranty-claims/admin/all`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            if (response.ok) {
-              const data = await response.json();
-              return Array.isArray(data) ? data.filter(c => c.status === "request_created").length : 0;
-            }
-            return 0;
+          getPendingCount: async () => {
+            return await warrantyService.getPendingCount();
           }
         }
       ]
@@ -116,25 +113,9 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           icon: sessionsIcon,
           path: "/dashboard/orders",
           roles: ["ADMIN", "ADMIN_STAFF", "SALES_ADMIN", "PRODUCTION_ADMIN", "SCM_ADMIN"],
-          getPendingCount: async (baseUrl, token) => {
-            try {
-              let endpoint = `${baseUrl}/orders/admin/all`;
-              const role = localStorage.getItem("userRole") || "";
-              if (role === "SCM_ADMIN") endpoint = `${baseUrl}/orders/scm/orders`;
-              else if (role === "PRODUCTION_ADMIN") endpoint = `${baseUrl}/orders/production/orders`;
-              else if (role === "SALES_ADMIN") endpoint = `${baseUrl}/orders/sales/my-orders`;
-
-              const response = await fetch(endpoint, {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              if (response.ok) {
-                const data = await response.json();
-                return Array.isArray(data) ? data.filter(o => o.orderStatus === "sales_registered" || o.orderStatus === "in_production").length : 0;
-              }
-            } catch (err) {
-              console.error("Error fetching pending orders count:", err);
-            }
-            return 0;
+          getPendingCount: async () => {
+            const role = localStorage.getItem("userRole") || "";
+            return await orderService.getPendingCount(role);
           }
         }
       ]
@@ -157,15 +138,13 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           icon: usersIcon,
           path: "/dashboard/users",
           roles: ["ADMIN"],
-          getPendingCount: async (baseUrl, token) => {
-            const response = await fetch(`${baseUrl}/rfid-applications`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            if (response.ok) {
-              const data = await response.json();
+          getPendingCount: async () => {
+            try {
+              const data = await apiClient.get("/rfid-applications");
               return Array.isArray(data) ? data.filter(a => a.status === "PENDING").length : 0;
+            } catch {
+              return 0;
             }
-            return 0;
           }
         },
         { name: "Dealers", icon: staffIcon, path: "/dashboard/dealers", roles: ["ADMIN"] },
@@ -192,17 +171,15 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           path: "/dashboard/support-requests",
           roles: ["ADMIN", "DEALER", "ADMIN_STAFF"],
           getPendingCount: async (baseUrl, token, isDealer) => {
-            const endpoint = isDealer
-              ? `${baseUrl}/support-requests/dealer/my-requests`
-              : `${baseUrl}/support-requests/admin/all`;
-            const response = await fetch(endpoint, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            if (response.ok) {
-              const data = await response.json();
+            try {
+              const endpoint = isDealer
+                ? "/support-requests/dealer/my-requests"
+                : "/support-requests/admin/all";
+              const data = await apiClient.get(endpoint);
               return Array.isArray(data) ? data.filter(r => r.status === "pending").length : 0;
+            } catch {
+              return 0;
             }
-            return 0;
           }
         },
         { name: "Maintenance & Emergency", icon: maintenanceIcon, path: "/dashboard/maintenance", roles: ["ADMIN", "DEALER", "ADMIN_STAFF"] }

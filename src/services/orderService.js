@@ -1,181 +1,79 @@
-import axios from "axios";
-
-const getBaseUrl = () => import.meta.env.VITE_API_URL || "";
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem("token");
-  return {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    }
-  };
-};
-
-const handleResponseError = (error) => {
-  if (error.response) {
-    const data = error.response.data;
-    if (typeof data === "string") {
-      throw new Error(data);
-    }
-    if (data) {
-      if (Array.isArray(data.errors) && data.errors.length > 0) {
-        const fieldMsgs = data.errors
-          .map((e) => e.defaultMessage || e.message || `${e.field}: invalid`)
-          .join("; ");
-        if (fieldMsgs) throw new Error(fieldMsgs);
-      }
-      if (data.message) {
-        throw new Error(data.message);
-      }
-      if (typeof data === "object") {
-        const messages = Object.values(data)
-          .map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v)))
-          .filter(Boolean)
-          .join(", ");
-        if (messages) throw new Error(messages);
-      }
-    }
-    throw new Error(`Server error (${error.response.status})`);
-  } else if (error.request) {
-    throw new Error("Unable to connect to backend server. Please check network.");
-  } else {
-    throw new Error(error.message || "An unexpected error occurred.");
-  }
-};
+import { apiClient } from "./apiClient";
 
 export const orderService = {
   // ==================== SALES ADMIN ====================
   salesCreateOrder: async (orderData) => {
-    try {
-      const res = await axios.post(`${getBaseUrl()}/orders/sales/create`, orderData, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.post("/orders/sales/create", orderData);
   },
 
   salesGetMyOrders: async () => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/sales/my-orders`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get("/orders/sales/my-orders");
   },
 
   salesGetOrderDetail: async (id) => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/sales/${id}`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get(`/orders/sales/${id}`);
   },
 
   salesUpdateOrder: async (id, orderData) => {
-    try {
-      const res = await axios.put(`${getBaseUrl()}/orders/sales/${id}/update`, orderData, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.put(`/orders/sales/${id}/update`, orderData);
   },
 
   salesRecordPayment: async (id, amount) => {
-    try {
-      const res = await axios.put(`${getBaseUrl()}/orders/sales/${id}/record-payment`, { amount }, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.put(`/orders/sales/${id}/record-payment`, { amount });
   },
 
   // ==================== PRODUCTION ADMIN ====================
   productionGetOrders: async () => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/production/orders`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get("/orders/production/orders");
   },
 
   productionGetOrderDetail: async (id) => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/production/${id}`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get(`/orders/production/${id}`);
   },
 
   productionUpdateStatus: async (id, statusData) => {
-    try {
-      const res = await axios.put(`${getBaseUrl()}/orders/production/${id}/status`, statusData, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.put(`/orders/production/${id}/status`, statusData);
   },
 
   // ==================== SCM ADMIN ====================
   scmGetOrders: async () => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/scm/orders`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get("/orders/scm/orders");
   },
 
   scmGetOrderDetail: async (id) => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/scm/${id}`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get(`/orders/scm/${id}`);
   },
 
   scmUpdateDetails: async (id, scmData) => {
-    try {
-      console.log(`[orderService] PUT /orders/scm/${id}/complete Payload:`, JSON.stringify(scmData, null, 2));
-      const res = await axios.put(`${getBaseUrl()}/orders/scm/${id}/complete`, scmData, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      if (err.response) {
-        console.error(`[orderService] PUT /orders/scm/${id}/complete Error ${err.response.status}:`, err.response.data);
-      }
-      handleResponseError(err);
-    }
+    return await apiClient.put(`/orders/scm/${id}/complete`, scmData);
   },
 
   scmDispatchOrder: async (id) => {
-    try {
-      const res = await axios.put(`${getBaseUrl()}/orders/scm/${id}/dispatch`, {}, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.put(`/orders/scm/${id}/dispatch`, {});
   },
 
   // ==================== SUPER ADMIN ====================
   adminGetAllOrders: async () => {
-    try {
-      const res = await axios.get(`${getBaseUrl()}/orders/admin/all`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
-    }
+    return await apiClient.get("/orders/admin/all");
   },
 
   adminGetOrderDetail: async (id) => {
+    return await apiClient.get(`/orders/admin/${id}`);
+  },
+
+  getPendingCount: async (role) => {
     try {
-      const res = await axios.get(`${getBaseUrl()}/orders/admin/${id}`, getAuthHeaders());
-      return res.data;
-    } catch (err) {
-      handleResponseError(err);
+      let data = [];
+      if (role === "SCM_ADMIN") data = await apiClient.get("/orders/scm/orders");
+      else if (role === "PRODUCTION_ADMIN") data = await apiClient.get("/orders/production/orders");
+      else if (role === "SALES_ADMIN") data = await apiClient.get("/orders/sales/my-orders");
+      else data = await apiClient.get("/orders/admin/all");
+
+      return Array.isArray(data)
+        ? data.filter((o) => o.orderStatus === "sales_registered" || o.orderStatus === "in_production").length
+        : 0;
+    } catch {
+      return 0;
     }
   }
 };

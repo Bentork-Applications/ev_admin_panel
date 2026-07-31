@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { orderService } from "../../services/orderService";
+import { apiClient } from "../../services/apiClient";
+import { generateOrderPdfReport } from "../../services/pdfReportService";
+import { useOrders } from "../../hooks/useOrders";
+import { OrderHeader } from "../../components/orders/OrderHeader";
+import { OrderStageTabs } from "../../components/orders/OrderStageTabs";
+import { OrderFilterBar } from "../../components/orders/OrderFilterBar";
+import { Toast } from "../../components/common/Toast";
+import { Pagination } from "../../components/common/Pagination";
+import { formatDate, formatCurrency, parseProductDetails, formatProductDetails } from "../../utils/formatters";
 import {
   Package,
   Plus,
@@ -303,22 +312,15 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   // Fetch Registered Users for Customer Search Autocomplete
   useEffect(() => {
     const fetchRegisteredUsers = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) return;
       try {
-        const res = await fetch(`${baseUrl}/user/all`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setRegisteredUsers(Array.isArray(data) ? data : []);
-        }
+        const data = await apiClient.get("/user/all");
+        setRegisteredUsers(Array.isArray(data) ? data : []);
       } catch (err) {
         console.warn("Could not fetch registered users list:", err);
       }
     };
     fetchRegisteredUsers();
-  }, [baseUrl]);
+  }, []);
 
   // View Order Details
   const handleViewDetails = async (orderId) => {
@@ -721,7 +723,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         orderStatus: resolvedOrderStatus,
         productionCompletedAt: targetStatus === "completed" ? new Date().toISOString() : targetOrder?.productionCompletedAt
       };
-      
+
       const updatedCacheMap = new Map();
       localCache.forEach(o => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
       updatedCacheMap.set(orderId, orderToSave);
@@ -767,7 +769,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   // --- SCM ADMIN HANDLERS ---
   const openScmModal = (order) => {
     setOrderForScm(order);
-    
+
     // Top-level shared shipment fields
     setScmFormData({
       invoiceNumber: order.invoiceNumber || "",
@@ -1856,161 +1858,39 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   return (
     <div className="orders-root">
       {/* Toast Banner */}
-      {toast && (
-        <div className={`toast-notification ${toast.type}`}>
-          <span className="toast-icon">{toast.type === "success" ? "✓" : "✕"}</span>
-          <span>{toast.message}</span>
-        </div>
-      )}
+      <Toast message={toast?.message} type={toast?.type} onClose={() => setToast(null)} />
 
       {/* Header Section */}
-      <div className="orders-header">
-        <div>
-          <h1 className="page-heading">
-            {isSalesAdmin && "Sales Admin — Complete Order History"}
-            {isProductionAdmin && "Production Admin — Complete Order History"}
-            {isScmAdmin && "SCM Admin — Complete Order History"}
-            {isSuperAdmin && "Order Management (Complete Order History)"}
-          </h1>
-          <p className="page-subheading">
-            {isSalesAdmin && "View complete order history. Create new orders and edit orders currently in Sales stage."}
-            {isProductionAdmin && "View complete order history. Monitor manufacturing pipeline and transition Production status."}
-            {isScmAdmin && "View complete order history. Fill barcode/warranty details and dispatch completed orders."}
-            {isSuperAdmin && "Full view and management of system order history across all pipeline stages."}
-          </p>
-        </div>
+      <OrderHeader
+        isSalesAdmin={isSalesAdmin}
+        isProductionAdmin={isProductionAdmin}
+        isScmAdmin={isScmAdmin}
+        isSuperAdmin={isSuperAdmin}
+        loading={loading}
+        onRefresh={fetchOrders}
+        onCreateOrderClick={() => setShowCreateModal(true)}
+      />
 
-        <div className="header-actions">
-          <button className="refresh-btn" onClick={fetchOrders} title="Refresh orders">
-            <RefreshCw size={16} className={loading ? "spin" : ""} />
-            <span>Refresh</span>
-          </button>
-
-          {isSalesAdmin && (
-            <button className="primary-action-btn" onClick={() => setShowCreateModal(true)}>
-              <Plus size={18} />
-              <span>Create Order</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Super Admin Filter Tabs */}
+      {/* Super Admin Stage Tabs */}
       {isSuperAdmin && (
-        <div className="stage-tabs-container">
-          <button className={`tab-btn ${adminStageTab === "ALL" ? "active" : ""}`} onClick={() => { setAdminStageTab("ALL"); setCurrentPage(1); }}>
-            All Orders ({orders.length})
-          </button>
-          <button className={`tab-btn ${adminStageTab === "SALES" ? "active" : ""}`} onClick={() => { setAdminStageTab("SALES"); setCurrentPage(1); }}>
-            Sales Registered ({orders.filter(o => o.orderStatus === "sales_registered").length})
-          </button>
-          <button className={`tab-btn ${adminStageTab === "PRODUCTION" ? "active" : ""}`} onClick={() => { setAdminStageTab("PRODUCTION"); setCurrentPage(1); }}>
-            In Production ({orders.filter(o => o.orderStatus === "in_production").length})
-          </button>
-          <button className={`tab-btn ${adminStageTab === "PROD_DONE" ? "active" : ""}`} onClick={() => { setAdminStageTab("PROD_DONE"); setCurrentPage(1); }}>
-            Production Complete ({orders.filter(o => o.orderStatus === "production_complete").length})
-          </button>
-          <button className={`tab-btn ${adminStageTab === "SCM_DONE" ? "active" : ""}`} onClick={() => { setAdminStageTab("SCM_DONE"); setCurrentPage(1); }}>
-            SCM Complete ({orders.filter(o => o.orderStatus === "scm_complete").length})
-          </button>
-          <button className={`tab-btn ${adminStageTab === "DISPATCHED" ? "active" : ""}`} onClick={() => { setAdminStageTab("DISPATCHED"); setCurrentPage(1); }}>
-            Dispatched ({orders.filter(o => o.orderStatus === "dispatched").length})
-          </button>
-        </div>
+        <OrderStageTabs
+          adminStageTab={adminStageTab}
+          setAdminStageTab={setAdminStageTab}
+          orders={orders}
+          setCurrentPage={setCurrentPage}
+        />
       )}
 
       {/* Search & Filter Bar */}
-      <div className="filter-bar">
-        <div className="search-input-wrap">
-          <Search size={18} className="search-icon" />
-          <input
-            type="text"
-            placeholder="Search by Order #, Customer, PI, Mobile, Barcode, Tracking ID..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-          />
-          {searchQuery && (
-            <button className="clear-search-btn" onClick={() => setSearchQuery("")}>
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        <div className="filters-group" style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-          <select
-            className="filter-select"
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-          >
-            <option value="">All Statuses</option>
-            <option value="sales_registered">Sales Registered</option>
-            <option value="in_production">In Production</option>
-            <option value="production_complete">Production Complete</option>
-            <option value="scm_complete">SCM Complete</option>
-            <option value="dispatched">Dispatched</option>
-          </select>
-
-          <select
-            className="filter-select"
-            value={priorityFilter}
-            onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
-          >
-            <option value="">All Priorities</option>
-            <option value="low">Low Priority</option>
-            <option value="medium">Medium Priority</option>
-            <option value="high">High Priority</option>
-          </select>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <Calendar size={14} style={{ color: "#6B7280" }} />
-            <input
-              type="date"
-              className="filter-select"
-              style={{ width: "135px" }}
-              title="Start Date"
-              value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
-            />
-            <span style={{ fontSize: "12px", color: "#6B7280" }}>to</span>
-            <input
-              type="date"
-              className="filter-select"
-              style={{ width: "135px" }}
-              title="End Date"
-              value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
-            />
-          </div>
-
-          {(searchQuery || statusFilter || priorityFilter || startDate || endDate) && (
-            <button
-              onClick={() => {
-                setSearchQuery("");
-                setStatusFilter("");
-                setPriorityFilter("");
-                setStartDate("");
-                setEndDate("");
-                setCurrentPage(1);
-              }}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "8px",
-                border: "1px solid #E5E7EB",
-                background: "#F3F4F6",
-                color: "#374151",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer"
-              }}
-            >
-              Reset Filters
-            </button>
-          )}
-        </div>
-      </div>
+      <OrderFilterBar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        priorityFilter={priorityFilter}
+        setPriorityFilter={setPriorityFilter}
+        setCurrentPage={setCurrentPage}
+      />
 
       {/* Error State Banner */}
       {error && (
@@ -2302,32 +2182,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       </div>
 
       {/* Pagination Bar */}
-      {!loading && filteredOrders.length > 0 && (
-        <div className="pagination-bar">
-          <span className="pagination-info">
-            Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
-            {Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} orders
-          </span>
-          <div className="pagination-controls">
-            <button
-              className="page-nav-btn"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => p - 1)}
-            >
-              <ChevronLeft size={16} /> Prev
-            </button>
-            <span className="page-num">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              className="page-nav-btn"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => p + 1)}
-            >
-              Next <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
+      {!loading && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredOrders.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -3225,7 +3087,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                   <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
                     <Truck size={16} /> Common Order Shipment Details
                   </div>
-                  
+
                   <div className="form-row">
                     <div className="form-group">
                       <label>Invoice Number *</label>

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { authService } from "../../services/authService";
+import { staffService } from "../../services/staffService";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -32,32 +34,9 @@ export default function AdminLogin() {
     }
 
     setIsLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/admin/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = "Invalid login credentials";
-        try {
-          errorMessage = JSON.parse(errorText).message || errorMessage;
-        } catch {
-          errorMessage = errorText || errorMessage;
-        }
-        return alert(errorMessage);
-      }
-
-      const data = await response.json();
-      localStorage.setItem("token", data.token);
+      const data = await authService.login(formData);
 
       // Decode JWT to extract role and email
       let email = "";
@@ -102,22 +81,14 @@ export default function AdminLogin() {
       // Check if the user is suspended/deactivated
       if (email) {
         try {
-          const listResponse = await fetch(`${import.meta.env.VITE_API_URL}/admin/alladmin`, {
-            method: "GET",
-            headers: {
-              "Authorization": `Bearer ${data.token}`,
-              "Content-Type": "application/json"
-            }
-          });
-          if (listResponse.ok) {
-            const adminsList = await listResponse.json();
+          const adminsList = await staffService.getAllStaff();
+          if (Array.isArray(adminsList)) {
             const currentAdmin = adminsList.find(admin => admin.email === email);
             if (currentAdmin) {
               const overrides = JSON.parse(localStorage.getItem("admin_staff_status") || "{}");
               const status = overrides[currentAdmin.id] || currentAdmin.status || "Active";
               if (status === "Suspended") {
-                localStorage.removeItem("token");
-                localStorage.removeItem("userRole");
+                authService.logout();
                 alert("Your account is suspended. Please contact the administrator.");
                 setIsLoading(false);
                 return;
@@ -131,12 +102,7 @@ export default function AdminLogin() {
 
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      if (err.name === "AbortError") {
-        alert("Server connection timed out. Please try again later.");
-      } else {
-        console.error("Login error:", err);
-        alert("Something went wrong. Try again later.");
-      }
+      alert(err.message || "Invalid login credentials");
     } finally {
       setIsLoading(false);
     }

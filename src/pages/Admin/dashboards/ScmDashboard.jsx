@@ -1,40 +1,25 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { orderService } from "../../../services/orderService";
+import { useDashboardData } from "../../../hooks/useDashboardData";
+import { StatCard } from "../../../components/common/StatCard";
 import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
-import { RefreshCw, ArrowRight, Truck, Barcode, FileText, CheckCircle, Package } from "lucide-react";
+import { RefreshCw, ArrowRight, Truck, Barcode, CheckCircle, Package } from "lucide-react";
 
 export default function ScmDashboard() {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  const fetchScmData = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchScmData = useCallback(async () => {
     try {
-      let data = [];
-      try {
-        data = await orderService.scmGetOrders();
-      } catch (err) {
-        data = await orderService.adminGetAllOrders();
-      }
-      setOrders(Array.isArray(data) ? data : []);
+      return await orderService.scmGetOrders();
     } catch (err) {
-      console.error("Failed to load SCM dashboard data:", err);
-      setError(err.message || "Failed to load SCM data");
-    } finally {
-      setLoading(false);
+      return await orderService.adminGetAllOrders();
     }
-  };
-
-  useEffect(() => {
-    fetchScmData();
   }, []);
 
+  const { orders, loading, refresh: fetchScmDataHandler } = useDashboardData(fetchScmData);
+
   // Compute SCM Metrics
-  const totalOrders = orders.length;
   const awaitingScmCount = orders.filter((o) => o.orderStatus === "production_complete").length;
   const scmCompleteCount = orders.filter((o) => o.orderStatus === "scm_complete").length;
   const dispatchedCount = orders.filter((o) => o.orderStatus === "dispatched").length;
@@ -74,7 +59,7 @@ export default function ScmDashboard() {
     );
   }
 
-  // Sort orders newest first (latest created/updated at top)
+  // Sort orders newest first
   const sortedOrders = useMemo(() => {
     return [...orders].sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
@@ -89,35 +74,69 @@ export default function ScmDashboard() {
   }, [orders]);
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto", boxSizing: "border-box" }}>
+      <style>{`
+        .scm-banner {
+          background: linear-gradient(135deg, #0F766E 0%, #14B8A6 100%);
+          border-radius: 16px;
+          padding: 24px 32px;
+          color: #FFFFFF;
+          margin-bottom: 28px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          box-shadow: 0 10px 25px -5px rgba(20, 184, 166, 0.3);
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .scm-banner-actions {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .scm-charts-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          margin-bottom: 28px;
+        }
+        @media (max-width: 1024px) {
+          .scm-charts-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        @media (max-width: 640px) {
+          .scm-banner {
+            padding: 16px 20px;
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .scm-banner-actions {
+            width: 100%;
+            flex-direction: column;
+          }
+          .scm-banner-actions button {
+            width: 100%;
+            justify-content: center;
+          }
+        }
+      `}</style>
       {/* Header Banner */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #0F766E 0%, #14B8A6 100%)",
-          borderRadius: "16px",
-          padding: "24px 32px",
-          color: "#FFFFFF",
-          marginBottom: "28px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          boxShadow: "0 10px 25px -5px rgba(20, 184, 166, 0.3)"
-        }}
-      >
+      <div className="scm-banner">
         <div>
           <span style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px", background: "rgba(255, 255, 255, 0.2)", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
             SCM Module Dashboard
           </span>
-          <h1 style={{ fontSize: "26px", fontWeight: 700, marginTop: "8px", marginBottom: "4px", color: "#FFFFFF" }}>
+          <h1 style={{ fontSize: "24px", fontWeight: 700, marginTop: "8px", marginBottom: "4px", color: "#FFFFFF" }}>
             Supply Chain & Logistics Management
           </h1>
-          <p style={{ fontSize: "14px", opacity: 0.9, margin: 0 }}>
+          <p style={{ fontSize: "13px", opacity: 0.9, margin: 0 }}>
             Manage barcode range mapping, invoice numbers, courier assignments, and shipment dispatches.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div className="scm-banner-actions">
           <button
-            onClick={fetchScmData}
+            onClick={fetchScmDataHandler}
             style={{
               background: "rgba(255, 255, 255, 0.15)",
               border: "1px solid rgba(255, 255, 255, 0.3)",
@@ -155,70 +174,47 @@ export default function ScmDashboard() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "28px" }}>
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Awaiting SCM Details</span>
-            <div style={{ padding: "8px", background: "#FEF3C7", borderRadius: "8px", color: "#D97706" }}>
-              <Package size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : awaitingScmCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#D97706", fontWeight: 500, marginTop: "4px", display: "inline-block" }}>
-            Production Complete - Needs SCM
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>SCM Completed</span>
-            <div style={{ padding: "8px", background: "#F0FDFA", borderRadius: "8px", color: "#0F766E" }}>
-              <Barcode size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : scmCompleteCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#0F766E", marginTop: "4px", display: "inline-block" }}>
-            Barcodes & Invoice Assigned
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Dispatched / Shipped</span>
-            <div style={{ padding: "8px", background: "#EFF6FF", borderRadius: "8px", color: "#2563EB" }}>
-              <Truck size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : dispatchedCount}
-          </div>
-          <span style={{ fontSize: "12px", color: "#2563EB", marginTop: "4px", display: "inline-block" }}>
-            In Transit to Customer
-          </span>
-        </div>
-
-        <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 500 }}>Total Fulfilled Units</span>
-            <div style={{ padding: "8px", background: "#ECFDF5", borderRadius: "8px", color: "#059669" }}>
-              <CheckCircle size={20} />
-            </div>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginTop: "12px" }}>
-            {loading ? "..." : totalFulfilledUnits}
-          </div>
-          <span style={{ fontSize: "12px", color: "#059669", marginTop: "4px", display: "inline-block" }}>
-            Total Shipped Units
-          </span>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "28px" }}>
+        <StatCard
+          label="Awaiting SCM Details"
+          icon={Package}
+          value={awaitingScmCount}
+          subtitle="Production Complete - Needs SCM"
+          iconBg="#FEF3C7"
+          iconColor="#D97706"
+          loading={loading}
+        />
+        <StatCard
+          label="SCM Completed"
+          icon={Barcode}
+          value={scmCompleteCount}
+          subtitle="Barcodes & Invoice Assigned"
+          iconBg="#F0FDFA"
+          iconColor="#0F766E"
+          loading={loading}
+        />
+        <StatCard
+          label="Dispatched / Shipped"
+          icon={Truck}
+          value={dispatchedCount}
+          subtitle="In Transit to Customer"
+          iconBg="#EFF6FF"
+          iconColor="#2563EB"
+          loading={loading}
+        />
+        <StatCard
+          label="Total Fulfilled Units"
+          icon={CheckCircle}
+          value={totalFulfilledUnits}
+          subtitle="Total Shipped Units"
+          iconBg="#ECFDF5"
+          iconColor="#059669"
+          loading={loading}
+        />
       </div>
 
       {/* Charts Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "28px" }}>
+      <div className="scm-charts-grid">
         {/* SCM Status Donut Chart */}
         <div style={{ background: "#FFFFFF", padding: "20px", borderRadius: "12px", border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
           <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#111827", marginBottom: "16px" }}>
@@ -326,14 +322,14 @@ export default function ScmDashboard() {
                               order.orderStatus === "dispatched"
                                 ? "#EFF6FF"
                                 : order.orderStatus === "scm_complete"
-                                ? "#F0FDFA"
-                                : "#FEF3C7",
+                                  ? "#F0FDFA"
+                                  : "#FEF3C7",
                             color:
                               order.orderStatus === "dispatched"
                                 ? "#1D4ED8"
                                 : order.orderStatus === "scm_complete"
-                                ? "#0F766E"
-                                : "#B45309"
+                                  ? "#0F766E"
+                                  : "#B45309"
                           }}
                         >
                           {(order.orderStatus || "production_complete").replace("_", " ").toUpperCase()}

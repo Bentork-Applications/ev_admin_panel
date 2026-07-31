@@ -78,12 +78,12 @@ const AddStaffForm = ({ onClose, defaultRole = "ADMIN", onSuccess }) => {
       });
 
       if (roleResponse.ok) {
-        const roleLabel = 
+        const roleLabel =
           formData.role === "SALES_ADMIN" ? "Sales Admin" :
-          formData.role === "PRODUCTION_ADMIN" ? "Production Admin" :
-          formData.role === "SCM_ADMIN" ? "SCM Admin" :
-          formData.role === "ADMIN_STAFF" ? "Admin Staff" :
-          formData.role === "DEALER" ? "Dealer" : "Administrator";
+            formData.role === "PRODUCTION_ADMIN" ? "Production Admin" :
+              formData.role === "SCM_ADMIN" ? "SCM Admin" :
+                formData.role === "ADMIN_STAFF" ? "Admin Staff" :
+                  formData.role === "DEALER" ? "Dealer" : "Administrator";
         if (onSuccess) {
           onSuccess(`${roleLabel} registered successfully!`);
         } else {

@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
+import { apiClient } from "../../services/apiClient";
+import { warrantyService } from "../../services/warrantyService";
+import { batteryService } from "../../services/batteryService";
+import { staffService } from "../../services/staffService";
+import { authService } from "../../services/authService";
 import Topbar from "../../components/admin/topbar";
 import Sidebar from "../../components/admin/Sidebar";
 import OverviewChart from "../../components/admin/OverviewChart";
@@ -340,15 +345,8 @@ export default function Dashboard({ onLogout }) {
 
       if (email) {
         try {
-          const listResponse = await fetch(`${baseUrl}/admin/alladmin`, {
-            method: "GET",
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            }
-          });
-          if (listResponse.ok) {
-            const adminsList = await listResponse.json();
+          const adminsList = await staffService.getAllStaff();
+          if (Array.isArray(adminsList)) {
             const currentAdmin = adminsList.find(admin => admin.email === email);
             if (currentAdmin) {
               if (currentAdmin.name) {
@@ -357,8 +355,7 @@ export default function Dashboard({ onLogout }) {
               const overrides = JSON.parse(localStorage.getItem("admin_staff_status") || "{}");
               const status = overrides[currentAdmin.id] || currentAdmin.status || "Active";
               if (status === "Suspended") {
-                localStorage.removeItem("token");
-                localStorage.removeItem("userRole");
+                authService.logout();
                 alert("Your account is suspended. Please contact the administrator.");
                 navigate("/");
                 return;
@@ -370,28 +367,21 @@ export default function Dashboard({ onLogout }) {
         }
       }
 
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
-
       if (isDealer) {
         // Dealer-specific summary endpoint
         try {
-          const [dashRes, revRes, stationsRes] = await Promise.all([
-            fetch(`${baseUrl}/dealer/dashboard`, { headers }),
-            fetch(`${baseUrl}/dealer/revenue`, { headers }),
-            fetch(`${baseUrl}/dealer/stations`, { headers })
+          const [dashData, revRes, stationsRes] = await Promise.all([
+            apiClient.get("/dealer/dashboard").catch(() => ({})),
+            apiClient.get("/dealer/revenue").catch(() => []),
+            apiClient.get("/dealer/stations").catch(() => [])
           ]);
 
-          if (!dashRes.ok) throw new Error("Failed to fetch dealer dashboard");
-
-          const data = await dashRes.json();
-          const revenueRecords = await revRes.json().catch(() => []);
-          const dealerStations = await stationsRes.json().catch(() => []);
+          const data = dashData || {};
+          const revenueRecords = Array.isArray(revRes) ? revRes : [];
+          const dealerStations = Array.isArray(stationsRes) ? stationsRes : [];
 
           let calculatedTotalRev = 0;
-          if (Array.isArray(revenueRecords) && Array.isArray(dealerStations)) {
+          if (revenueRecords.length > 0 && dealerStations.length > 0) {
             const validStationIds = dealerStations.map(s => s.id?.toString());
             calculatedTotalRev = revenueRecords.reduce((sum, r) => {
               if (validStationIds.includes(r.stationId?.toString()) && r.paymentStatus === 'success') {
@@ -413,24 +403,10 @@ export default function Dashboard({ onLogout }) {
       } else if (isAdminStaff) {
         // Fetch Admin Staff metrics
         try {
-          let claims = [];
-          let batteries = [];
-
-          const promises = [];
-          promises.push(
-            fetch(`${baseUrl}/warranty-claims/admin/all`, { headers })
-              .then(res => res.ok ? res.json() : [])
-              .then(data => { claims = data; })
-              .catch(e => console.error("Error fetching claims:", e))
-          );
-          promises.push(
-            fetch(`${baseUrl}/battery-data/admin/all`, { headers })
-              .then(res => res.ok ? res.json() : [])
-              .then(data => { batteries = data; })
-              .catch(e => console.error("Error fetching batteries:", e))
-          );
-
-          await Promise.all(promises);
+          const [claims, batteries] = await Promise.all([
+            warrantyService.getAllClaims().catch(() => []),
+            batteryService.getAllBatteries().catch(() => [])
+          ]);
 
           setRawClaims(claims);
           setRawBatteries(batteries);
@@ -480,20 +456,9 @@ export default function Dashboard({ onLogout }) {
 
         const fetchCardData = async (type, index, transform = (v) => v) => {
           try {
-            const res = await fetch(baseUrl + endpoints[type], { headers });
-            if (res.status === 401) throw new Error('Authentication failed');
-            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-            const text = await res.text();
-
-            let rawVal = text;
-            try {
-              const parsed = JSON.parse(text);
-              if (Array.isArray(parsed)) {
-                rawVal = parsed.length;
-              }
-            } catch (e) {
-              // Not a JSON array, use text
-            }
+            const data = await apiClient.get(endpoints[type]);
+            let rawVal = data;
+            if (Array.isArray(data)) rawVal = data.length;
             const val = transform(rawVal);
 
             setDashboardCards(prev => {
@@ -503,8 +468,8 @@ export default function Dashboard({ onLogout }) {
             });
           } catch (error) {
             console.error(`Failed to fetch ${type}:`, error);
-            if (error.message === 'Authentication failed') {
-              localStorage.removeItem("token");
+            if (error.status === 401) {
+              authService.logout();
               navigate("/");
             }
           }
@@ -512,10 +477,7 @@ export default function Dashboard({ onLogout }) {
 
         const fetchStaffAndDealers = async () => {
           try {
-            const res = await fetch(`${baseUrl}/admin/alladmin`, { headers });
-            if (res.status === 401) throw new Error('Authentication failed');
-            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-            const data = await res.json();
+            const data = await staffService.getAllStaff();
             const allAdmins = Array.isArray(data) ? data : [];
             const dealersCount = allAdmins.filter(a => a.role === "DEALER" || a.role === "dealer").length;
             const staffCount = allAdmins.filter(a => a.role === "ADMIN" || a.role === "admin" || a.role === "ADMIN_STAFF" || a.role === "admin_staff").length;
@@ -532,8 +494,8 @@ export default function Dashboard({ onLogout }) {
             });
           } catch (error) {
             console.error("Failed to fetch staff and dealers:", error);
-            if (error.message === 'Authentication failed') {
-              localStorage.removeItem("token");
+            if (error.status === 401) {
+              authService.logout();
               navigate("/");
             }
           }
@@ -1385,6 +1347,9 @@ export default function Dashboard({ onLogout }) {
                   <Route path="login-users" element={<LoginUsers baseUrl={baseUrl} />} />
                   <Route path="plans" element={<Plans baseUrl={baseUrl} />} />
                   <Route path="staff" element={<AdminStaff baseUrl={baseUrl} />} />
+                  <Route path="sales-dashboard" element={<SalesDashboard />} />
+                  <Route path="production-dashboard" element={<ProductionDashboard />} />
+                  <Route path="scm-dashboard" element={<ScmDashboard />} />
                   <Route path="sales-admin" element={<SalesAdmin baseUrl={baseUrl} />} />
                   <Route path="production-admin" element={<ProductionAdmin baseUrl={baseUrl} />} />
                   <Route path="scm-admin" element={<ScmAdmin baseUrl={baseUrl} />} />

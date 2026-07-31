@@ -98,10 +98,10 @@ const StaffEdit = ({ staff, onClose }) => {
             <h4 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>{selectedRole}</h4>
             <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#666" }}>
               {selectedRole === "ADMIN" ? "Full system access with all administrative privileges" :
-               selectedRole === "SALES_ADMIN" ? "Access restricted to Sales Order Tracking and operations" :
-               selectedRole === "PRODUCTION_ADMIN" ? "Access restricted to Production Order Tracking and workflow" :
-               selectedRole === "SCM_ADMIN" ? "Access restricted to Supply Chain & Logistics Order Tracking" :
-               "Can manage users and specific operations."}
+                selectedRole === "SALES_ADMIN" ? "Access restricted to Sales Order Tracking and operations" :
+                  selectedRole === "PRODUCTION_ADMIN" ? "Access restricted to Production Order Tracking and workflow" :
+                    selectedRole === "SCM_ADMIN" ? "Access restricted to Supply Chain & Logistics Order Tracking" :
+                      "Can manage users and specific operations."}
             </p>
           </div>
         </div>
