@@ -73,11 +73,15 @@ export default function RoleStaffManagement({
     toast,
     setToast,
     showToast,
+    getStaffStatus,
     toggleStatus,
     refresh
   } = useStaffManagement(roleKey);
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
+
+  const validPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const startIndex = (validPage - 1) * itemsPerPage;
 
   useEffect(() => {
     const handleGlobalClick = () => setActiveDropdownId(null);

@@ -131,6 +131,7 @@ export const useStaffManagement = (roleKey) => {
     toast,
     setToast,
     showToast,
+    getStaffStatus,
     toggleStatus,
     refresh: fetchStaffData
   };

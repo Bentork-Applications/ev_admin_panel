@@ -715,113 +715,113 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
                 {filteredStaff.map((staff) => {
                   const style = roleStyles[staff.role] || (staff.role?.includes('DEALER') ? roleStyles.Dealer : roleStyles.DEFAULT);
                   return (
-                      <tr key={staff.id} style={{ cursor: "pointer" }}>
-                        <td onClick={() => setSelectedStaffForDrawer(staff)}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                            </div>
-                            <div>
-                              <div style={{ fontWeight: 600, color: '#0f172a' }}>{staff.name || 'User Name'}</div>
-                              <div style={{ fontSize: 11, color: '#6B7280' }}>{staff.email || 'user@xyz.com'}</div>
-                            </div>
+                    <tr key={staff.id} style={{ cursor: "pointer" }}>
+                      <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                           </div>
-                        </td>
-                        <td onClick={() => setSelectedStaffForDrawer(staff)}>
-                          <span className="role-pill" style={{
-                            background: style.background === '#D1FAE5' ? '#ECFDF5' : style.background === '#DBEAFE' ? '#E0F2FE' : '#F3F4F6',
-                            color: style.color === '#065F46' ? '#0369A1' : style.color,
-                            border: `1px solid ${style.background === '#D1FAE5' ? '#A7F3D0' : style.background === '#DBEAFE' ? '#BAE6FD' : '#E5E7EB'}`
-                          }}>
-                          {staff.role === 'ADMIN' || staff.role === 'admin' ? 'Administrator' : 
-                           staff.role === 'ADMIN_STAFF' || staff.role === 'admin_staff' ? 'Admin Staff' :
-                           staff.role === 'SALES_ADMIN' ? 'Sales Admin' :
-                           staff.role === 'PRODUCTION_ADMIN' ? 'Production Admin' :
-                           staff.role === 'SCM_ADMIN' ? 'SCM Admin' :
-                           staff.role || 'Admin'}
-                          </span>
-                        </td>
-                        <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{staff.name || 'User Name'}</div>
+                            <div style={{ fontSize: 11, color: '#6B7280' }}>{staff.email || 'user@xyz.com'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                        <span className="role-pill" style={{
+                          background: style.background === '#D1FAE5' ? '#ECFDF5' : style.background === '#DBEAFE' ? '#E0F2FE' : '#F3F4F6',
+                          color: style.color === '#065F46' ? '#0369A1' : style.color,
+                          border: `1px solid ${style.background === '#D1FAE5' ? '#A7F3D0' : style.background === '#DBEAFE' ? '#BAE6FD' : '#E5E7EB'}`
+                        }}>
+                          {staff.role === 'ADMIN' || staff.role === 'admin' ? 'Administrator' :
+                            staff.role === 'ADMIN_STAFF' || staff.role === 'admin_staff' ? 'Admin Staff' :
+                              staff.role === 'SALES_ADMIN' ? 'Sales Admin' :
+                                staff.role === 'PRODUCTION_ADMIN' ? 'Production Admin' :
+                                  staff.role === 'SCM_ADMIN' ? 'SCM Admin' :
+                                    staff.role || 'Admin'}
+                        </span>
+                      </td>
+                      <td onClick={() => setSelectedStaffForDrawer(staff)}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px',
+                          borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                          background: getStaffStatus(staff) === 'Active' ? '#ECFDF5' : '#FEF2F2',
+                          color: getStaffStatus(staff) === 'Active' ? '#065F46' : '#991B1B',
+                          border: `1px solid ${getStaffStatus(staff) === 'Active' ? '#A7F3D0' : '#FECACA'}`
+                        }}>
                           <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px',
-                            borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-                            background: getStaffStatus(staff) === 'Active' ? '#ECFDF5' : '#FEF2F2',
-                            color: getStaffStatus(staff) === 'Active' ? '#065F46' : '#991B1B',
-                            border: `1px solid ${getStaffStatus(staff) === 'Active' ? '#A7F3D0' : '#FECACA'}`
-                          }}>
-                            <span style={{
-                              width: 6, height: 6, borderRadius: '50%',
-                              background: getStaffStatus(staff) === 'Active' ? '#10B981' : '#EF4444',
-                              flexShrink: 0
-                            }} />
-                            {getStaffStatus(staff)}
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: getStaffStatus(staff) === 'Active' ? '#10B981' : '#EF4444',
+                            flexShrink: 0
+                          }} />
+                          {getStaffStatus(staff)}
+                        </span>
+                      </td>
+                      <td onClick={() => setSelectedStaffForDrawer(staff)}>{staff.lastLogin ? new Date(staff.lastLogin).toLocaleString() : '2024-01-15 14:30'}</td>
+                      <td>
+                        {staff.role?.toUpperCase() === "ADMIN_STAFF" ? (
+                          <PageAccessDropdown staff={staff} />
+                        ) : (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '4px 12px',
+                            borderRadius: '999px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: '#FEF3C7',
+                            color: '#D97706',
+                            border: '1px solid #FDE68A'
+                          }} onClick={() => setSelectedStaffForDrawer(staff)}>
+                            Full Access
                           </span>
-                        </td>
-                        <td onClick={() => setSelectedStaffForDrawer(staff)}>{staff.lastLogin ? new Date(staff.lastLogin).toLocaleString() : '2024-01-15 14:30'}</td>
-                        <td>
-                          {staff.role?.toUpperCase() === "ADMIN_STAFF" ? (
-                            <PageAccessDropdown staff={staff} />
-                          ) : (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              padding: '4px 12px',
-                              borderRadius: '999px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: '#FEF3C7',
-                              color: '#D97706',
-                              border: '1px solid #FDE68A'
-                            }} onClick={() => setSelectedStaffForDrawer(staff)}>
-                              Full Access
-                            </span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="staff-dropdown-container">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDropdownId(activeDropdownId === staff.id ? null : staff.id);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '6px 12px',
+                              fontSize: '18px',
+                              fontWeight: 'bold',
+                              color: '#64748B',
+                              borderRadius: '6px',
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            ⋮
+                          </button>
+                          {activeDropdownId === staff.id && (
+                            <div className="staff-dropdown-menu">
+                              <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setSelectedStaffForDrawer(staff); setActiveDropdownId(null); }}>
+                                👁️ View Details
+                              </button>
+                              <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
+                                ✏️ Edit Staff
+                              </button>
+                              <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
+                                🔑 Reset Password
+                              </button>
+                              <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
+                                🎭 Change Role
+                              </button>
+                              <button className="staff-dropdown-item danger" onClick={(e) => { e.stopPropagation(); handleDeleteStaff(staff); setActiveDropdownId(null); }}>
+                                🗑️ Delete Staff
+                              </button>
+                            </div>
                           )}
-                        </td>
-                        <td>
-                          <div className="staff-dropdown-container">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveDropdownId(activeDropdownId === staff.id ? null : staff.id);
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: '6px 12px',
-                                fontSize: '18px',
-                                fontWeight: 'bold',
-                                color: '#64748B',
-                                borderRadius: '6px',
-                                transition: 'background-color 0.2s'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              ⋮
-                            </button>
-                            {activeDropdownId === staff.id && (
-                              <div className="staff-dropdown-menu">
-                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setSelectedStaffForDrawer(staff); setActiveDropdownId(null); }}>
-                                  👁️ View Details
-                                </button>
-                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
-                                  ✏️ Edit Staff
-                                </button>
-                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
-                                  🔑 Reset Password
-                                </button>
-                                <button className="staff-dropdown-item" onClick={(e) => { e.stopPropagation(); setEditingStaff(staff); setIsFormOpen('edit'); setActiveDropdownId(null); }}>
-                                  🎭 Change Role
-                                </button>
-                                <button className="staff-dropdown-item danger" onClick={(e) => { e.stopPropagation(); handleDeleteStaff(staff); setActiveDropdownId(null); }}>
-                                  🗑️ Delete Staff
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
