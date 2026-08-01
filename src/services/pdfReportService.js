@@ -223,7 +223,7 @@ export const generateOrderPdfReport = (order) => {
           </div>
 
           <div style="margin-top: 10px;" class="data-card">
-            <div class="data-label">Product Line Items (${itemsList.length}) &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${order.paymentStatus || "PAID"}</strong></div>
+            <div class="data-label">Product Line Items (${itemsList.length}) &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${(order.paymentStatus === "partial" || order.paymentStatus === "unpaid") ? "UNPAID" : (order.paymentStatus || "PAID")}</strong></div>
             <table style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px;">
               <thead>
                 <tr style="background: #F1F5F9; color: #475569; text-transform: uppercase; font-size: 10px;">

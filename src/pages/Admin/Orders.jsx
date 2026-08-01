@@ -1312,7 +1312,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           </div>
 
           <div style="margin-top: 10px;" class="data-card">
-            <div class="data-label">Product Line Items (${itemsList.length}) &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${order.paymentStatus || "PAID"}</strong></div>
+            <div class="data-label">Product Line Items (${itemsList.length}) &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${(order.paymentStatus === "partial" || order.paymentStatus === "unpaid") ? "UNPAID" : (order.paymentStatus || "PAID")}</strong></div>
             <table style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px;">
               <thead>
                 <tr style="background: #F1F5F9; color: #475569; text-transform: uppercase; font-size: 10px;">
@@ -1485,6 +1485,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
 
       // Search Query
       const q = searchQuery.toLowerCase().trim();
+      const paymentStatusText = o.paymentStatus === "paid" ? "paid" : (o.paymentStatus === "partial" || o.paymentStatus === "unpaid") ? "unpaid" : "pending";
       const matchesSearch =
         !q ||
         o.orderNumber?.toLowerCase().includes(q) ||
@@ -1493,7 +1494,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         o.productDetails?.toLowerCase().includes(q) ||
         o.mobileNumber?.includes(q) ||
         o.barcode?.toLowerCase().includes(q) ||
-        o.trackingId?.toLowerCase().includes(q);
+        o.trackingId?.toLowerCase().includes(q) ||
+        paymentStatusText.includes(q);
 
       // Status Filter
       const matchesStatus = !statusFilter || o.orderStatus === statusFilter;
@@ -2051,14 +2053,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                         </span>
                         <span className={`payment-tag ${order.paymentStatus === "paid"
                           ? "paid"
-                          : order.paymentStatus === "partial"
-                            ? "partial"
+                          : (order.paymentStatus === "partial" || order.paymentStatus === "unpaid")
+                            ? "unpaid"
                             : "pending"
                           }`}>
                           {order.paymentStatus === "paid"
                             ? "Paid"
-                            : order.paymentStatus === "partial"
-                              ? "Partial"
+                            : (order.paymentStatus === "partial" || order.paymentStatus === "unpaid")
+                              ? "Unpaid"
                               : "Pending"}
                         </span>
                         {(isSalesAdmin || isSuperAdmin) && (
@@ -2381,14 +2383,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
                     <span className="val">
                       <span className={`payment-tag ${selectedOrder.paymentStatus === "paid"
                         ? "paid"
-                        : selectedOrder.paymentStatus === "partial"
-                          ? "partial"
+                        : (selectedOrder.paymentStatus === "partial" || selectedOrder.paymentStatus === "unpaid")
+                          ? "unpaid"
                           : "pending"
                         }`}>
                         {selectedOrder.paymentStatus === "paid"
                           ? "Paid"
-                          : selectedOrder.paymentStatus === "partial"
-                            ? "Partial"
+                          : (selectedOrder.paymentStatus === "partial" || selectedOrder.paymentStatus === "unpaid")
+                            ? "Unpaid"
                             : "Pending"}
                       </span>
                     </span>
@@ -3644,7 +3646,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           border-radius: 4px;
         }
         .payment-tag.paid { background: #DCFCE7; color: #166534; }
-        .payment-tag.partial { background: #FFEDD5; color: #9A3412; }
+        .payment-tag.partial, .payment-tag.unpaid { background: #FFEDD5; color: #9A3412; }
         .payment-tag.pending { background: #FEF3C7; color: #92400E; }
 
         .prod-status-tag {
