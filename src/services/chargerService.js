@@ -17,6 +17,8 @@ export const chargerService = {
     return await apiClient.put(`/chargers/update/${id}`, chargerData);
   },
 
+
+
   deleteCharger: async (id) => {
     return await apiClient.delete(`/chargers/delete/${id}`);
   }
