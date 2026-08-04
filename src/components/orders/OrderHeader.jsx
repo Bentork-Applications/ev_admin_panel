@@ -1,7 +1,7 @@
 import React from "react";
 import { RefreshCw, Plus } from "lucide-react";
 
-export const OrderHeader = ({
+export const OrderHeader = React.memo(({
   isSalesAdmin,
   isProductionAdmin,
   isScmAdmin,
@@ -42,4 +42,6 @@ export const OrderHeader = ({
       </div>
     </div>
   );
-};
+});
+
+OrderHeader.displayName = "OrderHeader";

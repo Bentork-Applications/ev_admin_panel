@@ -11,6 +11,7 @@ export default function AdminLogin() {
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("login-theme") || "dark");
   const [lang, setLang] = useState("English");
   const [showLangDropdown, setShowLangDropdown] = useState(false);
@@ -565,10 +566,29 @@ export default function AdminLogin() {
           transition: color 0.2s ease;
         }
 
+        .toggle-password-btn {
+          position: absolute;
+          right: 16px;
+          background: transparent;
+          border: none;
+          color: var(--right-input-icon);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          padding: 0;
+          outline: none;
+          transition: color 0.2s ease;
+        }
+
+        .toggle-password-btn:hover {
+          color: var(--right-forgot-color);
+        }
+
         .field-input {
           width: 100%;
           height: 56px;
-          padding: 10px 16px 10px 46px;
+          padding: 10px 46px 10px 46px;
           border-radius: 6px;
           border: 1px solid var(--right-input-border);
           background: transparent;
@@ -943,7 +963,7 @@ export default function AdminLogin() {
               <label className="field-label">Password</label>
               <div className="input-container">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   name="password"
                   placeholder="Enter your password"
                   className="field-input"
@@ -958,6 +978,26 @@ export default function AdminLogin() {
                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                   </svg>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="toggle-password-btn"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    /* Eye Off Icon (Hide) */
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    /* Eye Icon (Show) */
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
 

@@ -1,79 +1,69 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { orderService } from "../../services/orderService";
 import { apiClient } from "../../services/apiClient";
 import { generateOrderPdfReport } from "../../services/pdfReportService";
-import { useOrders } from "../../hooks/useOrders";
 import { OrderHeader } from "../../components/orders/OrderHeader";
 import { OrderStageTabs } from "../../components/orders/OrderStageTabs";
 import { OrderFilterBar } from "../../components/orders/OrderFilterBar";
+import { OrderTableRow } from "../../components/orders/OrderTableRow";
+import { OrderDetailsDrawer } from "../../components/orders/OrderDetailsDrawer";
+import { CreateSalesOrderModal } from "../../components/orders/CreateSalesOrderModal";
+import { EditSalesOrderModal } from "../../components/orders/EditSalesOrderModal";
+import { ScmDetailsModal } from "../../components/orders/ScmDetailsModal";
+import { WarrantyRegistrationModal } from "../../components/orders/WarrantyRegistrationModal";
 import { Toast } from "../../components/common/Toast";
 import { Pagination } from "../../components/common/Pagination";
-import { formatDate, formatCurrency, parseProductDetails, formatProductDetails } from "../../utils/formatters";
 import {
-  Package,
-  Plus,
-  Edit2,
-  CheckCircle,
-  Truck,
-  Search,
-  RefreshCw,
-  X,
-  Calendar,
-  User,
-  FileText,
-  Phone,
-  ShieldCheck,
-  Barcode,
-  ArrowRight,
-  Clock,
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  Layers,
-  Sparkles,
-  ShoppingBag,
-  Box,
-  MapPin
-} from "lucide-react";
+  formatDate,
+  parseProductDetails,
+  formatProductDetails,
+  createDefaultOrderItem,
+  calculateExpiryAndTotal,
+  parseWarrantyPeriod
+} from "../../utils/formatters";
+import { getStatusBadgeConfig, getPriorityBadgeConfig } from "../../config/orderConfig";
+import { Package, Plus, AlertTriangle } from "lucide-react";
 
 export default function Orders({ baseUrl, userRole: propUserRole }) {
-  // Determine effective user role
-  const token = localStorage.getItem("token");
-  let role = propUserRole || localStorage.getItem("userRole") || "ADMIN";
+  // Memoize effective user role calculation
+  const role = useMemo(() => {
+    const token = localStorage.getItem("token");
+    let resolvedRole = propUserRole || localStorage.getItem("userRole") || "ADMIN";
 
-  if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      const authorities = [];
-      if (Array.isArray(payload.authorities)) {
-        authorities.push(...payload.authorities.map((a) => String(a).toUpperCase()));
-      } else if (typeof payload.authorities === "string") {
-        authorities.push(payload.authorities.toUpperCase());
-      }
-      if (payload.role) authorities.push(String(payload.role).toUpperCase());
-      if (payload.roles) {
-        if (Array.isArray(payload.roles)) {
-          authorities.push(...payload.roles.map((r) => String(r).toUpperCase()));
-        } else if (typeof payload.roles === "string") {
-          authorities.push(payload.roles.toUpperCase());
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const authorities = [];
+        if (Array.isArray(payload.authorities)) {
+          authorities.push(...payload.authorities.map((a) => String(a).toUpperCase()));
+        } else if (typeof payload.authorities === "string") {
+          authorities.push(payload.authorities.toUpperCase());
         }
+        if (payload.role) authorities.push(String(payload.role).toUpperCase());
+        if (payload.roles) {
+          if (Array.isArray(payload.roles)) {
+            authorities.push(...payload.roles.map((r) => String(r).toUpperCase()));
+          } else if (typeof payload.roles === "string") {
+            authorities.push(payload.roles.toUpperCase());
+          }
+        }
+        if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+          resolvedRole = "SALES_ADMIN";
+        } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+          resolvedRole = "PRODUCTION_ADMIN";
+        } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+          resolvedRole = "SCM_ADMIN";
+        } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
+          resolvedRole = "ADMIN";
+        } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
+          resolvedRole = "ADMIN_STAFF";
+        }
+      } catch (e) {
+        console.error("Token decode error in Orders:", e);
       }
-      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
-        role = "SALES_ADMIN";
-      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
-        role = "PRODUCTION_ADMIN";
-      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
-        role = "SCM_ADMIN";
-      } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
-        role = "ADMIN";
-      } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
-        role = "ADMIN_STAFF";
-      }
-    } catch (e) {
-      console.error("Token decode error in Orders:", e);
     }
-  }
+    return resolvedRole;
+  }, [propUserRole]);
 
   const isSuperAdmin = role === "ADMIN" || role === "ADMIN_STAFF";
   const isSalesAdmin = role === "SALES_ADMIN";
@@ -84,7 +74,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
+  const [toast, setToast] = useState(null);
 
   // Super Admin view mode tab (All, Sales, Production, SCM)
   const [adminStageTab, setAdminStageTab] = useState("ALL");
@@ -93,8 +83,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
@@ -117,71 +105,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantyModalData, setWarrantyModalData] = useState(null);
 
-  // Product Details Parser & Formatter Helpers
-  const PROJECT_OPTIONS = [
-    "Solar Battery",
-    "EV Battery",
-    "Inverter Battery",
-    "Robotics Battery",
-    "Defence Battery",
-    "Medical Battery",
-    "Spray Pump Battery",
-    "Other"
-  ];
-
-  const parseProductDetails = (str = "") => {
-    if (!str) return { project: "EV Battery", customProject: "", voltage: "02", capacity: "3", chemistry: "NMC", notes: "" };
-    let project = "EV Battery";
-    let customProject = "";
-
-    const matchedOption = PROJECT_OPTIONS.find((opt) => str.toLowerCase().includes(opt.toLowerCase()));
-    if (matchedOption) {
-      project = matchedOption;
-    } else if (str.includes(" - ")) {
-      const parts = str.split(" - ");
-      if (parts[0] && parts[0].trim()) {
-        project = "Other";
-        customProject = parts[0].trim();
-      }
-    }
-
-    const vMatch = str.match(/(\d+)\s*V/i);
-    const ahMatch = str.match(/(\d+)\s*Ah/i);
-    const chemMatch = str.match(/Chemistry\s*=\s*([A-Za-z0-9\s-]+)/i);
-    const notesMatch = str.match(/\(([^)]+)\)/);
-    return {
-      project,
-      customProject,
-      voltage: vMatch ? vMatch[1] : "",
-      capacity: ahMatch ? ahMatch[1] : "",
-      chemistry: chemMatch ? chemMatch[1].trim() : "NMC",
-      notes: notesMatch ? notesMatch[1].trim() : (vMatch || ahMatch || chemMatch ? "" : str)
-    };
-  };
-
-  const formatProductDetails = ({ project, customProject, voltage, capacity, chemistry, notes }) => {
-    const proj = project === "Other" ? (customProject || "Other") : (project || "EV Battery");
-    const v = voltage !== undefined && voltage !== "" ? `${voltage.toString().padStart(2, "0")}V` : "";
-    const ah = capacity !== undefined && capacity !== "" ? `${capacity}Ah` : "";
-    const chem = chemistry ? `Chemistry = ${chemistry}` : "";
-    const mainSpecs = [v, ah].filter(Boolean).join(" ");
-    const specLine = [mainSpecs, chem].filter(Boolean).join("  ");
-    const fullSpec = notes && notes.trim() ? `${specLine}${specLine ? " " : ""}(${notes.trim()})` : specLine;
-    return `${proj} - ${fullSpec}`;
-  };
-
-  const createDefaultOrderItem = () => ({
-    id: Date.now() + Math.random(),
-    project: "EV Battery",
-    customProject: "",
-    voltage: "02",
-    capacity: "3",
-    chemistry: "NMC",
-    notes: "",
-    productDetails: "EV Battery - 02V 3Ah Chemistry = NMC",
-    quantity: 1
-  });
-
   const [recordPaymentAmount, setRecordPaymentAmount] = useState("");
 
   // Form Data States
@@ -201,33 +124,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   });
   const [salesFormErrors, setSalesFormErrors] = useState({});
 
-  // Local Shipping and Pricing states for the detail drawer
-  const [localShippingAddress, setLocalShippingAddress] = useState("");
-  const [localCity, setLocalCity] = useState("");
-  const [localState, setLocalState] = useState("");
-  const [localPincode, setLocalPincode] = useState("");
-  const [localUnitPrice, setLocalUnitPrice] = useState("");
-  const [localGstRate, setLocalGstRate] = useState("18");
-  const [localCourierName, setLocalCourierName] = useState("");
-  const [localTrackingId, setLocalTrackingId] = useState("");
-  const [isEditingShippingDetails, setIsEditingShippingDetails] = useState(false);
-
-  useEffect(() => {
-    if (selectedOrder) {
-      const orderId = selectedOrder.id;
-      const savedAddress = localStorage.getItem(`order_shipping_address_${orderId}`) || selectedOrder.address || "";
-      setLocalShippingAddress(savedAddress);
-      setLocalCity(localStorage.getItem(`order_city_${orderId}`) || "");
-      setLocalState(localStorage.getItem(`order_state_${orderId}`) || "");
-      setLocalPincode(localStorage.getItem(`order_pincode_${orderId}`) || "");
-      setLocalUnitPrice(localStorage.getItem(`order_unit_price_${orderId}`) || "786");
-      setLocalGstRate(localStorage.getItem(`order_gst_rate_${orderId}`) || "18");
-      setLocalCourierName(localStorage.getItem(`order_courier_name_${orderId}`) || selectedOrder.courierName || "");
-      setLocalTrackingId(localStorage.getItem(`order_tracking_id_${orderId}`) || selectedOrder.trackingId || "");
-      setIsEditingShippingDetails(false);
-    }
-  }, [selectedOrder]);
-
   const [editOrderData, setEditOrderData] = useState(null);
   const [editFormErrors, setEditFormErrors] = useState({});
 
@@ -245,19 +141,18 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   const [orderForScm, setOrderForScm] = useState(null);
 
   // Toast Helper
-  const showToast = (message, type = "success") => {
+  const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
-  };
+  }, []);
 
-  // Fetch Orders based on role (All roles fetch complete order history)
-  const fetchOrders = async () => {
+  // Fetch Orders based on role
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       let data = [];
       try {
-        // Fetch complete system order history across all stages
         data = await orderService.adminGetAllOrders();
       } catch (allErr) {
         console.warn("adminGetAllOrders failed, falling back to role endpoint:", allErr);
@@ -303,11 +198,11 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isSalesAdmin, isProductionAdmin, isScmAdmin]);
 
   useEffect(() => {
     fetchOrders();
-  }, [role]);
+  }, [fetchOrders]);
 
   // Fetch Registered Users for Customer Search Autocomplete
   useEffect(() => {
@@ -323,7 +218,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
   }, []);
 
   // View Order Details
-  const handleViewDetails = async (orderId) => {
+  const handleViewDetails = useCallback(async (orderId) => {
     try {
       let details;
       if (isSalesAdmin) {
@@ -348,7 +243,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       }
       setShowDrawer(true);
     } catch (err) {
-      // Fallback to local item
       const fallback = orders.find((o) => o.id === orderId);
       if (fallback) {
         const localStatus = localStorage.getItem(`order_status_${orderId}`);
@@ -362,15 +256,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         showToast(err.message || "Failed to fetch order details", "error");
       }
     }
-  };
+  }, [orders, isSalesAdmin, isProductionAdmin, isScmAdmin, showToast]);
 
-  // --- SALES ADMIN HANDLERS ---
+  // Validate Sales Form
   const validateSalesForm = (data) => {
     const errors = {};
     if (!data.customerName?.trim()) errors.customerName = "Customer name is required";
     if (!data.piNumber?.trim()) errors.piNumber = "P.I. Number is required";
 
-    const vStr = data.voltage !== undefined ? String(data.voltage).trim() : "";
     if (!data.orderItems || !Array.isArray(data.orderItems) || data.orderItems.length === 0) {
       errors.orderItems = "At least one product line item is required";
     } else {
@@ -415,7 +308,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     return errors;
   };
 
-  const handleCreateSalesOrder = async (e) => {
+  const handleCreateSalesOrder = useCallback(async (e) => {
     e.preventDefault();
     const errors = validateSalesForm(salesFormData);
     if (Object.keys(errors).length > 0) {
@@ -427,6 +320,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
 
     try {
       let targetUserId = salesFormData.assignedUserId;
+      const token = localStorage.getItem("token");
       if (!targetUserId && registeredUsers.length > 0) {
         const matched = registeredUsers.find(
           (u) =>
@@ -499,9 +393,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [salesFormData, registeredUsers, showToast, fetchOrders]);
 
-  const openEditSalesModal = (order) => {
+  const openEditSalesModal = useCallback((order) => {
     let items = [];
     if (Array.isArray(order.orderItems) && order.orderItems.length > 0) {
       items = order.orderItems.map((it, idx) => {
@@ -551,9 +445,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     });
     setEditFormErrors({});
     setShowEditModal(true);
-  };
+  }, []);
 
-  const openDrawerItemsEdit = () => {
+  const openDrawerItemsEdit = useCallback(() => {
     if (!selectedOrder) return;
     let items = [];
     if (Array.isArray(selectedOrder.orderItems) && selectedOrder.orderItems.length > 0) {
@@ -588,9 +482,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     }
     setDrawerOrderItems(items);
     setIsEditingDrawerProductDetails(true);
-  };
+  }, [selectedOrder]);
 
-  const handleSaveDrawerProductDetails = async () => {
+  const handleSaveDrawerProductDetails = useCallback(async () => {
     if (!selectedOrder) return;
     if (!drawerOrderItems || drawerOrderItems.length === 0) {
       showToast("At least one product item is required", "error");
@@ -631,9 +525,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [selectedOrder, drawerOrderItems, showToast, fetchOrders]);
 
-  const handleUpdateSalesOrder = async (e) => {
+  const handleUpdateSalesOrder = useCallback(async (e) => {
     e.preventDefault();
     if (!editOrderData) return;
     const errors = validateSalesForm(editOrderData);
@@ -674,9 +568,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [editOrderData, selectedOrder, showToast, fetchOrders]);
 
-  const handleRecordIncrementalPayment = async (e) => {
+  const handleRecordIncrementalPayment = useCallback(async (e) => {
     e.preventDefault();
     if (!selectedOrder) return;
     const amt = parseFloat(recordPaymentAmount);
@@ -700,16 +594,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [selectedOrder, recordPaymentAmount, showToast, fetchOrders]);
 
-  // --- PRODUCTION ADMIN HANDLERS ---
-  const handleUpdateProductionStatus = async (orderId, targetStatus) => {
+  const handleUpdateProductionStatus = useCallback(async (orderId, targetStatus) => {
     setSubmitting(true);
     try {
       const updated = await orderService.productionUpdateStatus(orderId, { productionStatus: targetStatus });
       showToast(`Production status updated to '${targetStatus.replace("_", " ")}'`, "success");
 
-      // Persist status and order in local cache so completed orders remain visible in frontend
       const resolvedOrderStatus = targetStatus === "completed" ? "production_complete" : "in_production";
       localStorage.setItem(`order_status_${orderId}`, resolvedOrderStatus);
 
@@ -743,9 +635,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [orders, selectedOrder, showToast, fetchOrders]);
 
-  // Helper to generate sequential barcodes from a start barcode string
   const generateBarcodeSequence = (startStr, count) => {
     if (!startStr) return Array(count).fill("");
     const match = startStr.match(/^(.*?)(\d+)$/);
@@ -766,16 +657,49 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     return result;
   };
 
-  // --- SCM ADMIN HANDLERS ---
-  const openScmModal = (order) => {
+  const openScmModal = useCallback((order) => {
     setOrderForScm(order);
-
-    // Top-level shared shipment fields
     setScmFormData({
       invoiceNumber: order.invoiceNumber || "",
       courierName: order.courierName || "",
       trackingId: order.trackingId || "",
     });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    const parseItemWarranty = (it) => {
+      const startDate = it.warrantyStartDate || order.warrantyStartDate || todayStr;
+      let fullY = "1", fullM = "0", servY = "0", servM = "0";
+
+      if (it.warrantyStartDate && it.warrantyEndDate) {
+        const parsed = parseWarrantyPeriod(it.warrantyStartDate, it.warrantyEndDate);
+        fullY = parsed.years.toString();
+        fullM = parsed.months.toString();
+      } else if (order.warrantyStartDate && order.warrantyEndDate) {
+        const parsed = parseWarrantyPeriod(order.warrantyStartDate, order.warrantyEndDate);
+        fullY = parsed.years.toString();
+        fullM = parsed.months.toString();
+      } else if (it.fullWarrantyMonths !== undefined || order.fullWarrantyMonths !== undefined) {
+        const fM = Number(it.fullWarrantyMonths ?? order.fullWarrantyMonths) || 12;
+        const sM = Number(it.serviceWarrantyMonths ?? order.serviceWarrantyMonths) || 0;
+        fullY = Math.floor(fM / 12).toString();
+        fullM = (fM % 12).toString();
+        servY = Math.floor(sM / 12).toString();
+        servM = (sM % 12).toString();
+      }
+
+      const { totalWarrantyLabel, expiryDateStr } = calculateExpiryAndTotal(startDate, fullY, fullM, servY, servM);
+
+      return {
+        warrantyStartDate: startDate,
+        fullWarrantyYears: fullY,
+        fullWarrantyMonths: fullM,
+        serviceWarrantyYears: servY,
+        serviceWarrantyMonths: servM,
+        warrantyEndDate: expiryDateStr,
+        totalWarrantyLabel
+      };
+    };
 
     let itemDetailsList = [];
     if (Array.isArray(order.orderItems) && order.orderItems.length > 0) {
@@ -799,6 +723,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           }
         }
 
+        const warrantyInfo = parseItemWarranty(it);
+
         return {
           id: it.id || `item_${idx + 1}`,
           orderItemId: it.id || null,
@@ -806,12 +732,10 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           quantity: itemQty,
           startBarcode: startBc,
           endBarcode: endBc,
-          warrantyStartDate: it.warrantyStartDate || "",
-          warrantyEndDate: it.warrantyEndDate || ""
+          ...warrantyInfo
         };
       });
     } else {
-      // Legacy single-product order
       const itemQty = Math.max(1, Number(order.quantity || order.partQuantity) || 1);
       let startBc = order.startBarcode || "";
       let endBc = order.endBarcode || "";
@@ -831,6 +755,8 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         }
       }
 
+      const warrantyInfo = parseItemWarranty(order);
+
       itemDetailsList = [{
         id: "legacy_1",
         orderItemId: null,
@@ -838,27 +764,25 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         quantity: itemQty,
         startBarcode: startBc,
         endBarcode: endBc,
-        warrantyStartDate: order.warrantyStartDate || "",
-        warrantyEndDate: order.warrantyEndDate || ""
+        ...warrantyInfo
       }];
     }
 
     setScmItemDetails(itemDetailsList);
     setScmFormErrors({});
     setShowScmModal(true);
-  };
+  }, []);
 
-  const openWarrantyModal = (order) => {
+  const openWarrantyModal = useCallback((order) => {
     setWarrantyModalData(order);
     setShowWarrantyModal(true);
-  };
+  }, []);
 
-  const handleCompleteScm = async (e) => {
+  const handleCompleteScm = useCallback(async (e) => {
     e.preventDefault();
     if (!orderForScm) return;
 
     const errors = {};
-
     if (!scmFormData.invoiceNumber?.trim()) {
       errors.invoiceNumber = "Invoice Number is required";
     }
@@ -876,7 +800,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         if (!startStr) {
           errors[`startBarcode_${idx}`] = "Barcode is required";
         } else {
-          endStr = startStr; // Automatically treat Start Barcode as End Barcode for single unit
+          endStr = startStr;
         }
       } else {
         if (!startStr) {
@@ -924,9 +848,15 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       if (!item.warrantyStartDate) {
         errors[`warrantyStartDate_${idx}`] = "Warranty Start Date is required";
       }
-      if (!item.warrantyEndDate) {
-        errors[`warrantyEndDate_${idx}`] = "Warranty End Date is required";
-      }
+
+      // Compute exact expiry date & total months per item matching Battery Inventory
+      const { totalWarrantyLabel, expiryDateStr, fullWarrantyMonths, serviceWarrantyMonths } = calculateExpiryAndTotal(
+        item.warrantyStartDate,
+        item.fullWarrantyYears ?? "1",
+        item.fullWarrantyMonths ?? "0",
+        item.serviceWarrantyYears ?? "0",
+        item.serviceWarrantyMonths ?? "0"
+      );
 
       const itemPayload = {
         productDetails: item.productDetails?.trim() || orderForScm?.productDetails || "EV Battery Unit",
@@ -936,7 +866,10 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         barcodes: itemBarcodes.length > 0 ? itemBarcodes : [startStr],
         barcode: itemQty === 1 ? startStr : `${startStr} - ${endStr}`,
         warrantyStartDate: item.warrantyStartDate,
-        warrantyEndDate: item.warrantyEndDate
+        warrantyEndDate: expiryDateStr,
+        fullWarrantyMonths,
+        serviceWarrantyMonths,
+        totalWarrantyLabel
       };
       if (item.orderItemId && !isNaN(Number(item.orderItemId))) {
         itemPayload.id = Number(item.orderItemId);
@@ -964,10 +897,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         invoiceNumber: scmFormData.invoiceNumber.trim(),
         trackingId: scmFormData.trackingId.trim(),
         courierName: scmFormData.courierName?.trim() || "Standard",
-        serviceWarrantyMonths: Number(orderForScm?.serviceWarrantyMonths ?? 12),
-        fullWarrantyMonths: Number(orderForScm?.fullWarrantyMonths ?? 24),
+        serviceWarrantyMonths: Number(firstItem.serviceWarrantyMonths ?? orderForScm?.serviceWarrantyMonths ?? 12),
+        fullWarrantyMonths: Number(firstItem.fullWarrantyMonths ?? orderForScm?.fullWarrantyMonths ?? 24),
         orderItems: updatedItems,
-        // Legacy top-level fallback fields aggregated across all items
         startBarcode: startBc,
         endBarcode: endBc,
         barcode: barcodeStr,
@@ -980,7 +912,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       showToast(`SCM details saved and marked as SCM Complete for ${orderForScm.orderNumber}`, "success");
       setShowScmModal(false);
 
-      // Persist SCM Complete status in local storage & cache
       localStorage.setItem(`order_status_${orderForScm.id}`, "scm_complete");
       const orderToSave = {
         ...(orderForScm || {}),
@@ -1011,9 +942,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [orderForScm, scmFormData, scmItemDetails, selectedOrder, showToast, fetchOrders]);
 
-  const handleDispatchOrder = async (orderId) => {
+  const handleDispatchOrder = useCallback(async (orderId) => {
     setSubmitting(true);
     try {
       const updated = await orderService.scmDispatchOrder(orderId);
@@ -1047,25 +978,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [selectedOrder, showToast, fetchOrders]);
 
-  const handleSaveLocalShippingDetails = () => {
-    if (!selectedOrder) return;
-    const orderId = selectedOrder.id;
-    localStorage.setItem(`order_shipping_address_${orderId}`, localShippingAddress);
-    localStorage.setItem(`order_city_${orderId}`, localCity);
-    localStorage.setItem(`order_state_${orderId}`, localState);
-    localStorage.setItem(`order_pincode_${orderId}`, localPincode);
-    localStorage.setItem(`order_unit_price_${orderId}`, localUnitPrice);
-    localStorage.setItem(`order_gst_rate_${orderId}`, localGstRate);
-    localStorage.setItem(`order_courier_name_${orderId}`, localCourierName);
-    localStorage.setItem(`order_tracking_id_${orderId}`, localTrackingId);
-    setIsEditingShippingDetails(false);
-    showToast("Shipping & Pricing details saved locally!", "success");
-    fetchOrders();
-  };
-
-  const handleMarkAsDelivered = async (orderId) => {
+  const handleMarkAsDelivered = useCallback(async (orderId) => {
     setSubmitting(true);
     try {
       localStorage.setItem(`order_status_${orderId}`, "delivered");
@@ -1098,380 +1013,9 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [orders, selectedOrder, showToast, fetchOrders]);
 
-  const generateOrderPdfReport = (order) => {
-    if (!order) return;
-
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      showToast("Please allow popups to generate and download the PDF report.", "error");
-      return;
-    }
-
-    const startB = order.startBarcode || (Array.isArray(order.barcodes) ? order.barcodes[0] : "") || order.barcode || "BAR001";
-    const endB = order.endBarcode || (Array.isArray(order.barcodes) ? order.barcodes[order.barcodes.length - 1] : "") || "BAR100";
-    const barcodeDisplay = endB && startB !== endB ? `${startB} to ${endB}` : startB;
-    const createdDateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN", { dateStyle: "medium" }) : "—";
-    const updatedDateStr = order.updatedAt ? new Date(order.updatedAt).toLocaleDateString("en-IN", { dateStyle: "medium" }) : new Date().toLocaleDateString("en-IN", { dateStyle: "medium" });
-    const genTimeStr = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-
-    const itemsList = Array.isArray(order.orderItems) && order.orderItems.length > 0
-      ? order.orderItems
-      : [{ productDetails: order.productDetails || "Standard EV Battery Pack", quantity: order.quantity || order.partQuantity || 1 }];
-    const totalUnits = itemsList.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Order Report - ${order.orderNumber || order.id} | Bentork LLP</title>
-          <style>
-            @page {
-              size: A4;
-              margin: 12mm;
-            }
-            body {
-              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-              color: #1E293B;
-              margin: 0;
-              padding: 0;
-              background: #FFFFFF;
-              font-size: 13px;
-              line-height: 1.5;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              border-bottom: 3px solid #1E3A8A;
-              padding-bottom: 14px;
-              margin-bottom: 20px;
-            }
-            .company-brand {
-              font-size: 22px;
-              font-weight: 800;
-              color: #1E3A8A;
-              letter-spacing: 0.5px;
-            }
-            .company-sub {
-              font-size: 12px;
-              color: #475569;
-              font-weight: 600;
-            }
-            .company-info {
-              font-size: 11px;
-              color: #64748B;
-              margin-top: 4px;
-            }
-            .report-badge {
-              background: #1E3A8A;
-              color: #FFFFFF;
-              padding: 6px 14px;
-              font-size: 12px;
-              font-weight: 700;
-              border-radius: 6px;
-              display: inline-block;
-            }
-            .report-meta {
-              font-size: 11px;
-              color: #64748B;
-              text-align: right;
-              margin-top: 6px;
-            }
-            .section-title {
-              font-size: 13px;
-              font-weight: 700;
-              color: #1E3A8A;
-              background: #F1F5F9;
-              padding: 6px 12px;
-              border-left: 4px solid #1E3A8A;
-              border-radius: 0 6px 6px 0;
-              margin-top: 16px;
-              margin-bottom: 10px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .grid-3 {
-              display: grid;
-              grid-template-columns: repeat(3, 1fr);
-              gap: 10px;
-            }
-            .data-card {
-              background: #F8FAFC;
-              border: 1px solid #E2E8F0;
-              padding: 10px 12px;
-              border-radius: 8px;
-            }
-            .data-label {
-              font-size: 10px;
-              text-transform: uppercase;
-              color: #64748B;
-              font-weight: 700;
-              letter-spacing: 0.5px;
-            }
-            .data-value {
-              font-size: 14px;
-              font-weight: 700;
-              color: #0F172A;
-              margin-top: 2px;
-            }
-            .data-value.highlight { color: #1E3A8A; }
-            .data-value.success { color: #047857; }
-            .qc-box {
-              background: #ECFDF5;
-              border: 1px solid #A7F3D0;
-              padding: 12px 14px;
-              border-radius: 8px;
-              margin-top: 14px;
-              color: #065F46;
-            }
-            .status-tag {
-              display: inline-block;
-              padding: 3px 8px;
-              border-radius: 12px;
-              font-size: 10px;
-              font-weight: 700;
-              text-transform: uppercase;
-              background: #ECFDF5;
-              color: #047857;
-            }
-            .footer {
-              margin-top: 30px;
-              padding-top: 14px;
-              border-top: 2px solid #E2E8F0;
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-            }
-            .signature-box {
-              text-align: center;
-              width: 200px;
-            }
-            .signature-line {
-              border-bottom: 1px solid #475569;
-              margin-bottom: 4px;
-              height: 35px;
-            }
-            .no-print {
-              margin-bottom: 16px;
-              text-align: right;
-            }
-            .btn-print {
-              background: #1E3A8A;
-              color: #FFFFFF;
-              border: none;
-              padding: 10px 20px;
-              font-size: 13px;
-              font-weight: 600;
-              border-radius: 6px;
-              cursor: pointer;
-            }
-            @media print {
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="no-print">
-            <button class="btn-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
-          </div>
-
-          <div class="header">
-            <div>
-              <div class="company-brand">BENTORK INDUSTRIES LLP</div>
-              <div class="company-sub">Battery Systems & Technology Division</div>
-              <div class="company-info">
-               S. No. 24/2, Jadhavrao Industrial Estate, Nanded City Sinhgad Rd, Pune, Maharashtra 411068<br/>
-                Email: info@bentork.com | Web: https://bentork.com
-              </div>
-            </div>
-            <div>
-              <div class="report-badge">ORDER DISPATCH REPORT</div>
-              <div class="report-meta">
-                <strong>Order #:</strong> ${order.orderNumber || order.id}<br/>
-                <strong>Generated:</strong> ${genTimeStr}
-              </div>
-            </div>
-          </div>
-
-          <div class="section-title">1. Customer & Sales Details</div>
-          <div class="grid-3">
-            <div class="data-card">
-              <div class="data-label">Customer Name</div>
-              <div class="data-value">${order.customerName || "—"}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">P.I. Number</div>
-              <div class="data-value highlight">${order.piNumber || "—"}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Mobile Number</div>
-              <div class="data-value">${order.mobileNumber || "—"}</div>
-            </div>
-          </div>
-
-          <div style="margin-top: 10px;" class="data-card">
-            <div class="data-label">Product Line Items (${itemsList.length}) &nbsp;|&nbsp; Payment Status: <strong style="text-transform: uppercase;">${(order.paymentStatus === "partial" || order.paymentStatus === "unpaid") ? "UNPAID" : (order.paymentStatus || "PAID")}</strong></div>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px;">
-              <thead>
-                <tr style="background: #F1F5F9; color: #475569; text-transform: uppercase; font-size: 10px;">
-                  <th style="padding: 6px 10px; text-align: left;">#</th>
-                  <th style="padding: 6px 10px; text-align: left;">Product Details & Specifications</th>
-                  <th style="padding: 6px 10px; text-align: right;">Quantity</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsList.map((it, idx) => `
-                  <tr style="border-top: 1px solid #E2E8F0;">
-                    <td style="padding: 6px 10px; color: #64748B;">${idx + 1}</td>
-                    <td style="padding: 6px 10px; font-weight: 600; color: #1E293B;">${it.productDetails || "EV Battery Unit"}</td>
-                    <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: #1D4ED8;">${it.quantity} Units</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-              <tfoot>
-                <tr style="background: #F8FAFC; font-weight: 700; border-top: 2px solid #CBD5E1;">
-                  <td colspan="2" style="padding: 6px 10px; color: #334155;">Total Batch Quantity</td>
-                  <td style="padding: 6px 10px; text-align: right; color: #1D4ED8;">${totalUnits} Units</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          <div class="section-title">2. Production & Manufacturing Details</div>
-          <div class="grid-3">
-            <div class="data-card">
-              <div class="data-label">Manufacturing Status</div>
-              <div class="data-value success">PRODUCTION COMPLETE</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Batch Quantity</div>
-              <div class="data-value">${totalUnits} Units</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Completion Date</div>
-              <div class="data-value">${updatedDateStr}</div>
-            </div>
-          </div>
-
-          <div class="qc-box">
-            <strong>Quality Assurance (QC) Inspection: PASSED & CERTIFIED</strong>
-            <div style="font-size: 11px; margin-top: 4px;">
-              ✓ Cell Voltage Balancing &nbsp;•&nbsp; ✓ BMS Communication &nbsp;•&nbsp; ✓ High Voltage Insulation &nbsp;•&nbsp; ✓ Thermal Load Test
-            </div>
-          </div>
-
-          <!-- SCM & Logistics Details -->
-          <div class="section-title">3. Supply Chain & Logistics (SCM) Details</div>
-          <div class="grid-3">
-            <div class="data-card">
-              <div class="data-label">Invoice Number</div>
-              <div class="data-value highlight">${order.invoiceNumber || "—"}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Barcode Range</div>
-              <div class="data-value" style="font-family: monospace;">${barcodeDisplay}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Courier Partner</div>
-              <div class="data-value">${order.courierName || "DTDC Express"}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Tracking Number / ID</div>
-              <div class="data-value highlight">${order.trackingId || "—"}</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Dispatch Status</div>
-              <div class="data-value success">DISPATCHED (IN TRANSIT)</div>
-            </div>
-            <div class="data-card">
-              <div class="data-label">Dispatch Date</div>
-              <div class="data-value">${updatedDateStr}</div>
-            </div>
-          </div>
-
-          <!-- Complete Order Lifecycle Timeline -->
-          <div class="section-title">4. Order Lifecycle & Audit History</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Stage</th>
-                <th>Milestone Event</th>
-                <th>Department</th>
-                <th>Timestamp</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Stage 1</strong></td>
-                <td>Sales Order Registration</td>
-                <td>Sales Admin</td>
-                <td>${createdDateStr}</td>
-                <td><span class="status-tag">COMPLETED</span></td>
-              </tr>
-              <tr>
-                <td><strong>Stage 2</strong></td>
-                <td>Manufacturing & Battery Assembly</td>
-                <td>Production Dept</td>
-                <td>${createdDateStr}</td>
-                <td><span class="status-tag">COMPLETED</span></td>
-              </tr>
-              <tr>
-                <td><strong>Stage 3</strong></td>
-                <td>Quality Assurance & Inspection Test</td>
-                <td>QA Division</td>
-                <td>${updatedDateStr}</td>
-                <td><span class="status-tag">PASSED</span></td>
-              </tr>
-              <tr>
-                <td><strong>Stage 4</strong></td>
-                <td>SCM Barcode Mapping & Invoice Generation</td>
-                <td>Supply Chain (SCM)</td>
-                <td>${updatedDateStr}</td>
-                <td><span class="status-tag">COMPLETED</span></td>
-              </tr>
-              <tr>
-                <td><strong>Stage 5</strong></td>
-                <td>Logistics Handover & Carrier Dispatch</td>
-                <td>SCM Logistics</td>
-                <td>${updatedDateStr}</td>
-                <td><span class="status-tag">DISPATCHED</span></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Footer & Signature -->
-          <div class="footer">
-            <div style="font-size: 11px; color: #64748B;">
-              <strong>Bentork LLP - Official System Record</strong><br/>
-              This is an authentic computer-generated report. Confidential.<br/>
-              Page 1 of 1
-            </div>
-            <div class="signature-box">
-              <div class="signature-line"></div>
-              <div style="font-size: 11px; font-weight: 700; color: #1E3A8A;">Authorized Signatory</div>
-              <div style="font-size: 10px; color: #64748B;">Bentork LLP Systems</div>
-            </div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-  };
-
-  // --- FILTER & PAGINATION ---
+  // Memoized Filter & Sort
   const filteredOrders = useMemo(() => {
     const list = orders.filter((o) => {
       // Super Admin Stage Tab Filter
@@ -1503,29 +1047,10 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       // Priority Filter
       const matchesPriority = !priorityFilter || o.priority === priorityFilter;
 
-      // Date Range Filter
-      let matchesDate = true;
-      if (startDate || endDate) {
-        const dateStr = o.createdAt || o.createdDate || o.updatedAt || o.updatedDate;
-        if (dateStr) {
-          const itemDate = new Date(dateStr);
-          if (startDate) {
-            const s = new Date(startDate);
-            s.setHours(0, 0, 0, 0);
-            if (itemDate < s) matchesDate = false;
-          }
-          if (endDate) {
-            const e = new Date(endDate);
-            e.setHours(23, 59, 59, 999);
-            if (itemDate > e) matchesDate = false;
-          }
-        }
-      }
-
-      return matchesSearch && matchesStatus && matchesPriority && matchesDate;
+      return matchesSearch && matchesStatus && matchesPriority;
     });
 
-    // Sort newest records first (latest created/updated at top)
+    // Sort newest records first
     return list.sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.createdDate ? new Date(a.createdDate).getTime() : a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
       const timeB = b.createdAt ? new Date(b.createdAt).getTime() : b.createdDate ? new Date(b.createdDate).getTime() : b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
@@ -1536,326 +1061,14 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       const numB = Number(String(b.id || b.orderNumber || "").replace(/\D/g, "")) || 0;
       return numB - numA;
     });
-  }, [orders, adminStageTab, searchQuery, statusFilter, priorityFilter, startDate, endDate, isSuperAdmin]);
+  }, [orders, adminStageTab, searchQuery, statusFilter, priorityFilter, isSuperAdmin]);
 
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
+  const totalPages = useMemo(() => Math.ceil(filteredOrders.length / itemsPerPage) || 1, [filteredOrders.length, itemsPerPage]);
+
   const paginatedOrders = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredOrders.slice(start, start + itemsPerPage);
-  }, [filteredOrders, currentPage]);
-
-  // Status Badge Colors & Text
-  const getStatusBadge = (status) => {
-    switch (status?.toLowerCase()) {
-      case "sales_registered":
-        return { label: "Sales Registered", bg: "#EFF6FF", fg: "#1D4ED8", border: "#BFDBFE" };
-      case "in_production":
-        return { label: "In Production", bg: "#FEF3C7", fg: "#B45309", border: "#FDE68A" };
-      case "production_complete":
-        return { label: "Production Complete", bg: "#ECFDF5", fg: "#047857", border: "#A7F3D0" };
-      case "scm_complete":
-        return { label: "SCM Complete", bg: "#F0FDFA", fg: "#0F766E", border: "#99F6E4" };
-      case "dispatched":
-        return { label: "Dispatched", bg: "#F3E8FF", fg: "#6B21A8", border: "#DDD6FE" };
-      default:
-        return { label: status || "Unknown", bg: "#F3F4F6", fg: "#374151", border: "#E5E7EB" };
-    }
-  };
-
-  const getPriorityBadge = (priority) => {
-    switch (priority?.toLowerCase()) {
-      case "high":
-        return { label: "High", bg: "#FEE2E2", fg: "#B91C1C" };
-      case "medium":
-        return { label: "Medium", bg: "#FEF3C7", fg: "#B45309" };
-      case "low":
-        return { label: "Low", bg: "#E0E7FF", fg: "#3730A3" };
-      default:
-        return { label: priority || "—", bg: "#F3F4F6", fg: "#4B5563" };
-    }
-  };
-
-  // Format Dates
-  const formatDate = (dateStr) => {
-    if (!dateStr) return "—";
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return dateStr;
-    }
-  };
-
-  // Lifecycle Progress Stepper Component
-  const renderProgressStepper = (currentStatus) => {
-    const status = (selectedOrder ? localStorage.getItem(`order_status_${selectedOrder.id}`) : null) || currentStatus;
-
-    const stages = [
-      { key: "sales_registered", label: "Order Placed", desc: "Order details registered in sales", icon: ShoppingBag },
-      { key: "in_production", label: "Confirmed", desc: "Production confirmed & active", icon: ShieldCheck },
-      { key: "production_complete", label: "Packed", desc: "Manufacturing complete & packed", icon: Box },
-      { key: "scm_complete", label: "Shipped", desc: "SCM verified & ready for transport", icon: Truck },
-      { key: "dispatched", label: "Out For Delivery", desc: "In transit with courier partner", icon: MapPin },
-      { key: "delivered", label: "Delivered ✅", desc: "Successfully delivered to customer", icon: CheckCircle },
-    ];
-
-    const getStageIndex = (st) => {
-      switch (st?.toLowerCase()) {
-        case "sales_registered":
-          return 0;
-        case "in_production":
-          return 1;
-        case "production_complete":
-          return 2;
-        case "scm_complete":
-          return 3;
-        case "dispatched":
-          return 4;
-        case "delivered":
-          return 5;
-        default:
-          return 0;
-      }
-    };
-
-    const currentIndex = getStageIndex(status);
-
-    return (
-      <div className="vertical-stepper">
-        {stages.map((stage, idx) => {
-          const isPassed = idx < currentIndex;
-          const isActive = idx === currentIndex;
-          const IconComponent = stage.icon;
-
-          let statusClass = "pending";
-          if (isPassed) statusClass = "passed";
-          else if (isActive) statusClass = "active";
-
-          return (
-            <div key={stage.key} className={`vertical-step-item ${statusClass}`}>
-              <div className="vertical-step-left">
-                <div className="vertical-step-circle">
-                  <IconComponent size={14} />
-                </div>
-                {idx < stages.length - 1 && (
-                  <div className={`vertical-step-line ${isPassed ? "passed" : ""}`} />
-                )}
-              </div>
-              <div className="vertical-step-right">
-                <div className="vertical-step-label">{stage.label}</div>
-                <div className="vertical-step-desc">
-                  {stage.key === "delivered" && status === "delivered"
-                    ? `Delivered on ${localStorage.getItem(`order_delivered_date_${selectedOrder?.id}`) ? new Date(localStorage.getItem(`order_delivered_date_${selectedOrder?.id}`)).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN')}`
-                    : stage.desc}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderOrderItemsEditor = (data, onChange, errors) => {
-    const items = Array.isArray(data.orderItems) && data.orderItems.length > 0
-      ? data.orderItems
-      : [createDefaultOrderItem()];
-
-    const updateItem = (index, updates) => {
-      const newItems = [...items];
-      const item = { ...newItems[index], ...updates };
-      item.productDetails = formatProductDetails(item);
-      newItems[index] = item;
-      onChange({ ...data, orderItems: newItems });
-    };
-
-    const addItem = () => {
-      const newItems = [...items, createDefaultOrderItem()];
-      onChange({ ...data, orderItems: newItems });
-    };
-
-    const removeItem = (index) => {
-      if (items.length <= 1) return;
-      const newItems = items.filter((_, i) => i !== index);
-      onChange({ ...data, orderItems: newItems });
-    };
-
-    const totalQuantitySum = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
-
-    return (
-      <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0", marginTop: "6px", marginBottom: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <span style={{ fontSize: "14px", fontWeight: 700, color: "#1E293B" }}>
-            Product Line Items ({items.length})
-          </span>
-          <span style={{ fontSize: "12px", background: "#EFF6FF", color: "#1D4ED8", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
-            Total Batch Quantity: {totalQuantitySum} units
-          </span>
-        </div>
-
-        {items.map((item, idx) => {
-          const selectedProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
-          const formattedVoltage = item.voltage !== undefined && item.voltage !== "" ? String(item.voltage).padStart(2, "0") : "02";
-          const formattedCapacity = item.capacity !== undefined && item.capacity !== "" ? item.capacity : "3";
-          const selectedChemistry = item.chemistry || "NMC";
-          const notesText = item.notes || "";
-
-          return (
-            <div key={item.id || idx} style={{ background: "#FFFFFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1", marginBottom: idx === items.length - 1 ? "12px" : "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 700, color: "#334155" }}>
-                  Item #{idx + 1}
-                </span>
-                {items.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeItem(idx)}
-                    style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FCA5A5", borderRadius: "6px", padding: "3px 8px", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}
-                  >
-                    Remove Item
-                  </button>
-                )}
-              </div>
-
-              {/* Project Selection Row */}
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "220px" }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1E293B", whiteSpace: "nowrap" }}>Select Project *:</label>
-                  <select
-                    value={item.project || "EV Battery"}
-                    onChange={(e) => updateItem(idx, { project: e.target.value })}
-                    style={{ flex: 1, padding: "6px 10px", border: "1px solid #94A3B8", borderRadius: "6px", fontSize: "13px", fontWeight: 600, color: "#0F172A", background: "#FFFFFF" }}
-                  >
-                    {PROJECT_OPTIONS.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {item.project === "Other" && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: "180px" }}>
-                    <label style={{ fontSize: "12px", color: "#475569", whiteSpace: "nowrap" }}>Battery Name:</label>
-                    <input
-                      type="text"
-                      placeholder="Enter custom battery name..."
-                      value={item.customProject || ""}
-                      onChange={(e) => updateItem(idx, { customProject: e.target.value })}
-                      style={{ width: "100%", padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px" }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "10px" }}>
-                {/* Voltage */}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <label style={{ fontSize: "12px", color: "#64748B" }}>Volts:</label>
-                  <input
-                    type="text"
-                    placeholder="02"
-                    value={item.voltage}
-                    onChange={(e) => updateItem(idx, { voltage: e.target.value })}
-                    style={{ width: "55px", padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", fontWeight: 600, textAlign: "center" }}
-                  />
-                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#334155" }}>V</span>
-                </div>
-
-                {/* Capacity */}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <label style={{ fontSize: "12px", color: "#64748B" }}>Capacity:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="3"
-                    value={item.capacity}
-                    onChange={(e) => updateItem(idx, { capacity: e.target.value })}
-                    style={{ width: "65px", padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", fontWeight: 600, textAlign: "center" }}
-                  />
-                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#334155" }}>Ah</span>
-                </div>
-
-                {/* Chemistry */}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <label style={{ fontSize: "12px", color: "#64748B" }}>Chem:</label>
-                  <select
-                    value={selectedChemistry}
-                    onChange={(e) => updateItem(idx, { chemistry: e.target.value })}
-                    style={{ padding: "6px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", fontWeight: 600, color: "#0F172A", background: "#FFFFFF" }}
-                  >
-                    <option value="NMC">NMC</option>
-                    <option value="LiFePO4">LiFePO4</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: "140px" }}>
-                  <label style={{ fontSize: "12px", color: "#64748B" }}>Notes:</label>
-                  <input
-                    type="text"
-                    placeholder="Optional specs..."
-                    value={item.notes || ""}
-                    onChange={(e) => updateItem(idx, { notes: e.target.value })}
-                    style={{ width: "100%", padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px" }}
-                  />
-                </div>
-
-                {/* Item Quantity */}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <label style={{ fontSize: "12px", color: "#1E293B", fontWeight: 700 }}>Qty *:</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={item.quantity}
-                    onChange={(e) => updateItem(idx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                    style={{ width: "65px", padding: "6px 8px", border: "1px solid #3B82F6", borderRadius: "6px", fontSize: "13px", fontWeight: 700, textAlign: "center", color: "#1D4ED8", background: "#EFF6FF" }}
-                  />
-                </div>
-              </div>
-
-              {/* Spec preview string */}
-              <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 500 }}>
-                Spec String: <strong style={{ color: "#0F172A" }}>{selectedProject} — {formattedVoltage}V {formattedCapacity}Ah Chemistry = {selectedChemistry}{notesText.trim() ? ` (${notesText.trim()})` : ""}</strong>
-              </div>
-
-              {errors?.[`orderItem_${idx}`] && <span className="field-error" style={{ marginTop: "4px", display: "block" }}>{errors[`orderItem_${idx}`]}</span>}
-              {errors?.[`orderItemQty_${idx}`] && <span className="field-error" style={{ marginTop: "4px", display: "block" }}>{errors[`orderItemQty_${idx}`]}</span>}
-            </div>
-          );
-        })}
-
-        <button
-          type="button"
-          onClick={addItem}
-          style={{
-            background: "#FFFFFF",
-            color: "#2563EB",
-            border: "1px dashed #3B82F6",
-            borderRadius: "8px",
-            padding: "8px 14px",
-            fontSize: "13px",
-            fontWeight: 600,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            width: "100%",
-            justifyContent: "center"
-          }}
-        >
-          + Add Product Line Item
-        </button>
-
-        {errors?.orderItems && <span className="field-error" style={{ marginTop: "8px", display: "block" }}>{errors.orderItems}</span>}
-      </div>
-    );
-  };
+  }, [filteredOrders, currentPage, itemsPerPage]);
 
   return (
     <div className="orders-root">
@@ -1954,230 +1167,26 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
               </tr>
             </thead>
             <tbody>
-              {paginatedOrders.map((order) => {
-                const statusBadge = getStatusBadge(order.orderStatus);
-                const priorityBadge = getPriorityBadge(order.priority);
-                const isSalesRegistered = order.orderStatus === "sales_registered";
-                const isProductionCompleted = order.productionStatus === "completed" || order.orderStatus === "production_complete";
-                const isScmComplete = order.orderStatus === "scm_complete";
-
-                return (
-                  <tr key={order.id} onClick={() => handleViewDetails(order.id)}>
-                    {/* Order Number & PI */}
-                    <td>
-                      <div className="order-num-text">{order.orderNumber || `ORD-#${order.id}`}</div>
-                      <div className="sub-text">P.I.: {order.piNumber || "—"}</div>
-                    </td>
-
-                    {/* Customer Info */}
-                    <td>
-                      <div className="customer-name">{order.customerName || "—"}</div>
-                      <div className="sub-text">📞 {order.mobileNumber || "—"}</div>
-                    </td>
-
-                    {/* Product Details */}
-                    <td>
-                      {Array.isArray(order.orderItems) && order.orderItems.length > 0 ? (
-                        <div>
-                          <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600, color: '#1E293B' }} title={order.orderItems.map(it => `${it.productDetails || ''} (Qty: ${it.quantity})`).join(', ')}>
-                            {order.orderItems[0].productDetails || "—"}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "#2563EB", fontWeight: 600, marginTop: "2px" }}>
-                            {order.orderItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} units
-                            {order.orderItems.length > 1 && (
-                              <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "1px 6px", borderRadius: "10px", marginLeft: "4px", fontSize: "10px" }}>
-                                {order.orderItems.length} items
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: '#374151' }} title={order.productDetails}>
-                            {order.productDetails || "—"}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
-                            {order.quantity || order.partQuantity || 1} units
-                          </div>
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Address */}
-                    <td>
-                      <div style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: '#374151' }} title={order.address}>
-                        {order.address || "—"}
-                      </div>
-                    </td>
-
-                    {/* Order Lifecycle Status */}
-                    <td>
-                      <span
-                        className="badge-pill font-medium"
-                        style={{
-                          background: statusBadge.bg,
-                          color: statusBadge.fg,
-                          border: `1px solid ${statusBadge.border}`,
-                        }}
-                      >
-                        {statusBadge.label}
-                      </span>
-                    </td>
-
-                    {/* Production Status */}
-                    <td>
-                      <span className={`prod-status-tag ${order.productionStatus || "pending"}`}>
-                        {order.productionStatus === "in_progress"
-                          ? "In Progress"
-                          : order.productionStatus === "completed"
-                            ? "Completed"
-                            : "Pending"}
-                      </span>
-                    </td>
-
-                    {/* Barcode & Tracking ID */}
-                    <td>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>
-                        {order.barcode ? `🏷️ ${order.barcode}` : "—"}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#6B7280" }}>
-                        {order.trackingId ? `🚚 ${order.trackingId}` : "—"}
-                      </div>
-                    </td>
-
-                    {/* Priority & Payment */}
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
-                        <span className="badge-pill" style={{ background: priorityBadge.bg, color: priorityBadge.fg }}>
-                          {priorityBadge.label}
-                        </span>
-                        <span className={`payment-tag ${order.paymentStatus === "paid"
-                          ? "paid"
-                          : (order.paymentStatus === "partial" || order.paymentStatus === "unpaid")
-                            ? "unpaid"
-                            : "pending"
-                          }`}>
-                          {order.paymentStatus === "paid"
-                            ? "Paid"
-                            : (order.paymentStatus === "partial" || order.paymentStatus === "unpaid")
-                              ? "Unpaid"
-                              : "Pending"}
-                        </span>
-                        {(isSalesAdmin || isSuperAdmin) && (
-                          <div style={{ fontSize: "11px", fontWeight: 600, color: (Number(order.pendingAmount) || (order.paymentStatus === "paid" ? 0 : 1)) > 0 ? "#DC2626" : "#059669", marginTop: "2px" }}>
-                            Pending: ₹{parseFloat(order.pendingAmount !== undefined && order.pendingAmount !== null ? order.pendingAmount : (order.paymentStatus === "paid" ? 0 : (order.totalAmount || order.totalPrice || 0))).toLocaleString("en-IN")}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Created & Updated Date */}
-                    <td>
-                      <div style={{ fontSize: 11, color: "#374151", fontWeight: 500 }}>
-                        {formatDate(order.createdAt || order.createdDate)}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#9CA3AF" }}>
-                        Upd: {formatDate(order.updatedAt || order.updatedDate)}
-                      </div>
-                    </td>
-
-                    {/* Actions Column */}
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <div className="row-actions">
-                        {/* View Button */}
-                        <button
-                          className="icon-action-btn view-btn"
-                          title="View Order Details"
-                          onClick={() => handleViewDetails(order.id)}
-                        >
-                          <Eye size={15} />
-                        </button>
-
-                        {/* Sales Admin Edit Order */}
-                        {isSalesAdmin && (
-                          <button
-                            className="icon-action-btn edit-btn"
-                            title={isSalesRegistered ? "Edit Sales Order" : "Read-only: Order has progressed past Sales stage"}
-                            disabled={!isSalesRegistered}
-                            onClick={() => openEditSalesModal(order)}
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                        )}
-
-                        {/* Production Admin Transitions */}
-                        {isProductionAdmin && (
-                          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                            <select
-                              className="filter-select"
-                              style={{ fontSize: "11px", height: "30px", padding: "0 6px", fontWeight: 600, borderRadius: "6px" }}
-                              value={order.productionStatus === "in_progress" ? "in_progress" : order.productionStatus === "testing" ? "testing" : order.productionStatus === "completed" ? "completed" : "pending"}
-                              onChange={(e) => handleUpdateProductionStatus(order.id, e.target.value)}
-                              disabled={submitting}
-                            >
-                              <option value="pending">Pending</option>
-                              <option value="in_progress">In Production</option>
-                              <option value="testing">Testing</option>
-                              <option value="completed">Completed</option>
-                            </select>
-                          </div>
-                        )}
-
-                        {/* SCM Admin Actions */}
-                        {isScmAdmin && (
-                          <>
-                            {/* Fill SCM Details Button (when production is complete) */}
-                            {order.orderStatus === "production_complete" && (
-                              <button
-                                className="scm-action-btn fill-details"
-                                disabled={submitting}
-                                onClick={() => openScmModal(order)}
-                              >
-                                Fill SCM Details
-                              </button>
-                            )}
-
-                            {/* Dispatch Button (enabled ONLY when scm_complete) */}
-                            {isScmComplete && (
-                              <button
-                                className="scm-action-btn dispatch-btn"
-                                disabled={submitting}
-                                onClick={() => handleDispatchOrder(order.id)}
-                              >
-                                <Truck size={14} /> Dispatch
-                              </button>
-                            )}
-
-                            {order.orderStatus === "dispatched" && (
-                              <button
-                                className="icon-action-btn pdf-btn"
-                                title="Download Order Report (PDF)"
-                                style={{ background: "#EFF6FF", color: "#1D4ED8", borderColor: "#BFDBFE" }}
-                                onClick={() => generateOrderPdfReport(order)}
-                              >
-                                <FileText size={15} />
-                              </button>
-                            )}
-
-                            {order.orderStatus === "dispatched" && (
-                              <span className="done-badge dispatched">✓ Dispatched</span>
-                            )}
-
-                            {(order.orderStatus === "sales_registered" || order.orderStatus === "in_production") && (
-                              <span className="read-only-label">In Pipeline</span>
-                            )}
-                          </>
-                        )}
-
-                        {/* Super Admin Read-only view label */}
-                        {isSuperAdmin && (
-                          <span className="read-only-label">Read Only</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {paginatedOrders.map((order) => (
+                <OrderTableRow
+                  key={order.id}
+                  order={order}
+                  isSalesAdmin={isSalesAdmin}
+                  isProductionAdmin={isProductionAdmin}
+                  isScmAdmin={isScmAdmin}
+                  isSuperAdmin={isSuperAdmin}
+                  submitting={submitting}
+                  onViewDetails={handleViewDetails}
+                  onEditSales={openEditSalesModal}
+                  onUpdateProductionStatus={handleUpdateProductionStatus}
+                  onOpenScmModal={openScmModal}
+                  onDispatchOrder={handleDispatchOrder}
+                  onGeneratePdfReport={generateOrderPdfReport}
+                  getStatusBadge={getStatusBadgeConfig}
+                  getPriorityBadge={getPriorityBadgeConfig}
+                  formatDate={formatDate}
+                />
+              ))}
             </tbody>
           </table>
         )}
@@ -2194,1185 +1203,88 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         />
       )}
 
-      {/* ========================================================================= */}
-      {/* ORDER DETAILS DRAWER */}
-      {/* ========================================================================= */}
-      {showDrawer && selectedOrder && (
-        <div className="drawer-overlay" onClick={() => setShowDrawer(false)}>
-          <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-header">
-              <div>
-                <h2>Order Details</h2>
-                <div className="order-number-subtitle">{selectedOrder.orderNumber || `ORD-#${selectedOrder.id}`}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                {selectedOrder.orderStatus === "dispatched" && (
-                  <button
-                    onClick={() => generateOrderPdfReport(selectedOrder)}
-                    style={{
-                      background: "linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)",
-                      color: "#FFFFFF",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 14px",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)"
-                    }}
-                  >
-                    <FileText size={14} /> Download Order Report (PDF)
-                  </button>
-                )}
-                <button className="close-drawer-btn" onClick={() => setShowDrawer(false)}>
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-
-            <div className="drawer-body">
-              {/* Visual Lifecycle Progress Stepper */}
-              <div className="drawer-section">
-                <h4 className="section-title">
-                  <Layers size={16} /> Lifecycle Progress
-                </h4>
-                {renderProgressStepper(selectedOrder.orderStatus)}
-              </div>
-
-              {/* Basic & Sales Information */}
-              <div className="drawer-section">
-                <h4 className="section-title">
-                  <FileText size={16} /> Order & Sales Information
-                </h4>
-                <div className="details-grid">
-                  <div className="detail-item">
-                    <span className="label">Order Number</span>
-                    <span className="val highlight">{selectedOrder.orderNumber || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Customer Name</span>
-                    <span className="val">{selectedOrder.customerName || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">PI Number</span>
-                    <span className="val">{selectedOrder.piNumber || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Mobile Number</span>
-                    <span className="val">{selectedOrder.mobileNumber || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Customer Email</span>
-                    <span className="val">{selectedOrder.customerEmail || "—"}</span>
-                  </div>
-                  <div className="detail-item full-width" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: "8px" }}>
-                      <span className="label" style={{ fontWeight: 600, color: "#475569" }}>
-                        Product Line Items ({selectedOrder.orderItems?.length || 1})
-                      </span>
-                      {!isEditingDrawerProductDetails ? (
-                        <button
-                          onClick={openDrawerItemsEdit}
-                          style={{
-                            background: "#EFF6FF",
-                            color: "#2563EB",
-                            border: "1px solid #BFDBFE",
-                            borderRadius: "6px",
-                            padding: "4px 10px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "4px"
-                          }}
-                        >
-                          <Edit2 size={12} /> Edit Line Items
-                        </button>
-                      ) : (
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <button
-                            onClick={handleSaveDrawerProductDetails}
-                            disabled={submitting}
-                            style={{
-                              background: "#10B981",
-                              color: "#FFFFFF",
-                              border: "none",
-                              borderRadius: "6px",
-                              padding: "4px 12px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              cursor: "pointer"
-                            }}
-                          >
-                            {submitting ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            onClick={() => setIsEditingDrawerProductDetails(false)}
-                            style={{
-                              background: "#F3F4F6",
-                              color: "#374151",
-                              border: "1px solid #D1D5DB",
-                              borderRadius: "6px",
-                              padding: "4px 10px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              cursor: "pointer"
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {!isEditingDrawerProductDetails ? (
-                      <div style={{ width: "100%" }}>
-                        {selectedOrder.orderItems && selectedOrder.orderItems.length > 0 ? (
-                          <div style={{ border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden", background: "#F8FAFC" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                              <thead>
-                                <tr style={{ background: "#F1F5F9", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
-                                  <th style={{ padding: "8px 12px", textAlign: "left" }}>#</th>
-                                  <th style={{ padding: "8px 12px", textAlign: "left" }}>Product Specification</th>
-                                  <th style={{ padding: "8px 12px", textAlign: "right" }}>Quantity</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {selectedOrder.orderItems.map((it, idx) => (
-                                  <tr key={it.id || idx} style={{ borderTop: "1px solid #E2E8F0" }}>
-                                    <td style={{ padding: "8px 12px", color: "#64748B", fontWeight: 600 }}>{idx + 1}</td>
-                                    <td style={{ padding: "8px 12px", color: "#0F172A", fontWeight: 600 }}>{it.productDetails || "—"}</td>
-                                    <td style={{ padding: "8px 12px", textAlign: "right", color: "#2563EB", fontWeight: 700 }}>{it.quantity} units</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          <div style={{ background: "#F8FAFC", padding: "10px 14px", borderRadius: "8px", border: "1px solid #E2E8F0", width: "100%", boxSizing: "border-box" }}>
-                            <span style={{ fontWeight: 600, color: "#0F172A", fontSize: "14px" }}>
-                              {selectedOrder.productDetails || "—"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ width: "100%" }}>
-                        {renderOrderItemsEditor({ orderItems: drawerOrderItems }, (updated) => setDrawerOrderItems(updated.orderItems), editFormErrors)}
-                      </div>
-                    )}
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Total Quantity</span>
-                    <span className="val highlight">
-                      {selectedOrder.orderItems && selectedOrder.orderItems.length > 0
-                        ? selectedOrder.orderItems.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0)
-                        : (selectedOrder.partQuantity ?? selectedOrder.quantity ?? 1)} Units
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Expected Delivery Date</span>
-                    <span className="val">{selectedOrder.expectedDeliveryDate || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Payment Status</span>
-                    <span className="val">
-                      <span className={`payment-tag ${selectedOrder.paymentStatus === "paid"
-                        ? "paid"
-                        : (selectedOrder.paymentStatus === "partial" || selectedOrder.paymentStatus === "unpaid")
-                          ? "unpaid"
-                          : "pending"
-                        }`}>
-                        {selectedOrder.paymentStatus === "paid"
-                          ? "Paid"
-                          : (selectedOrder.paymentStatus === "partial" || selectedOrder.paymentStatus === "unpaid")
-                            ? "Unpaid"
-                            : "Pending"}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Total Invoice Amount</span>
-                    <span className="val highlight" style={{ color: "#1E293B", fontWeight: 600 }}>
-                      ₹{parseFloat(selectedOrder.totalInvoiceAmount || 0).toLocaleString("en-IN")}
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Received Amount</span>
-                    <span className="val" style={{ color: "#10B981", fontWeight: 600 }}>
-                      ₹{parseFloat(selectedOrder.receivedAmount || 0).toLocaleString("en-IN")}
-                    </span>
-                  </div>
-                  {(isSalesAdmin || isSuperAdmin) && (
-                    <div className="detail-item">
-                      <span className="label">Pending Amount</span>
-                      <span className="val" style={{ color: (selectedOrder.pendingAmount || 0) > 0 ? "#EF4444" : "#10B981", fontWeight: 600 }}>
-                        ₹{parseFloat(selectedOrder.pendingAmount || 0).toLocaleString("en-IN")}
-                      </span>
-                    </div>
-                  )}
-                  <div className="detail-item">
-                    <span className="label">Priority</span>
-                    <span className="val">
-                      <span className="badge-pill" style={{ background: getPriorityBadge(selectedOrder.priority).bg, color: getPriorityBadge(selectedOrder.priority).fg }}>
-                        {getPriorityBadge(selectedOrder.priority).label}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Order Status</span>
-                    <span className="val">
-                      <span
-                        className="badge-pill"
-                        style={{
-                          background: getStatusBadge(selectedOrder.orderStatus).bg,
-                          color: getStatusBadge(selectedOrder.orderStatus).fg,
-                        }}
-                      >
-                        {getStatusBadge(selectedOrder.orderStatus).label}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="detail-item full-width" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-                    <span className="label" style={{ marginBottom: "4px" }}>Customer Address</span>
-                    <span className="val" style={{ background: "#F8FAFC", padding: "10px 14px", borderRadius: "8px", border: "1px solid #E2E8F0", width: "100%", boxSizing: "border-box", whiteSpace: "pre-line" }}>
-                      {selectedOrder.address || "—"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Production Stage Information */}
-              <div className="drawer-section">
-                <h4 className="section-title">
-                  <Sparkles size={16} /> Production Information
-                </h4>
-                <div className="details-grid">
-                  <div className="detail-item">
-                    <span className="label">Production Status</span>
-                    <span className="val">
-                      <span className={`prod-status-tag ${selectedOrder.productionStatus || "pending"}`}>
-                        {selectedOrder.productionStatus === "in_progress"
-                          ? "In Production"
-                          : selectedOrder.productionStatus === "testing"
-                            ? "Testing"
-                            : selectedOrder.productionStatus === "completed"
-                              ? "Completed"
-                              : "Pending"}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Production Updated By</span>
-                    <span className="val">{selectedOrder.productionUpdatedByEmail || "—"}</span>
-                  </div>
-                </div>
-              </div>
-
-
-
-              {/* SCM & Logistics Information */}
-              <div className="drawer-section">
-                <h4 className="section-title">
-                  <Truck size={16} /> SCM & Warranty Details
-                </h4>
-                <div className="details-grid">
-                  <div className="detail-item">
-                    <span className="label">Barcode / Range</span>
-                    <span className="val">{selectedOrder.barcode || (selectedOrder.startBarcode ? `${selectedOrder.startBarcode} - ${selectedOrder.endBarcode}` : "—")}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Courier Name</span>
-                    <span className="val highlight">{selectedOrder.courierName || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Tracking ID</span>
-                    <span className="val">{selectedOrder.trackingId || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Service Warranty</span>
-                    <span className="val">{selectedOrder.serviceWarrantyMonths !== null && selectedOrder.serviceWarrantyMonths !== undefined ? `${selectedOrder.serviceWarrantyMonths} months` : "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Full Warranty</span>
-                    <span className="val">{selectedOrder.fullWarrantyMonths !== null && selectedOrder.fullWarrantyMonths !== undefined ? `${selectedOrder.fullWarrantyMonths} months` : "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Total Warranty</span>
-                    <span className="val highlight">{(Number(selectedOrder.serviceWarrantyMonths) || 0) + (Number(selectedOrder.fullWarrantyMonths) || 0)} months</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Audit & Timestamps */}
-              <div className="drawer-section">
-                <h4 className="section-title">
-                  <Clock size={16} /> Audit & Timestamps
-                </h4>
-                <div className="details-grid">
-                  <div className="detail-item">
-                    <span className="label">Created By</span>
-                    <span className="val">{selectedOrder.createdByAdminEmail || "—"}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Created Time</span>
-                    <span className="val">{formatDate(selectedOrder.createdAt)}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Updated Time</span>
-                    <span className="val">{formatDate(selectedOrder.updatedAt)}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Production Completed Time</span>
-                    <span className="val">{formatDate(selectedOrder.productionCompletedAt)}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">SCM Completed Time</span>
-                    <span className="val">{formatDate(selectedOrder.scmCompletedAt)}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="label">Dispatch Time</span>
-                    <span className="val">{formatDate(selectedOrder.dispatchedAt)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Toolbar Inside Drawer */}
-              {/* Action Toolbar Inside Drawer */}
-              {(isSalesAdmin || isProductionAdmin || isScmAdmin || isSuperAdmin) && (
-                <div className="drawer-actions-bar" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-
-                  {isSalesAdmin && selectedOrder.orderStatus === "sales_registered" && (
-                    <button className="primary-action-btn full-w" onClick={() => openEditSalesModal(selectedOrder)}>
-                      <Edit2 size={16} /> Edit Sales Order
-                    </button>
-                  )}
-
-                  {isSalesAdmin && (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" && (
-                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Record Incremental Payment</span>
-                      <form onSubmit={handleRecordIncrementalPayment} style={{ display: "flex", gap: "8px", margin: 0 }}>
-                        <div style={{ flex: 1, position: "relative" }}>
-                          <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", color: "#64748B", fontWeight: 600 }}>₹</span>
-                          <input
-                            type="number"
-                            step="any"
-                            min="0.01"
-                            max={selectedOrder.pendingAmount || 0}
-                            placeholder="Enter amount..."
-                            value={recordPaymentAmount}
-                            onChange={(e) => setRecordPaymentAmount(e.target.value)}
-                            style={{ width: "100%", padding: "8px 12px 8px 24px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" }}
-                            required
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          className="primary-action-btn"
-                          style={{ padding: "0 16px", height: "36px", whiteSpace: "nowrap" }}
-                          disabled={submitting}
-                        >
-                          {submitting ? "Recording..." : "Record"}
-                        </button>
-                      </form>
-                      {selectedOrder.pendingAmount !== undefined && (
-                        <span style={{ fontSize: "11px", color: "#64748B" }}>
-                          Max recordable: ₹{parseFloat(selectedOrder.pendingAmount).toLocaleString("en-IN")}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {isProductionAdmin && (
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button
-                        className="status-transition-btn start-prod"
-                        style={{ flex: 1, opacity: 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "in_progress"}
-                        onClick={() => handleUpdateProductionStatus(selectedOrder.id, "in_progress")}
-                      >
-                        In Production
-                      </button>
-                      <button
-                        className="status-transition-btn"
-                        style={{ flex: 1, background: "#E0F2FE", color: "#0369A1", border: "1px solid #7DD3FC", opacity: 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "testing"}
-                        onClick={() => handleUpdateProductionStatus(selectedOrder.id, "testing")}
-                      >
-                        Testing
-                      </button>
-                      <button
-                        className="status-transition-btn complete-prod"
-                        style={{ flex: 1, opacity: 1 }}
-                        disabled={submitting || selectedOrder.productionStatus === "completed"}
-                        onClick={() => handleUpdateProductionStatus(selectedOrder.id, "completed")}
-                      >
-                        Completed
-                      </button>
-                    </div>
-                  )}
-
-                  {(isScmAdmin || isSuperAdmin) && (
-                    <button
-                      className="sec-btn full-w"
-                      style={{ background: "#F1F5F9", color: "#0F172A", fontWeight: 600 }}
-                      onClick={() => openWarrantyModal(selectedOrder)}
-                    >
-                      🛡️ Battery Warranty Registration
-                    </button>
-                  )}
-
-                  {(isScmAdmin || isSuperAdmin) && selectedOrder.orderStatus === "production_complete" && (
-                    <button
-                      className="scm-action-btn fill-details full-w"
-                      disabled={submitting}
-                      onClick={() => openScmModal(selectedOrder)}
-                    >
-                      Fill SCM Details
-                    </button>
-                  )}
-
-                  {(isScmAdmin || isSuperAdmin) && selectedOrder.orderStatus === "scm_complete" && (
-                    <button
-                      className="scm-action-btn dispatch-btn full-w"
-                      disabled={submitting}
-                      onClick={() => handleDispatchOrder(selectedOrder.id)}
-                    >
-                      <Truck size={16} /> Dispatch Order Now
-                    </button>
-                  )}
-
-                  {(isScmAdmin || isSuperAdmin) && selectedOrder.orderStatus === "dispatched" && (
-                    <button
-                      className="primary-action-btn full-w mark-delivered-btn"
-                      style={{ background: "#10B981", color: "#FFFFFF", border: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "6px" }}
-                      disabled={submitting}
-                      onClick={() => handleMarkAsDelivered(selectedOrder.id)}
-                    >
-                      <CheckCircle size={16} /> Mark as Delivered & Print PDF
-                    </button>
-                  )}
-
-                  {selectedOrder.orderStatus === "dispatched" && (
-                    <button
-                      className="sec-btn full-w"
-                      style={{ background: "#F1F5F9", color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "6px" }}
-                      onClick={() => generateOrderPdfReport(selectedOrder)}
-                    >
-                      <FileText size={16} /> View Dispatch Report (PDF)
-                    </button>
-                  )}
-
-                  {selectedOrder.orderStatus === "delivered" && (
-                    <button
-                      className="primary-action-btn full-w download-pdf-btn"
-                      style={{ background: "linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "6px" }}
-                      onClick={() => generateOrderPdfReport(selectedOrder)}
-                    >
-                      <FileText size={16} /> Download Order Overview (PDF)
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* SALES ADMIN: CREATE ORDER MODAL */}
-      {/* ========================================================================= */}
-      {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Create New Sales Order</h2>
-              <button className="close-btn" onClick={() => setShowCreateModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateSalesOrder}>
-              <div className="modal-body">
-                {/* Registered Customer Search Autocomplete */}
-                <div className="form-group" style={{ position: "relative" }}>
-                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>Search Registered Customer (Optional)</span>
-                    <span style={{ fontSize: "11px", color: "#6B7280" }}>Auto-populates customer details</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Search by customer name, email, or mobile..."
-                    value={customerSearchTerm}
-                    onChange={(e) => {
-                      setCustomerSearchTerm(e.target.value);
-                      setShowCustomerDropdown(true);
-                    }}
-                    onFocus={() => setShowCustomerDropdown(true)}
-                  />
-                  {showCustomerDropdown && customerSearchTerm.trim() && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        right: 0,
-                        zIndex: 99,
-                        background: "#FFFFFF",
-                        border: "1px solid #E5E7EB",
-                        borderRadius: "8px",
-                        boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
-                        maxHeight: "180px",
-                        overflowY: "auto",
-                        marginTop: "4px"
-                      }}
-                    >
-                      {registeredUsers
-                        .filter((u) => {
-                          const term = customerSearchTerm.toLowerCase();
-                          return (
-                            (u.name || "").toLowerCase().includes(term) ||
-                            (u.email || "").toLowerCase().includes(term) ||
-                            (u.mobile || u.mobileNumber || u.phone || "").includes(term)
-                          );
-                        })
-                        .slice(0, 6)
-                        .map((u) => (
-                          <div
-                            key={u.id || u.email}
-                            style={{
-                              padding: "8px 12px",
-                              cursor: "pointer",
-                              borderBottom: "1px solid #F3F4F6"
-                            }}
-                            onMouseDown={() => {
-                              setSalesFormData((prev) => ({
-                                ...prev,
-                                assignedUserId: u.id || u.userId || null,
-                                customerName: u.name || "",
-                                mobileNumber: u.mobile || u.mobileNumber || u.phone || prev.mobileNumber,
-                                customerEmail: u.email || "",
-                              }));
-                              setCustomerSearchTerm(`${u.name} (${u.email || u.mobile || ""})`);
-                              setShowCustomerDropdown(false);
-                            }}
-                          >
-                            <div style={{ fontWeight: 600, fontSize: "13px", color: "#111827" }}>{u.name}</div>
-                            <div style={{ fontSize: "11px", color: "#6B7280" }}>
-                              {u.email} {u.mobile || u.mobileNumber ? `• 📞 ${u.mobile || u.mobileNumber}` : ""}
-                            </div>
-                          </div>
-                        ))}
-                      {registeredUsers.filter((u) => {
-                        const term = customerSearchTerm.toLowerCase();
-                        return (
-                          (u.name || "").toLowerCase().includes(term) ||
-                          (u.email || "").toLowerCase().includes(term) ||
-                          (u.mobile || u.mobileNumber || u.phone || "").includes(term)
-                        );
-                      }).length === 0 && (
-                          <div style={{ padding: "10px", fontSize: "12px", color: "#9CA3AF", textAlign: "center" }}>
-                            No matching registered users found
-                          </div>
-                        )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="form-group">
-                  <label>Customer Name *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. John Doe"
-                    value={salesFormData.customerName}
-                    onChange={(e) => setSalesFormData({ ...salesFormData, customerName: e.target.value })}
-                  />
-                  {salesFormErrors.customerName && <span className="field-error">{salesFormErrors.customerName}</span>}
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>P.I. Number *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. PI-2026-001"
-                      value={salesFormData.piNumber}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, piNumber: e.target.value })}
-                    />
-                    {salesFormErrors.piNumber && <span className="field-error">{salesFormErrors.piNumber}</span>}
-                  </div>
-
-                  <div className="form-group">
-                    <label>Mobile Number (10 digits) *</label>
-                    <input
-                      type="text"
-                      maxLength={10}
-                      placeholder="e.g. 9876543210"
-                      value={salesFormData.mobileNumber}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, mobileNumber: e.target.value })}
-                    />
-                    {salesFormErrors.mobileNumber && <span className="field-error">{salesFormErrors.mobileNumber}</span>}
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Product Line Items & Quantities *</label>
-                  {renderOrderItemsEditor(salesFormData, setSalesFormData, salesFormErrors)}
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Expected Delivery Date *</label>
-                    <input
-                      type="date"
-                      value={salesFormData.expectedDeliveryDate}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, expectedDeliveryDate: e.target.value })}
-                    />
-                    {salesFormErrors.expectedDeliveryDate && <span className="field-error">{salesFormErrors.expectedDeliveryDate}</span>}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Total Invoice Amount (Including Tax) (₹) *</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.01"
-                      placeholder="e.g. 50000"
-                      value={salesFormData.totalInvoiceAmount}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, totalInvoiceAmount: e.target.value })}
-                    />
-                    {salesFormErrors.totalInvoiceAmount && <span className="field-error">{salesFormErrors.totalInvoiceAmount}</span>}
-                  </div>
-
-                  <div className="form-group">
-                    <label>Received Amount (₹)</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      placeholder="e.g. 20000 (Defaults to 0)"
-                      value={salesFormData.receivedAmount}
-                      onChange={(e) => setSalesFormData({ ...salesFormData, receivedAmount: e.target.value })}
-                    />
-                    {salesFormErrors.receivedAmount && <span className="field-error">{salesFormErrors.receivedAmount}</span>}
-                  </div>
-
-                  <div className="form-group">
-                    <label>Pending Amount (₹) (Calculated)</label>
-                    <input
-                      type="text"
-                      readOnly
-                      disabled
-                      value={(() => {
-                        const total = parseFloat(salesFormData.totalInvoiceAmount) || 0;
-                        const received = parseFloat(salesFormData.receivedAmount) || 0;
-                        const pending = Math.max(0, total - received);
-                        return `₹ ${pending.toLocaleString("en-IN")}`;
-                      })()}
-                      style={{ background: "#F1F5F9", color: "#64748B", cursor: "not-allowed" }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Priority *</label>
-                  <select
-                    value={salesFormData.priority}
-                    onChange={(e) => setSalesFormData({ ...salesFormData, priority: e.target.value })}
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                  {salesFormErrors.priority && <span className="field-error">{salesFormErrors.priority}</span>}
-                </div>
-
-
-
-                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Customer Address (Optional)</label>
-                  <textarea
-                    placeholder="Enter customer address..."
-                    value={salesFormData.address || ""}
-                    onChange={(e) => setSalesFormData({ ...salesFormData, address: e.target.value })}
-                    rows={2}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #D1D5DB", borderRadius: "6px", fontSize: "14px" }}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="sec-btn" onClick={() => setShowCreateModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="primary-action-btn" disabled={submitting}>
-                  {submitting ? "Creating..." : "Submit Order"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* SALES ADMIN: EDIT ORDER MODAL */}
-      {/* ========================================================================= */}
-      {showEditModal && editOrderData && (
-        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Edit Sales Order ({editOrderData.orderNumber})</h2>
-              <button className="close-btn" onClick={() => setShowEditModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateSalesOrder}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>Customer Name *</label>
-                  <input
-                    type="text"
-                    value={editOrderData.customerName}
-                    onChange={(e) => setEditOrderData({ ...editOrderData, customerName: e.target.value })}
-                  />
-                  {editFormErrors.customerName && <span className="field-error">{editFormErrors.customerName}</span>}
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>P.I. Number *</label>
-                    <input
-                      type="text"
-                      value={editOrderData.piNumber}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, piNumber: e.target.value })}
-                    />
-                    {editFormErrors.piNumber && <span className="field-error">{editFormErrors.piNumber}</span>}
-                  </div>
-
-                  <div className="form-group">
-                    <label>Mobile Number (10 digits) *</label>
-                    <input
-                      type="text"
-                      maxLength={10}
-                      value={editOrderData.mobileNumber}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, mobileNumber: e.target.value })}
-                    />
-                    {editFormErrors.mobileNumber && <span className="field-error">{editFormErrors.mobileNumber}</span>}
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Product Line Items & Quantities *</label>
-                  {renderOrderItemsEditor(editOrderData, setEditOrderData, editFormErrors)}
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Expected Delivery Date *</label>
-                    <input
-                      type="date"
-                      value={editOrderData.expectedDeliveryDate}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, expectedDeliveryDate: e.target.value })}
-                    />
-                    {editFormErrors.expectedDeliveryDate && <span className="field-error">{editFormErrors.expectedDeliveryDate}</span>}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Total Invoice Amount (Including Tax) (₹) *</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.01"
-                      placeholder="e.g. 50000"
-                      value={editOrderData.totalInvoiceAmount}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, totalInvoiceAmount: e.target.value })}
-                    />
-                    {editFormErrors.totalInvoiceAmount && <span className="field-error">{editFormErrors.totalInvoiceAmount}</span>}
-                  </div>
-
-                  <div className="form-group">
-                    <label>Received Amount (₹)</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      placeholder="e.g. 20000"
-                      value={editOrderData.receivedAmount}
-                      onChange={(e) => setEditOrderData({ ...editOrderData, receivedAmount: e.target.value })}
-                    />
-                    {editFormErrors.receivedAmount && <span className="field-error">{editFormErrors.receivedAmount}</span>}
-                  </div>
-
-                  <div className="form-group">
-                    <label>Pending Amount (₹) (Calculated)</label>
-                    <input
-                      type="text"
-                      readOnly
-                      disabled
-                      value={(() => {
-                        const total = parseFloat(editOrderData.totalInvoiceAmount) || 0;
-                        const received = parseFloat(editOrderData.receivedAmount) || 0;
-                        const pending = Math.max(0, total - received);
-                        return `₹ ${pending.toLocaleString("en-IN")}`;
-                      })()}
-                      style={{ background: "#F1F5F9", color: "#64748B", cursor: "not-allowed" }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Priority *</label>
-                  <select
-                    value={editOrderData.priority}
-                    onChange={(e) => setEditOrderData({ ...editOrderData, priority: e.target.value })}
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                  {editFormErrors.priority && <span className="field-error">{editFormErrors.priority}</span>}
-                </div>
-
-
-
-                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Customer Address (Optional)</label>
-                  <textarea
-                    placeholder="Enter customer address..."
-                    value={editOrderData.address || ""}
-                    onChange={(e) => setEditOrderData({ ...editOrderData, address: e.target.value })}
-                    rows={2}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #D1D5DB", borderRadius: "6px", fontSize: "14px" }}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="sec-btn" onClick={() => setShowEditModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="primary-action-btn" disabled={submitting}>
-                  {submitting ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* SCM ADMIN: FILL DETAILS MODAL */}
-      {/* ========================================================================= */}
-      {showScmModal && orderForScm && (
-        <div className="modal-overlay" onClick={() => setShowScmModal(false)}>
-          <div className="modal-content" style={{ maxWidth: "760px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Fill SCM Details ({orderForScm.orderNumber})</h2>
-              <button className="close-btn" onClick={() => setShowScmModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCompleteScm}>
-              <div className="modal-body" style={{ padding: "20px" }}>
-                {/* 1. Common Shipment Information Section */}
-                <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "10px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <Truck size={16} /> Common Order Shipment Details
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Invoice Number *</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. INV-2026-001"
-                        value={scmFormData.invoiceNumber}
-                        onChange={(e) => setScmFormData({ ...scmFormData, invoiceNumber: e.target.value })}
-                      />
-                      {scmFormErrors.invoiceNumber && <span className="field-error">{scmFormErrors.invoiceNumber}</span>}
-                    </div>
-
-                    <div className="form-group">
-                      <label>Courier Name (Optional)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. DTDC, BlueDart, FedEx"
-                        value={scmFormData.courierName}
-                        onChange={(e) => setScmFormData({ ...scmFormData, courierName: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Tracking ID *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. TRK123456789"
-                      value={scmFormData.trackingId}
-                      onChange={(e) => setScmFormData({ ...scmFormData, trackingId: e.target.value })}
-                    />
-                    {scmFormErrors.trackingId && <span className="field-error">{scmFormErrors.trackingId}</span>}
-                  </div>
-                </div>
-
-                {/* 2. Product Line Items Barcode & Warranty Section */}
-                <div>
-                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <Barcode size={16} /> Product Line Items — Barcodes & Warranty
-                  </div>
-
-                  {scmItemDetails.map((item, idx) => {
-                    const updateItemState = (updates) => {
-                      const newItems = [...scmItemDetails];
-                      newItems[idx] = { ...newItems[idx], ...updates };
-                      setScmItemDetails(newItems);
-                    };
-
-                    return (
-                      <div
-                        key={item.id || idx}
-                        style={{
-                          background: "#FFFFFF",
-                          border: "1px solid #CBD5E1",
-                          borderRadius: "10px",
-                          padding: "16px",
-                          marginBottom: idx === scmItemDetails.length - 1 ? "0" : "16px",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.03)"
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px" }}>
-                          <span style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>
-                            Product #{idx + 1}: {item.productDetails || "EV Battery Unit"}
-                          </span>
-                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#2563EB", background: "#EFF6FF", padding: "2px 8px", borderRadius: "10px" }}>
-                            Qty: {item.quantity || 1} unit{(item.quantity || 1) > 1 ? "s" : ""}
-                          </span>
-                        </div>
-
-                        {/* Barcode Range / Single Barcode Row */}
-                        {(item.quantity || 1) === 1 ? (
-                          <div className="form-group">
-                            <label>Barcode *</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. BAR001"
-                              value={item.startBarcode || ""}
-                              onChange={(e) => updateItemState({ startBarcode: e.target.value, endBarcode: e.target.value })}
-                            />
-                            {scmFormErrors[`startBarcode_${idx}`] && (
-                              <span className="field-error">{scmFormErrors[`startBarcode_${idx}`]}</span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="form-row">
-                            <div className="form-group">
-                              <label>Start Barcode *</label>
-                              <input
-                                type="text"
-                                placeholder="e.g. BAR001"
-                                value={item.startBarcode || ""}
-                                onChange={(e) => updateItemState({ startBarcode: e.target.value })}
-                              />
-                              {scmFormErrors[`startBarcode_${idx}`] && (
-                                <span className="field-error">{scmFormErrors[`startBarcode_${idx}`]}</span>
-                              )}
-                            </div>
-
-                            <div className="form-group">
-                              <label>End Barcode *</label>
-                              <input
-                                type="text"
-                                placeholder="e.g. BAR005"
-                                value={item.endBarcode || ""}
-                                onChange={(e) => updateItemState({ endBarcode: e.target.value })}
-                              />
-                              {scmFormErrors[`endBarcode_${idx}`] && (
-                                <span className="field-error">{scmFormErrors[`endBarcode_${idx}`]}</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Warranty Start & End Dates Row */}
-                        <div className="form-row">
-                          <div className="form-group">
-                            <label>Warranty Start Date *</label>
-                            <input
-                              type="date"
-                              value={item.warrantyStartDate || ""}
-                              onChange={(e) => updateItemState({ warrantyStartDate: e.target.value })}
-                            />
-                            {scmFormErrors[`warrantyStartDate_${idx}`] && (
-                              <span className="field-error">{scmFormErrors[`warrantyStartDate_${idx}`]}</span>
-                            )}
-                          </div>
-
-                          <div className="form-group">
-                            <label>Warranty End Date *</label>
-                            <input
-                              type="date"
-                              value={item.warrantyEndDate || ""}
-                              onChange={(e) => updateItemState({ warrantyEndDate: e.target.value })}
-                            />
-                            {scmFormErrors[`warrantyEndDate_${idx}`] && (
-                              <span className="field-error">{scmFormErrors[`warrantyEndDate_${idx}`]}</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Barcode Sequence Info Badge */}
-                        <div style={{ fontSize: "11px", color: "#64748B", background: "#F8FAFC", padding: "6px 10px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
-                          {(item.quantity || 1) === 1 ? (
-                            <>Barcode: <strong style={{ color: "#1D4ED8" }}>{item.startBarcode || "—"}</strong> (Single Unit)</>
-                          ) : (
-                            <>Range: <strong style={{ color: "#1D4ED8" }}>{item.startBarcode || "—"}</strong> to <strong style={{ color: "#1D4ED8" }}>{item.endBarcode || "—"}</strong> (Total: {item.quantity} barcodes)</>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="sec-btn" onClick={() => setShowScmModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="primary-action-btn" disabled={submitting}>
-                  {submitting ? "Submitting SCM..." : "Submit SCM Complete"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* WARRANTY REGISTRATION MODAL (BATTERY REGISTER MODULE STYLE) */}
-      {/* ========================================================================= */}
-      {showWarrantyModal && warrantyModalData && (
-        <div className="modal-overlay" onClick={() => setShowWarrantyModal(false)}>
-          <div className="modal-content" style={{ maxWidth: "680px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header" style={{ background: "#0F172A", color: "#FFFFFF", padding: "18px 24px", borderTopLeftRadius: "12px", borderTopRightRadius: "12px" }}>
-              <div>
-                <h2 style={{ fontSize: "18px", fontWeight: 700, margin: 0 }}>Battery Warranty Registration</h2>
-                <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "2px" }}>
-                  Register warranty record matching Battery Register system format
-                </div>
-              </div>
-              <button className="close-btn" style={{ color: "#94A3B8" }} onClick={() => setShowWarrantyModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="modal-body" style={{ padding: "24px" }}>
-              <div style={{ background: "#F1F5F9", padding: "12px 16px", borderRadius: "8px", marginBottom: "18px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>
-                  Order #{warrantyModalData.orderNumber} • Customer: {warrantyModalData.customerName}
-                </div>
-                <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
-                  {warrantyModalData.productDetails}
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Barcode / Barcode Range</label>
-                  <input
-                    type="text"
-                    readOnly
-                    disabled
-                    value={warrantyModalData.barcode || (warrantyModalData.startBarcode ? `${warrantyModalData.startBarcode} - ${warrantyModalData.endBarcode}` : "—")}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Invoice Number</label>
-                  <input
-                    type="text"
-                    readOnly
-                    disabled
-                    value={warrantyModalData.invoiceNumber || "—"}
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Warranty Start Date</label>
-                  <input
-                    type="date"
-                    value={scmFormData.warrantyStartDate}
-                    onChange={(e) => setScmFormData({ ...scmFormData, warrantyStartDate: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Courier & Tracking ID</label>
-                  <input
-                    type="text"
-                    readOnly
-                    disabled
-                    value={`${warrantyModalData.courierName || 'Standard'} • ${warrantyModalData.trackingId || '—'}`}
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Full Warranty (Months)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={scmFormData.fullWarrantyMonths}
-                    onChange={(e) => setScmFormData({ ...scmFormData, fullWarrantyMonths: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Service Warranty (Months)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={scmFormData.serviceWarrantyMonths}
-                    onChange={(e) => setScmFormData({ ...scmFormData, serviceWarrantyMonths: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "14px", borderRadius: "8px", marginTop: "12px" }}>
-                <div style={{ fontSize: "12px", fontWeight: 600, color: "#065F46" }}>Calculated Warranty Coverage</div>
-                <div style={{ fontSize: "16px", fontWeight: 700, color: "#047857", marginTop: "4px" }}>
-                  Total: {(Number(scmFormData.serviceWarrantyMonths) || 0) + (Number(scmFormData.fullWarrantyMonths) || 0)} Months
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" className="sec-btn" onClick={() => setShowWarrantyModal(false)}>
-                Close
-              </button>
-              <button
-                type="button"
-                className="primary-action-btn"
-                onClick={() => {
-                  showToast(`Warranty registered successfully for Barcode ${warrantyModalData.barcode || warrantyModalData.orderNumber}`, "success");
-                  setShowWarrantyModal(false);
-                }}
-              >
-                ✓ Complete Warranty Registration
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Order Details Drawer */}
+      <OrderDetailsDrawer
+        showDrawer={showDrawer}
+        selectedOrder={selectedOrder}
+        onClose={() => setShowDrawer(false)}
+        isSalesAdmin={isSalesAdmin}
+        isProductionAdmin={isProductionAdmin}
+        isScmAdmin={isScmAdmin}
+        isSuperAdmin={isSuperAdmin}
+        submitting={submitting}
+        recordPaymentAmount={recordPaymentAmount}
+        setRecordPaymentAmount={setRecordPaymentAmount}
+        handleRecordIncrementalPayment={handleRecordIncrementalPayment}
+        handleUpdateProductionStatus={handleUpdateProductionStatus}
+        openEditSalesModal={openEditSalesModal}
+        openWarrantyModal={openWarrantyModal}
+        openScmModal={openScmModal}
+        handleDispatchOrder={handleDispatchOrder}
+        handleMarkAsDelivered={handleMarkAsDelivered}
+        generateOrderPdfReport={generateOrderPdfReport}
+        getStatusBadge={getStatusBadgeConfig}
+        getPriorityBadge={getPriorityBadgeConfig}
+        formatDate={formatDate}
+        openDrawerItemsEdit={openDrawerItemsEdit}
+        isEditingDrawerProductDetails={isEditingDrawerProductDetails}
+        setIsEditingDrawerProductDetails={setIsEditingDrawerProductDetails}
+        drawerOrderItems={drawerOrderItems}
+        setDrawerOrderItems={setDrawerOrderItems}
+        handleSaveDrawerProductDetails={handleSaveDrawerProductDetails}
+        editFormErrors={editFormErrors}
+      />
+
+      {/* Create Sales Order Modal */}
+      <CreateSalesOrderModal
+        showCreateModal={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        salesFormData={salesFormData}
+        setSalesFormData={setSalesFormData}
+        salesFormErrors={salesFormErrors}
+        handleCreateSalesOrder={handleCreateSalesOrder}
+        submitting={submitting}
+        customerSearchTerm={customerSearchTerm}
+        setCustomerSearchTerm={setCustomerSearchTerm}
+        showCustomerDropdown={showCustomerDropdown}
+        setShowCustomerDropdown={setShowCustomerDropdown}
+        registeredUsers={registeredUsers}
+      />
+
+      {/* Edit Sales Order Modal */}
+      <EditSalesOrderModal
+        showEditModal={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        editOrderData={editOrderData}
+        setEditOrderData={setEditOrderData}
+        editFormErrors={editFormErrors}
+        handleUpdateSalesOrder={handleUpdateSalesOrder}
+        submitting={submitting}
+      />
+
+      {/* SCM Details Modal */}
+      <ScmDetailsModal
+        showScmModal={showScmModal}
+        onClose={() => setShowScmModal(false)}
+        orderForScm={orderForScm}
+        scmFormData={scmFormData}
+        setScmFormData={setScmFormData}
+        scmItemDetails={scmItemDetails}
+        setScmItemDetails={setScmItemDetails}
+        scmFormErrors={scmFormErrors}
+        handleCompleteScm={handleCompleteScm}
+        submitting={submitting}
+      />
+
+      {/* Warranty Registration Modal */}
+      <WarrantyRegistrationModal
+        showWarrantyModal={showWarrantyModal}
+        onClose={() => setShowWarrantyModal(false)}
+        warrantyModalData={warrantyModalData}
+        scmFormData={scmFormData}
+        setScmFormData={setScmFormData}
+        showToast={showToast}
+      />
 
       {/* Embedded Modern Styling */}
       <style>{`
@@ -3914,7 +1826,6 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
           margin-top: 2px;
         }
         
-        /* Status Overrides */
         .vertical-step-item.passed .vertical-step-circle {
           background: #10B981;
           color: #FFFFFF;

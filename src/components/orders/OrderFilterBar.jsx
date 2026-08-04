@@ -1,7 +1,7 @@
 import React from "react";
 import { Search, X } from "lucide-react";
 
-export const OrderFilterBar = ({
+export const OrderFilterBar = React.memo(({
   searchQuery,
   setSearchQuery,
   statusFilter,
@@ -85,4 +85,6 @@ export const OrderFilterBar = ({
       </div>
     </div>
   );
-};
+});
+
+OrderFilterBar.displayName = "OrderFilterBar";
