@@ -106,7 +106,6 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
     states : false,
     cities : false
   });
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     // setCountries(Country.getAllCountries());
@@ -120,9 +119,8 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
         })).sort((a, b) => a.name.localeCompare(b.name));
 
         setCountries(sortedCountries)
-      } catch (error) {
-        console.error('Failed to load country-state-city library ',error)
-        setError(false)
+      } catch (err) {
+        console.error('Failed to load country-state-city library ', err)
       } finally {
         setIsLoading(prev => ({ ...prev, countries: false }));
       }
@@ -156,7 +154,7 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
         } else {
           setStates([]);
         }
-      } catch (error) {
+      } catch {
         console.error('Failed to fetch states')
         setStates([]);
       } finally {
@@ -191,8 +189,8 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
         } else {
           setCities([]);
         }
-      } catch (error) {
-        console.error('Failed to fetch cities: ', error)
+      } catch (err) {
+        console.error('Failed to fetch cities: ', err)
         setCities([])
       } finally {
         setIsLoading(prev => ({ ...prev, cities : false}))
@@ -200,7 +198,7 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
     }
 
     fetchCities();
-    }, [formData.countryName, formData.state]);
+  }, [formData.countryName, formData.state, formData.stateName]);
 
 
   const handleChange = (e) => {
@@ -214,8 +212,6 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
       setStates([]);
       setCities([]);
     } else if (name === "state") {
-      
-      const selectedState = states.find(s => s.stateCode === value || s.name === value);
       setFormData({ ...formData, state: value, stateName: value, city: "" });
       setCities([]);
     } else {
@@ -238,7 +234,6 @@ function AddStation({ onClose, onStationAdded, baseUrl }) {
       const data = await response.json();
       if (data && data.address) {
         const { address } = data;
-        const foundCountry = countries.find(c => c.name === address.country);
         setFormData(prev => ({
           ...prev,
           address: data.display_name.split(',').slice(0, 2).join(', '),

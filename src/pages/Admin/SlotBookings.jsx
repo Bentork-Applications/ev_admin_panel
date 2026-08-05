@@ -107,7 +107,7 @@ export default function SlotBookings({ baseUrl }) {
 
   // ── Data State (unchanged) ────────────────────────────────────────────────
   const [stations, setStations] = useState([]);
-  const [chargers, setChargers] = useState([]);
+  const [, setChargers] = useState([]);
   const [allBookings, setAllBookings] = useState([]);
   const [availableSlotsCount, setAvailableSlotsCount] = useState(0);
   const [loading, setLoading] = useState(true);

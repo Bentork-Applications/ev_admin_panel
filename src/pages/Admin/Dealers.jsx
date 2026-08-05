@@ -323,7 +323,7 @@ function AssignStationsModal({ dealer, baseUrl, onClose, onSuccess }) {
 }
 
 // ─── Delete Confirm Modal ─────────────────────────────────────────────────────
-function DeleteModal({ dealer, baseUrl, onClose, onSuccess }) {
+function DeleteModal({ dealer, onClose, onSuccess }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
 

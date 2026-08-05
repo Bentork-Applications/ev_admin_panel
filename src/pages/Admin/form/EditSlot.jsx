@@ -79,30 +79,6 @@ export default function EditSlot({ slot, onClose, onSlotUpdated, baseUrl, charge
         return null;
     };
 
-    // ── Build Payload ────────────────────────────────────────────────
-    const buildPayload = () => {
-        const chargerId = parseInt(form.chargerId, 10);
-        if (slot.allDay) {
-            return {
-                id: slot.id,
-                chargerId,
-                startTimeOnly: `${form.startTime}:00`,
-                endTimeOnly: `${form.endTime}:00`,
-                allDay: true,
-                isBooked: false,
-            };
-        }
-
-        return {
-            id: slot.id,
-            chargerId,
-            startTime: `${form.date}T${form.startTime}:00`,
-            endTime: `${form.date}T${form.endTime}:00`,
-            allDay: false,
-            isBooked: false,
-        };
-    };
-
     // ── Submit ────────────────────────────────────────────────────────
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -132,7 +108,9 @@ export default function EditSlot({ slot, onClose, onSlotUpdated, baseUrl, charge
                 try {
                     const errData = await deleteRes.json();
                     errMsg = errData.error || errMsg;
-                } catch {}
+                } catch {
+                    // Ignore parse error and keep default errMsg
+                }
                 setError(errMsg);
                 setIsSubmitting(false);
                 return;

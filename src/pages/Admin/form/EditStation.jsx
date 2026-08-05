@@ -108,7 +108,6 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
         cities: false,
         initialData: true
     });
-    const [error, setError] = useState(null);
 
     // Fetch countries and initial location data
     useEffect(() => {
@@ -176,7 +175,7 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
                 } else {
                     setStates([]);
                 }
-            } catch (error) {
+            } catch {
                 console.error('Failed to fetch states')
                 setStates([]);
             } finally {
@@ -211,8 +210,8 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
                 } else {
                     setCities([]);
                 }
-            } catch (error) {
-                console.error('Failed to fetch cities: ', error)
+            } catch (err) {
+                console.error('Failed to fetch cities: ', err)
                 setCities([])
             } finally {
                 setIsLoading(prev => ({ ...prev, cities: false }))
@@ -220,7 +219,7 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
         }
 
         fetchCities();
-    }, [formData.countryName, formData.state]);
+    }, [formData.countryName, formData.state, formData.stateName]);
 
 
     const handleChange = (e) => {

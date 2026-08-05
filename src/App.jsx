@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useEffect, useState, lazy, Suspense } from "react";
 
 // Lazy load pages
@@ -7,7 +7,7 @@ const AdminRegister = lazy(() => import("./pages/Admin/AdminRegister"));
 const Dashboard = lazy(() => import("./pages/Admin/Dashboard"));
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem("token"));
+  const [, setToken] = useState(localStorage.getItem("token"));
 
   useEffect(() => {
     const handleStorageChange = () => {
@@ -27,7 +27,6 @@ export default function App() {
 
           <Route
             path="/dashboard/*"
-            // element={token ? <Dashboard /> : <Navigate to="/login" replace />}
             element={<Dashboard />}
           />
         </Routes>

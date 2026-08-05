@@ -112,33 +112,6 @@ export default function PlansPage({ baseUrl }) {
     }
   };
 
-  // ✅ Delete All Plans
-  const handleDeactivateAllPlans = async () => {
-    if (!window.confirm("Are you sure you want to delete ALL plans?")) return;
-    const token = localStorage.getItem("token");
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const plan of plans) {
-      try {
-        const res = await fetch(`${baseUrl}/plans/delete/${plan.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          successCount++;
-        } else {
-          failCount++;
-        }
-      } catch (err) {
-        failCount++;
-      }
-    }
-
-    await refreshPlans();
-    setMessage(`✅ Deleted ${successCount} plans successfully.${failCount ? ` Failed to delete ${failCount} plans.` : ""}`);
-  };
-
   // ✅ Edit Plan
   const handleEdit = (plan) => {
     setSelectedPlan(plan);

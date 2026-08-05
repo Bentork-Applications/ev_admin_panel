@@ -184,7 +184,9 @@ export default function Dashboard({ onLogout }) {
           const email = payload.sub;
           const stored = localStorage.getItem("staff_page_access_" + email);
           if (stored) allowed = JSON.parse(stored);
-        } catch (e) { }
+        } catch {
+          // Ignore parse errors
+        }
       }
       const cards = [];
       if (allowed.includes("batteries")) {
@@ -617,14 +619,6 @@ export default function Dashboard({ onLogout }) {
     { name: "Log Out", path: null, roles: ["ADMIN", "DEALER", "ADMIN_STAFF"] },
   ];
 
-  const menuItems = allMenuItems.filter(item => {
-    if (userRole === "ADMIN_STAFF") {
-      if (item.path === "" || item.path === null) return true;
-      return allowedPages.includes(item.path);
-    }
-    return item.roles.includes(userRole);
-  });
-
   const cardRouteMap = {
     "total users": "login-users",
     "total revenue": "revenue",
@@ -674,11 +668,6 @@ export default function Dashboard({ onLogout }) {
     if (hour < 12) return "Good Morning";
     if (hour < 17) return "Good Afternoon";
     return "Good Evening";
-  };
-
-  const handleClick = (item) => {
-    if (item.name === "Log Out") setShowLogout(true);
-    else if (item.path !== null) navigate(item.path);
   };
 
   const handleLogout = () => {

@@ -16,12 +16,10 @@ export const CreateSalesOrderModal = React.memo(({
   setShowCustomerDropdown,
   registeredUsers
 }) => {
-  if (!showCreateModal) return null;
-
   const filteredCustomerList = useMemo(() => {
     if (!customerSearchTerm.trim()) return [];
     const term = customerSearchTerm.toLowerCase();
-    return registeredUsers
+    return (registeredUsers || [])
       .filter((u) => {
         return (
           (u.name || "").toLowerCase().includes(term) ||
@@ -31,6 +29,8 @@ export const CreateSalesOrderModal = React.memo(({
       })
       .slice(0, 6);
   }, [registeredUsers, customerSearchTerm]);
+
+  if (!showCreateModal) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>

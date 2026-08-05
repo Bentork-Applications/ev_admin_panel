@@ -13,8 +13,6 @@ export default function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("login-theme") || "dark");
-  const [lang, setLang] = useState("English");
-  const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
   const handleChange = (e) => {

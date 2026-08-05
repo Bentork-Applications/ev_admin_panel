@@ -1,34 +1,34 @@
-// pages/admin/Dashboard.jsx
-import React, { useState } from "react";
+import React, { useState, lazy, Suspense, useCallback } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
 import Topbar from "../../components/admin/topbar";
 import Sidebar from "../../components/admin/Sidebar";
 import Card from "../../components/card/card.jsx";
-import Stations from "./Stations";
-import Charger from "./Charger";
-import Sessions from "./Sessions";
-import Slot from "./Slot";
-import Users from "./Users";
-import LogoutModal from "../../components/common/LogoutModal"; // ✅ import modal
+import LogoutModal from "../../components/common/LogoutModal";
+
+const Stations = lazy(() => import("./Stations"));
+const Charger = lazy(() => import("./Charger"));
+const Sessions = lazy(() => import("./Sessions"));
+const Slot = lazy(() => import("./Slot"));
+const Users = lazy(() => import("./Users"));
 
 export default function Dashboard() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [showLogoutModal, setShowLogoutModal] = useState(false); // ✅ state for modal
+  const [isSidebarOpen] = useState(true);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    setShowLogoutModal(true); // ✅ show modal instead of direct logout
-  };
+  const handleLogout = useCallback(() => {
+    setShowLogoutModal(true);
+  }, []);
 
-  const confirmLogout = () => {
+  const confirmLogout = useCallback(() => {
     setShowLogoutModal(false);
-    localStorage.removeItem("token"); // or your auth key
-    navigate("/login"); // ✅ go to login page
-  };
+    localStorage.removeItem("token");
+    navigate("/login");
+  }, [navigate]);
 
-  const cancelLogout = () => {
+  const cancelLogout = useCallback(() => {
     setShowLogoutModal(false);
-  };
+  }, []);
 
   return (
     <div className="flex h-screen">
@@ -41,21 +41,24 @@ export default function Dashboard() {
 
         {/* Main Content */}
         <main className="flex-1 p-4 overflow-y-auto">
-          <Routes>
-            <Route path="/stations" element={<Stations />} />
-            <Route path="/charger" element={<Charger />} />
-            <Route path="/sessions" element={<Sessions />} />
-            <Route path="/slot" element={<Slot />} />
-            <Route path="/users" element={<Users />} />
-            <Route path="/" element={<Card />} />
-          </Routes>
+          <Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+            <Routes>
+              <Route path="/stations" element={<Stations />} />
+              <Route path="/charger" element={<Charger />} />
+              <Route path="/sessions" element={<Sessions />} />
+              <Route path="/slot" element={<Slot />} />
+              <Route path="/users" element={<Users />} />
+              <Route path="/" element={<Card />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
 
-      {/* ✅ Logout Confirmation Modal */}
+      {/* Logout Confirmation Modal */}
       {showLogoutModal && (
         <LogoutModal onClose={cancelLogout} onConfirm={confirmLogout} />
       )}
     </div>
   );
 }
+

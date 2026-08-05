@@ -325,7 +325,7 @@ export default function Slot({ baseUrl }) {
     });
 
     return { total, available, booked, expired };
-  }, [slots, refreshKey]);
+  }, [slots]);
 
   // ── Client-Side Filtered Slots ──────────────────────────────────
   const filteredSlots = useMemo(() => {
@@ -337,7 +337,7 @@ export default function Slot({ baseUrl }) {
       if (viewMode === "expired") return status === "EXPIRED";
       return true;
     });
-  }, [slots, viewMode, refreshKey]);
+  }, [slots, viewMode]);
 
   // ── Client-Side Searched Slots ──────────────────────────────────
   const searchedSlots = useMemo(() => {
@@ -355,7 +355,7 @@ export default function Slot({ baseUrl }) {
       if (timeText.includes(query)) return true;
       return false;
     });
-  }, [filteredSlots, searchQuery, refreshKey]);
+  }, [filteredSlots, searchQuery]);
 
   // ── Date-wise Grouping and Sorting ──────────────────────────────
   const groupedSlots = useMemo(() => {
@@ -438,7 +438,7 @@ export default function Slot({ baseUrl }) {
     });
 
     return sortedKeys.map((k) => groups[k]);
-  }, [filteredSlots, refreshKey]);
+  }, [searchedSlots]);
 
   // ── Charger Grouped by Station ────────────────────────────────────
   const groupedChargers = useMemo(() => {
@@ -482,7 +482,9 @@ export default function Slot({ baseUrl }) {
         try {
           const d = await res.json();
           msg = d.error || msg;
-        } catch { }
+        } catch {
+          // Ignore json parse error
+        }
         setSlotToDelete(null);
         showToast(msg, "error");
       }

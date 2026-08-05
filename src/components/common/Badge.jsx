@@ -1,7 +1,7 @@
 import React from "react";
 import { getStatusBadgeConfig, getPriorityBadgeConfig } from "../../config/orderConfig";
 
-export const StatusBadge = ({ status }) => {
+export const StatusBadge = React.memo(({ status }) => {
   const config = getStatusBadgeConfig(status);
   return (
     <span
@@ -15,9 +15,9 @@ export const StatusBadge = ({ status }) => {
       {config.label}
     </span>
   );
-};
+});
 
-export const PriorityBadge = ({ priority }) => {
+export const PriorityBadge = React.memo(({ priority }) => {
   const config = getPriorityBadgeConfig(priority);
   return (
     <span
@@ -32,4 +32,4 @@ export const PriorityBadge = ({ priority }) => {
       {config.label}
     </span>
   );
-};
+});

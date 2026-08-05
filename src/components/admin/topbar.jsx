@@ -19,7 +19,7 @@ export default function Topbar({ onMenuClick, onLogout }) {
         name: decoded.name || decoded.sub || "Admin",
         role: decoded.role || decoded.roles?.[0] || "Admin",
       });
-    } catch (err) {
+    } catch {
       console.error("Invalid token");
     }
   }, []);

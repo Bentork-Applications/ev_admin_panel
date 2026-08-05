@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import StaffSummaryCards from "../../components/card/StaffSummaryCards";
-import editIcon from "../../assets/icons/stafficon/edit.svg";
 import AddStaffForm from "./form/AddStaffForm";
 import StaffEditForm from "./form/staffedit";
 
@@ -251,11 +250,7 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
     return () => window.removeEventListener("click", handleGlobalClick);
   }, []);
 
-  useEffect(() => {
-    fetchAllStaffData();
-  }, [navigate]);
-
-  const fetchAllStaffData = async () => {
+  const fetchAllStaffData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -293,7 +288,11 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [baseUrl, navigate]);
+
+  useEffect(() => {
+    fetchAllStaffData();
+  }, [fetchAllStaffData]);
 
   const handleDeleteStaff = async (staff) => {
     if (!window.confirm(`Are you sure you want to delete ${staff.name || "this staff member"}?`)) {

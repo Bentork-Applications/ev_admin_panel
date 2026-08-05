@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { batteryService } from "../../services/batteryService";
 
 export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
+  const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
 
   const getWarrantyDurationYears = (b) => {
     if (!b.warrantyStartDate || !b.warrantyEndDate) return 0;
@@ -168,25 +169,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     serviceWarrantyMonths: "0",
   });
 
-  const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
-
-  useEffect(() => {
-    fetchBatteries();
-
-    const handleDocumentClick = () => {
-      setActiveMenuId(null);
-    };
-    document.addEventListener("click", handleDocumentClick);
-    return () => {
-      document.removeEventListener("click", handleDocumentClick);
-    };
-  }, []);
-
   const handleOpenEdit = (b) => {
     setEditTarget(b);
     const duration = getWarrantyDurationYears(b);
     const parsed = parseWarrantyPeriod(b.warrantyStartDate, b.warrantyEndDate);
-    // Parse existing productDetails to pre-fill voltage/capacity/chemistry
     const existingDetails = b.productDetails || "";
     const vMatch = existingDetails.match(/(\d+(?:\.\d+)?)V/);
     const ahMatch = existingDetails.match(/(\d+(?:\.\d+)?)Ah/);
@@ -215,7 +201,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     e.preventDefault();
     const newEdited = { ...editedRecords };
     editTarget.originalBatteries.forEach(orig => {
-      // Build productDetails from structured fields
       const builtDetails = editFormData.voltage || editFormData.capacity
         ? `${editFormData.voltage}V ${editFormData.capacity}Ah Chemistry = ${editFormData.chemistry}`
         : editFormData.productDetails;
@@ -234,7 +219,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     alert("Battery records updated successfully!");
   };
 
-  const fetchBatteries = async () => {
+  const fetchBatteries = useCallback(async () => {
     setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
@@ -252,7 +237,19 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    fetchBatteries();
+
+    const handleDocumentClick = () => {
+      setActiveMenuId(null);
+    };
+    document.addEventListener("click", handleDocumentClick);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+    };
+  }, [fetchBatteries]);
 
   const handleOpenModal = () => {
     setFormError(null);
@@ -291,7 +288,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         name === "serviceWarrantyYears" ||
         name === "serviceWarrantyMonths"
       ) {
-        const { totalWarrantyLabel, expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
+        const { expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
           updated.warrantyStartDate,
           updated.fullWarrantyYears,
           updated.fullWarrantyMonths,
@@ -315,7 +312,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         name === "serviceWarrantyYears" ||
         name === "serviceWarrantyMonths"
       ) {
-        const { totalWarrantyLabel, expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
+        const { expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
           updated.warrantyStartDate,
           updated.fullWarrantyYears,
           updated.fullWarrantyMonths,
@@ -589,7 +586,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       setEditedRecords(cleanedEdits);
       localStorage.setItem("battery_inventory_edited_records", JSON.stringify(cleanedEdits));
     }
-  }, [batteries]);
+  }, [batteries, deletedIds, editedRecords]);
 
   // Merge backend batteries with local edited overrides and filter out deleted ones
   const activeBatteries = React.useMemo(() => {
@@ -617,7 +614,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     return result;
   }, [activeBatteries]);
 
-  const getCurrentWarrantyYear = (b) => {
+  const getCurrentWarrantyYear = useCallback((b) => {
     if (!b || !b.warrantyStartDate || !b.warrantyEndDate) return null;
     try {
       const start = new Date(b.warrantyStartDate);
@@ -649,7 +646,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       console.error("Error getting current warranty year:", e);
       return null;
     }
-  };
+  }, []);
 
   const maxWarrantyDuration = React.useMemo(() => {
     let max = 0;
@@ -739,7 +736,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     });
     console.log("[BATTERY PIPELINE] 5. filteredBatteries:", result.length, "| search:", searchQuery, "| warrantyFilter:", warrantyYearFilter, "| catFilter:", productCategoryFilter);
     return result;
-  }, [groupedBatteries, searchQuery, warrantyYearFilter, productCategoryFilter]);
+  }, [groupedBatteries, searchQuery, warrantyYearFilter, productCategoryFilter, getCurrentWarrantyYear]);
 
   // Sort the filtered batteries
   const sortedBatteries = React.useMemo(() => {

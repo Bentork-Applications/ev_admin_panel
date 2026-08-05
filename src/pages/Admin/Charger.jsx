@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from "framer-motion";
 import {
   PieChart,
@@ -15,7 +16,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-import plusIcon from "../../assets/icons/stafficon/plus.svg";
 import VectorIcon from "../../assets/icons/stafficon/Vector-3.svg";
 import editIcon from "../../assets/icons/stationicon/edit.svg";
 import deleteIcon from "../../assets/icons/stationicon/delete.svg";
@@ -70,7 +70,7 @@ const LoadingSpinner = () => (
   </div>
 );
 
-const Model = ({ children, onClose }) => (
+const Model = ({ children }) => (
   <div className="modal-overlay">
     <div className="modal-content">
       {children}
@@ -370,60 +370,6 @@ function Charger({ baseUrl, userRole }) {
     }
   };
 
-  const handleToggleAvailability = async (charger) => {
-    const currentAvailability =
-      charger.availability === true ||
-      String(charger.availability).toLowerCase() === "true" ||
-      charger.availability === 1 ||
-      charger.availability === "1" ||
-      charger.isAvailability === true ||
-      String(charger.isAvailability).toLowerCase() === "true" ||
-      charger.isAvailability === 1 ||
-      charger.isAvailability === "1";
-
-    const newAvailability = !currentAvailability;
-
-    // Optimistic UI Update
-    setChargerRecoards(prev =>
-      prev.map(c => c.id === charger.id ? { ...c, availability: newAvailability } : c)
-    );
-
-    try {
-      const token = localStorage.getItem("token");
-      const payload = {
-        stationId: charger.stationId,
-        ocppId: charger.ocppId,
-        connectorType: charger.connectorType,
-        chargerType: charger.chargerType,
-        chargeMode: charger.chargeMode,
-        rate: charger.rate !== "" ? parseFloat(charger.rate) : 0,
-        platformFeePerKwh: charger.platformFeePerKwh !== "" ? parseFloat(charger.platformFeePerKwh) : 0,
-        pstPercent: charger.pstPercent !== undefined && charger.pstPercent !== null ? parseFloat(charger.pstPercent) : 0,
-        isOccupied: charger.occupied === true || charger.occupied === "true" || charger.isOccupied === true || charger.isOccupied === "true",
-        availability: newAvailability
-      };
-
-      const res = await fetch(`${baseUrl}/chargers/update/${charger.id}`, {
-        method: "PUT",
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) throw new Error("Failed to update availability");
-      showToast("Charger availability updated!", "success");
-    } catch (error) {
-      console.error("Error updating charger status:", error);
-      showToast("Error updating charger. Rollback applied.", "error");
-      setChargerRecoards(prev =>
-        prev.map(c => c.id === charger.id ? { ...c, availability: !newAvailability } : c)
-      );
-      setRefreshKey(prev => prev + 1);
-    }
-  };
-
   const triggerRefresh = () => {
     setActionsLoading(prev => ({ ...prev, refresh: true }));
     showToast("Refreshing Charger Data...", "success");
@@ -557,7 +503,7 @@ function Charger({ baseUrl, userRole }) {
   const highlightText = (text, highlight) => {
     if (!text) return "N/A";
     if (!highlight) return text;
-    const parts = String(text).split(new RegExp(`(${highlight.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
+    const parts = String(text).split(new RegExp(`(${highlight.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
     return (
       <span>
         {parts.map((part, i) =>

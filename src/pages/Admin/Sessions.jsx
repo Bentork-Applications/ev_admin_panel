@@ -5,9 +5,6 @@ import totalIcon from "../../assets/icons/stationicon/Vector.svg";
 import activeIcon from "../../assets/icons/stationicon/green.svg";
 import uptimeIcon from "../../assets/icons/stationicon/yellow.svg";
 import errorIcon from "../../assets/icons/stationicon/red.svg";
-import sortIcon from "../../assets/icons/stationicon/upndown.svg";
-import editIcon from "../../assets/icons/stationicon/edit.svg";
-import deleteIcon from "../../assets/icons/stationicon/delete.svg";
 import SessionChart from "../../components/admin/SessionChart";
 
 // ── Skeleton Loader ────────────────────────────────────────────────────────────

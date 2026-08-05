@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { orderService } from "../services/orderService";
 
 export const useDashboardData = (fetchFn) => {
   const [orders, setOrders] = useState([]);

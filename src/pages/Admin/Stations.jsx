@@ -1,14 +1,13 @@
 import React, { useState, useEffect, lazy, Suspense, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from "framer-motion";
 
 import totalIcon from "../../assets/icons/stationicon/Vector.svg";
 import activeIcon from "../../assets/icons/stationicon/green.svg";
 import uptimeIcon from "../../assets/icons/stationicon/yellow.svg";
 import errorIcon from "../../assets/icons/stationicon/red.svg";
-import sortIcon from "../../assets/icons/stationicon/upndown.svg";
 import editIcon from "../../assets/icons/stationicon/edit.svg";
-import plusIcon from "../../assets/icons/stafficon/plus.svg";
 import deleteIcon from "../../assets/icons/stationicon/delete.svg";
 import StationOverviewChart from "../../components/admin/StationOverviewChart";
 
@@ -61,7 +60,7 @@ const LoadingSpinner = () => (
   </div>
 );
 
-const Modal = ({ children, onClose }) => (
+const Modal = ({ children }) => (
   <div className="modal-overlay">
     <div className="modal-content">
       {children}

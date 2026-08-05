@@ -24,7 +24,7 @@ import {
 import { getStatusBadgeConfig, getPriorityBadgeConfig } from "../../config/orderConfig";
 import { Package, Plus, AlertTriangle } from "lucide-react";
 
-export default function Orders({ baseUrl, userRole: propUserRole }) {
+export default function Orders({ userRole: propUserRole }) {
   // Memoize effective user role calculation
   const role = useMemo(() => {
     const token = localStorage.getItem("token");
@@ -338,7 +338,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
         try {
           const payloadToken = JSON.parse(atob(token.split('.')[1]));
           targetUserId = payloadToken.userId || payloadToken.id || payloadToken.subId || 1;
-        } catch (e) {
+        } catch {
           targetUserId = 1;
         }
       }
@@ -509,10 +509,10 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       let updated;
       try {
         updated = await orderService.salesUpdateOrder(selectedOrder.id, payload);
-      } catch (err1) {
+      } catch {
         try {
           updated = await orderService.scmUpdateDetails(selectedOrder.id, payload);
-        } catch (err2) {
+        } catch {
           updated = { ...selectedOrder, project: firstProject, orderItems: formattedItems };
         }
       }
@@ -1008,7 +1008,7 @@ export default function Orders({ baseUrl, userRole: propUserRole }) {
       }
 
       fetchOrders();
-    } catch (err) {
+    } catch {
       showToast("Failed to mark as delivered", "error");
     } finally {
       setSubmitting(false);

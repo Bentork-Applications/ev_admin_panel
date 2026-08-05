@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 import { useNavigate } from "react-router-dom";
 import {
   BarChart,
@@ -119,28 +121,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
 
-  useEffect(() => {
-    fetchClaims();
-  }, []);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, activeTab, rowsPerPage, statusFilter]);
-
-  const handleTabClick = (tab) => {
-    setActiveTab(tab);
-    setStatusFilter(null);
-  };
-
-  const handleCardClick = (filterType, tabType) => {
-    setStatusFilter(filterType);
-    setActiveTab(tabType);
-    if (tableRef.current) {
-      tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-
-  const fetchClaims = async (isBackground = false) => {
+  const fetchClaims = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     else setRefreshing(true);
     setError(null);
@@ -179,19 +160,42 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
         const battery = batteriesMap[claim.batteryDataId];
         return {
           ...claim,
-          barcode: battery ? battery.barcode : null,
-          warrantyStartDate: battery ? battery.warrantyStartDate : null,
-          warrantyEndDate: battery ? battery.warrantyEndDate : null,
+          batteryModel: battery ? (battery.batteryModel || battery.modelNumber) : claim.batteryModel,
+          batterySerialNumber: battery ? battery.serialNumber : claim.batterySerialNumber,
+          batteryChemistry: battery ? battery.batteryChemistry : claim.batteryChemistry,
+          voltage: battery ? battery.voltage : claim.voltage,
+          capacityAh: battery ? battery.capacityAh : claim.capacityAh,
         };
       });
 
       setClaims(mappedClaims);
     } catch (err) {
-      console.error("Error fetching claims:", err);
-      setError("Failed to load warranty claims. Please try again.");
+      console.error("Error fetching warranty claims:", err);
+      setError("Failed to load warranty claims. Please try refreshing.");
     } finally {
-      if (!isBackground) setLoading(false);
-      else setRefreshing(false);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [baseUrl, navigate]);
+
+  useEffect(() => {
+    fetchClaims();
+  }, [fetchClaims]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, activeTab, rowsPerPage, statusFilter]);
+
+  const handleTabClick = (tab) => {
+    setActiveTab(tab);
+    setStatusFilter(null);
+  };
+
+  const handleCardClick = (filterType, tabType) => {
+    setStatusFilter(filterType);
+    setActiveTab(tabType);
+    if (tableRef.current) {
+      tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
 
@@ -358,20 +362,19 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
   }, [claims, rejectedCount]);
 
   // 1. Claims per Month
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const trendData = useMemo(() => {
     const monthlyCounts = {};
     const now = new Date();
     // Pre-populate the last 6 months
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${months[d.getMonth()]} ${d.getFullYear().toString().substr(-2)}`;
+      const key = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear().toString().substr(-2)}`;
       monthlyCounts[key] = 0;
     }
     claims.forEach(c => {
       if (!c.createdAt) return;
       const d = new Date(c.createdAt);
-      const key = `${months[d.getMonth()]} ${d.getFullYear().toString().substr(-2)}`;
+      const key = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear().toString().substr(-2)}`;
       if (monthlyCounts[key] !== undefined) {
         monthlyCounts[key]++;
       }

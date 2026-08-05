@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -50,13 +50,13 @@ function LoginUsers({ baseUrl }) {
     return () => window.removeEventListener("click", handleGlobalClick);
   }, []);
 
-  const getUserStatus = (user) => {
+  const getUserStatus = useCallback((user) => {
     if (statusOverrides[user.id]) return statusOverrides[user.id];
     return user.status || "Active";
-  };
+  }, [statusOverrides]);
 
   // Fetch Data
-  const fetchUsers = async (isBackground = false) => {
+  const fetchUsers = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     const token = localStorage.getItem("token");
     if (!token) {
@@ -124,7 +124,7 @@ function LoginUsers({ baseUrl }) {
     } finally {
       if (!isBackground) setLoading(false);
     }
-  };
+  }, [baseUrl, navigate]);
 
   useEffect(() => {
     fetchUsers();
@@ -132,7 +132,7 @@ function LoginUsers({ baseUrl }) {
       fetchUsers(true);
     }, 30000); // 30 seconds polling
     return () => clearInterval(interval);
-  }, [navigate, baseUrl]);
+  }, [fetchUsers]);
 
   // Search Logic
   useEffect(() => {
@@ -163,7 +163,7 @@ function LoginUsers({ baseUrl }) {
     });
     setFilteredUsers(filtered);
     setCurrentPage(1);
-  }, [searchTerm, users, statusFilter, roleFilter, loginStatusFilter]);
+  }, [searchTerm, users, statusFilter, roleFilter, loginStatusFilter, getUserStatus]);
 
   // Pagination Logic
   const indexOfLastUser = currentPage * usersPerPage;

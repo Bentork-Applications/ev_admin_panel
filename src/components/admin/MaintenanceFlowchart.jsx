@@ -1,5 +1,6 @@
 import React from "react";
 
+// eslint-disable-next-line no-unused-vars
 const FlowCard = ({ title, status, icon: Icon, color = "#1a1a1a", isActive = false, step = null }) => {
   return (
     <div className={`flow-card ${isActive ? 'active' : ''}`} style={{ borderColor: isActive ? color : '#e5e7eb' }}>

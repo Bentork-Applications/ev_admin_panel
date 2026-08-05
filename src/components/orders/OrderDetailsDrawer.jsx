@@ -23,8 +23,6 @@ export const OrderDetailsDrawer = React.memo(({
   handleDispatchOrder,
   handleMarkAsDelivered,
   generateOrderPdfReport,
-  getStatusBadge,
-  getPriorityBadge,
   formatDate,
   openDrawerItemsEdit,
   isEditingDrawerProductDetails,
@@ -34,9 +32,8 @@ export const OrderDetailsDrawer = React.memo(({
   handleSaveDrawerProductDetails,
   editFormErrors
 }) => {
-  if (!showDrawer || !selectedOrder) return null;
-
   const productItemsList = useMemo(() => {
+    if (!selectedOrder) return [];
     if (Array.isArray(selectedOrder.orderItems) && selectedOrder.orderItems.length > 0) {
       return selectedOrder.orderItems;
     }
@@ -56,6 +53,8 @@ export const OrderDetailsDrawer = React.memo(({
       totalWarrantyLabel: selectedOrder.totalWarrantyLabel
     }];
   }, [selectedOrder]);
+
+  if (!showDrawer || !selectedOrder) return null;
 
   const getProductWarrantyInfo = (item) => {
     const startDate = item.warrantyStartDate || selectedOrder.warrantyStartDate || "";
@@ -538,7 +537,7 @@ export const OrderDetailsDrawer = React.memo(({
                     style={{ background: "#059669" }}
                     onClick={() => openWarrantyModal(selectedOrder)}
                   >
-                    Register Battery Warranty
+                    Register / Update Warranty
                   </button>
 
                   {selectedOrder.orderStatus === "dispatched" && (

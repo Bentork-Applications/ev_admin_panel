@@ -10,23 +10,23 @@ export const WarrantyRegistrationModal = React.memo(({
   setScmFormData,
   showToast
 }) => {
-  if (!showWarrantyModal || !warrantyModalData) return null;
-
-  const fullY = scmFormData.fullWarrantyYears ?? Math.floor((Number(scmFormData.fullWarrantyMonths) || 24) / 12);
-  const fullM = scmFormData.fullWarrantyMonths !== undefined && scmFormData.fullWarrantyYears !== undefined
+  const fullY = scmFormData?.fullWarrantyYears ?? Math.floor((Number(scmFormData?.fullWarrantyMonths) || 24) / 12);
+  const fullM = scmFormData?.fullWarrantyMonths !== undefined && scmFormData?.fullWarrantyYears !== undefined
     ? scmFormData.fullWarrantyMonths
-    : (Number(scmFormData.fullWarrantyMonths) || 24) % 12;
+    : (Number(scmFormData?.fullWarrantyMonths) || 24) % 12;
 
-  const servY = scmFormData.serviceWarrantyYears ?? Math.floor((Number(scmFormData.serviceWarrantyMonths) || 0) / 12);
-  const servM = scmFormData.serviceWarrantyMonths !== undefined && scmFormData.serviceWarrantyYears !== undefined
+  const servY = scmFormData?.serviceWarrantyYears ?? Math.floor((Number(scmFormData?.serviceWarrantyMonths) || 0) / 12);
+  const servM = scmFormData?.serviceWarrantyMonths !== undefined && scmFormData?.serviceWarrantyYears !== undefined
     ? scmFormData.serviceWarrantyMonths
-    : (Number(scmFormData.serviceWarrantyMonths) || 0) % 12;
+    : (Number(scmFormData?.serviceWarrantyMonths) || 0) % 12;
 
-  const startDate = scmFormData.warrantyStartDate || new Date().toISOString().split("T")[0];
+  const startDate = scmFormData?.warrantyStartDate || new Date().toISOString().split("T")[0];
 
   const { totalWarrantyLabel, expiryDateStr } = useMemo(() => {
     return calculateExpiryAndTotal(startDate, fullY, fullM, servY, servM);
   }, [startDate, fullY, fullM, servY, servM]);
+
+  if (!showWarrantyModal || !warrantyModalData) return null;
 
   const handleChange = (field, val) => {
     setScmFormData((prev) => {

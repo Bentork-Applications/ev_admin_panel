@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 export default function DealerProfile() {
-    const [user, setUser] = useState(JSON.parse(localStorage.getItem("user") || "{}"));
+    const [user] = useState(JSON.parse(localStorage.getItem("user") || "{}"));
 
     return (
         <div className="profile-container">

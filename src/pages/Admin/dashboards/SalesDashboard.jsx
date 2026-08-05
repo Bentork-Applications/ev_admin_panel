@@ -12,7 +12,7 @@ export default function SalesDashboard() {
   const fetchSalesData = useCallback(async () => {
     try {
       return await orderService.salesGetMyOrders();
-    } catch (err) {
+    } catch {
       return await orderService.adminGetAllOrders();
     }
   }, []);

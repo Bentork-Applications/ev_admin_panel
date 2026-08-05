@@ -1,7 +1,7 @@
 import React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-export const Pagination = ({ currentPage, totalPages, totalItems, itemsPerPage, onPageChange }) => {
+export const Pagination = React.memo(({ currentPage, totalPages, totalItems, itemsPerPage, onPageChange }) => {
   if (totalItems === 0 || totalPages <= 1) return null;
 
   const startItem = (currentPage - 1) * itemsPerPage + 1;
@@ -33,4 +33,4 @@ export const Pagination = ({ currentPage, totalPages, totalItems, itemsPerPage, 
       </div>
     </div>
   );
-};
+});

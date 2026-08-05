@@ -6,7 +6,6 @@ import totalIcon from "../../assets/icons/stationicon/Vector.svg";
 import activeIcon from "../../assets/icons/stationicon/green.svg";
 import inactiveIcon from "../../assets/icons/stationicon/red.svg";
 import recentIcon from "../../assets/icons/stationicon/yellow.svg";
-import editIcon from "../../assets/icons/stationicon/edit.svg";
 import deleteIcon from "../../assets/icons/stationicon/delete.svg";
 
 // ─── Utility ───────────────────────────────────────────────────────────────────
@@ -150,7 +149,6 @@ const StatusTimeline = ({ status }) => {
 
 // Application Detail Drawer
 const ApplicationDrawer = ({ app, onClose, onProcess, baseUrl }) => {
-  const [updateStatus, setUpdateStatus] = useState("");
   const [updating, setUpdating] = useState(false);
   const [updateMsg, setUpdateMsg] = useState(null);
 
@@ -192,8 +190,6 @@ const ApplicationDrawer = ({ app, onClose, onProcess, baseUrl }) => {
       setUpdating(false);
     }
   };
-
-  const conf = getStatusConf(app.status);
 
   return (
     <div style={{

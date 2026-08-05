@@ -12,7 +12,7 @@ export default function ScmDashboard() {
   const fetchScmData = useCallback(async () => {
     try {
       return await orderService.scmGetOrders();
-    } catch (err) {
+    } catch {
       return await orderService.adminGetAllOrders();
     }
   }, []);

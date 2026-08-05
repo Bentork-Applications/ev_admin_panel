@@ -1,5 +1,4 @@
 import React, { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import AddStaffForm from "../form/AddStaffForm";
 import StaffEditForm from "../form/staffedit";
 import { useStaffManagement } from "../../../hooks/useStaffManagement";
@@ -46,9 +45,7 @@ export default function RoleStaffManagement({
   roleStyle = { background: "#ECFDF5", color: "#065F46", border: "#A7F3D0" },
   baseUrl: propBaseUrl
 }) {
-  const navigate = useNavigate();
   const {
-    staffData,
     loading,
     error,
     metrics,

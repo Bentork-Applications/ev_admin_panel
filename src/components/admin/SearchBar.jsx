@@ -1,5 +1,4 @@
 import React from "react";
-import { useMargin } from "recharts";
 
 export default function SearchBar() {
   const styles = {

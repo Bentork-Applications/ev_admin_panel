@@ -1,6 +1,6 @@
 import React from "react";
 
-export const TableWrapper = ({ children, className = "" }) => {
+export const TableWrapper = React.memo(({ children, className = "" }) => {
   return (
     <div className={`table-container ${className}`}>
       <div className="responsive-table-wrapper">
@@ -8,4 +8,4 @@ export const TableWrapper = ({ children, className = "" }) => {
       </div>
     </div>
   );
-};
+});

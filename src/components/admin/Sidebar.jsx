@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import dashboardIcon from "../../assets/icons/dasboard.svg";
@@ -16,7 +16,6 @@ import logoutIcon from "../../assets/icons/log.svg";
 import LogoutModal from "../../components/admin/LogoutModal";
 import { warrantyService } from "../../services/warrantyService";
 import { orderService } from "../../services/orderService";
-import { supportService } from "../../services/supportService";
 import { apiClient } from "../../services/apiClient";
 
 export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
@@ -216,7 +215,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
 
   const [pendingCounts, setPendingCounts] = useState({});
 
-  const fetchPendingCounts = async () => {
+  const fetchPendingCounts = useCallback(async () => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
@@ -235,7 +234,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
 
     await Promise.all(promises);
     setPendingCounts(counts);
-  };
+  }, [baseUrl, currentRole, menuItems]);
 
   useEffect(() => {
     fetchPendingCounts();
@@ -252,7 +251,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
       window.removeEventListener("refresh-pending-counts", handleRefreshEvent);
       clearInterval(interval);
     };
-  }, [currentRole, baseUrl]);
+  }, [fetchPendingCounts]);
 
   // 🔹 Open logout modal or call parent
   const handleLogoutClick = () => {

@@ -6,7 +6,6 @@ import activeIcon from "../../assets/icons/stationicon/green.svg";
 import uptimeIcon from "../../assets/icons/stationicon/yellow.svg";
 import editIcon from "../../assets/icons/stationicon/edit.svg";
 import deleteIcon from "../../assets/icons/stationicon/red.svg";
-import plusIcon from "../../assets/icons/stafficon/plus.svg";
 
 // ── Shimmer Skeleton Loader ───────────────────────────────────────────────────
 const LoadingSpinner = () => (
@@ -154,7 +153,7 @@ export default function CafeConfig({ baseUrl }) {
       }
     };
     fetchData();
-  }, [baseUrl, navigate, refreshKey]);
+  }, [baseUrl, navigate, refreshKey, formData.stationId]);
 
   // ── All modal / form handlers preserved exactly ───────────────────────────
   const openAddModal = (type = "Cafe") => {

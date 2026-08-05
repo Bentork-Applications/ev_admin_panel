@@ -9,6 +9,7 @@ export const ORDER_STATUS_CONFIG = {
     text: "text-blue-700",
     border: "#BFDBFE",
     fg: "#1D4ED8",
+
     color: "#2563EB"
   },
   in_production: {

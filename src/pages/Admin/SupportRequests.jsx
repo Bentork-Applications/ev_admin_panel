@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 function AnimatedCounter({ value }) {
@@ -83,11 +83,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
   const [typeFilter, setTypeFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
 
-  useEffect(() => {
-    fetchRequests();
-  }, [isDealer]);
-
-  const filterByDate = (items) => {
+  const filterByDate = useCallback((items) => {
     if (dateFilter === "All") return items;
 
     const cutoffDate = new Date();
@@ -104,18 +100,9 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
       const d = new Date(r.createdAt);
       return !isNaN(d.getTime()) && d >= cutoffDate;
     });
-  };
+  }, [dateFilter]);
 
-  // Refetch and filter when data or filters change
-  useEffect(() => {
-    if (!isDealer) {
-      applyFilters();
-    } else {
-      setFilteredRequests(filterByDate(requests));
-    }
-  }, [requests, statusFilter, typeFilter, dateFilter, isDealer]);
-
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
@@ -144,9 +131,9 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [baseUrl, isDealer]);
 
-  const applyFilters = async () => {
+  const applyFilters = useCallback(async () => {
     setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
@@ -154,60 +141,54 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
     try {
       let data = [];
 
-      // Determine the API endpoint based on active filters
       if (statusFilter !== "All" && typeFilter === "All") {
-        // Backend status endpoint
         const response = await fetch(`${baseUrl}/support-requests/admin/status/${statusFilter}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (response.ok) data = await response.json();
         else throw new Error("Failed to filter by status");
       } else if (typeFilter !== "All" && statusFilter === "All") {
-        // Backend customer type endpoint
         const response = await fetch(`${baseUrl}/support-requests/admin/customer-type/${typeFilter}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (response.ok) data = await response.json();
         else throw new Error("Failed to filter by customer type");
       } else if (statusFilter !== "All" && typeFilter !== "All") {
-        // Combine status and customer type filter
-        // First fetch by status from backend, then filter locally by customer type
         const response = await fetch(`${baseUrl}/support-requests/admin/status/${statusFilter}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (response.ok) {
           const statusData = await response.json();
           data = statusData.filter(r => r.customerType === typeFilter);
-        } else {
-          throw new Error("Failed to combine filters");
-        }
+        } else throw new Error("Failed to filter by status and type");
       } else {
-        // Fetch all
         const response = await fetch(`${baseUrl}/support-requests/admin/all`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (response.ok) data = await response.json();
-        else throw new Error("Failed to load requests");
+        else throw new Error("Failed to load all requests");
       }
 
       setFilteredRequests(filterByDate(data));
     } catch (err) {
-      console.error("Filter error:", err);
-      setError("Failed to apply filters. Using local fallback.");
-
-      // Fallback local filtering in case endpoint fails or during offline test
-      let localFiltered = [...requests];
-      if (statusFilter !== "All") {
-        localFiltered = localFiltered.filter(r => r.status === statusFilter);
-      }
-      if (typeFilter !== "All") {
-        localFiltered = localFiltered.filter(r => r.customerType === typeFilter);
-      }
-      setFilteredRequests(filterByDate(localFiltered));
+      console.error("Error applying filters:", err);
+      setError("Failed to filter requests. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [baseUrl, statusFilter, typeFilter, filterByDate]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
+
+  useEffect(() => {
+    if (!isDealer) {
+      applyFilters();
+    } else {
+      setFilteredRequests(filterByDate(requests));
+    }
+  }, [requests, statusFilter, typeFilter, dateFilter, isDealer, applyFilters, filterByDate]);
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
@@ -356,7 +337,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
         minute: "2-digit",
         hour12: true
       });
-    } catch (e) {
+    } catch {
       return dateStr;
     }
   };

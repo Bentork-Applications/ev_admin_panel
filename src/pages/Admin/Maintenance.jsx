@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LineChart,
@@ -106,12 +106,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
   const isDealer = userRole === "DEALER" || localStorage.getItem("userRole") === "DEALER";
 
-  useEffect(() => {
-    fetchContacts();
-    fetchStations();
-  }, []);
-
-  const fetchStations = async () => {
+  const fetchStations = useCallback(async () => {
     const token = localStorage.getItem("token");
     try {
       const response = await fetch(`${baseUrl}/stations/all`, {
@@ -124,9 +119,9 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
     } catch (error) {
       console.error("Error fetching stations:", error);
     }
-  };
+  }, [baseUrl]);
 
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
@@ -148,7 +143,12 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
     } finally {
       setLoading(false);
     }
-  };
+  }, [baseUrl]);
+
+  useEffect(() => {
+    fetchContacts();
+    fetchStations();
+  }, [fetchContacts, fetchStations]);
 
   const handleOpenModal = (contact = null) => {
     setFormError(null);

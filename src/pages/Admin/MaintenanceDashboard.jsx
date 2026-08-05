@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer,
@@ -13,7 +13,6 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
   const [stations, setStations] = useState([]);
   const [activeSchedules, setActiveSchedules] = useState([]);
   const [history, setHistory] = useState([]);
-  const [stationChargerCount, setStationChargerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -36,23 +35,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
   const token = localStorage.getItem("token");
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    let intervalId;
-    if (autoRefresh) {
-      intervalId = setInterval(() => {
-        fetchData(true);
-      }, 15000);
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [autoRefresh]);
-
-  const fetchData = async (isSilent = false) => {
+  const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) {
       setLoading(true);
       setError(null);
@@ -113,17 +96,31 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
     } finally {
       if (!isSilent) setLoading(false);
     }
-  };
+  }, [baseUrl, token, stations]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    let intervalId;
+    if (autoRefresh) {
+      intervalId = setInterval(() => {
+        fetchData(true);
+      }, 15000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [autoRefresh, fetchData]);
 
   useEffect(() => {
     if (selectedStationId) {
       const stationChargers = allChargers.filter(c => c.stationId === parseInt(selectedStationId));
       setChargers(stationChargers);
-      setStationChargerCount(stationChargers.length);
     } else {
       setChargers([]);
       setSelectedChargerIds([]);
-      setStationChargerCount(0);
     }
   }, [selectedStationId, allChargers]);
 

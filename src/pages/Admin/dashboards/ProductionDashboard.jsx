@@ -13,7 +13,7 @@ export default function ProductionDashboard() {
     let data = [];
     try {
       data = await orderService.productionGetOrders();
-    } catch (prodErr) {
+    } catch {
       try {
         data = await orderService.adminGetAllOrders();
       } catch (adminErr) {

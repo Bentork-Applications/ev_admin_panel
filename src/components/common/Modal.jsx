@@ -1,7 +1,7 @@
 import React from "react";
 import { X } from "lucide-react";
 
-export const Modal = ({ isOpen, onClose, title, children, footer, maxWidth = "540px" }) => {
+export const Modal = React.memo(({ isOpen, onClose, title, children, footer, maxWidth = "540px" }) => {
   if (!isOpen) return null;
 
   return (
@@ -22,4 +22,4 @@ export const Modal = ({ isOpen, onClose, title, children, footer, maxWidth = "54
       </div>
     </div>
   );
-};
+});
