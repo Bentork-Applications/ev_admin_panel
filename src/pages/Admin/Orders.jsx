@@ -995,10 +995,28 @@ export default function Orders({ userRole: propUserRole }) {
       const barcodeStr = allBarcodes.length <= 1 ? startBc : `${startBc} - ${endBc}`;
       const todayStr = new Date().toISOString().split("T")[0];
 
+      const formattedItemsForScm = updatedItems.map((item) => {
+        const fullMonths = (Number(item.fullWarrantyYears) || 0) * 12 + (Number(item.fullWarrantyMonths) || 0);
+        const serviceMonths = (Number(item.serviceWarrantyYears) || 0) * 12 + (Number(item.serviceWarrantyMonths) || 0);
+        const itemQty = Math.max(1, Number(item.quantity) || 1);
+        let itemBarcodes = item.barcodes;
+        if (!Array.isArray(itemBarcodes) || itemBarcodes.length === 0) {
+          itemBarcodes = generateBarcodeSequence(item.startBarcode, itemQty);
+        }
+
+        return {
+          orderItemId: Number(item.id || item.orderItemId || 1),
+          barcodes: itemBarcodes,
+          serviceWarrantyMonths: serviceMonths,
+          fullWarrantyMonths: fullMonths
+        };
+      });
+
       const payload = {
         invoiceNumber: scmFormData.invoiceNumber.trim(),
         trackingId: scmFormData.trackingId.trim(),
         courierName: scmFormData.courierName?.trim() || "Standard",
+        items: formattedItemsForScm,
         serviceWarrantyMonths: Number(firstItem.serviceWarrantyMonthsTotal ?? firstItem.serviceWarrantyMonths ?? orderForScm?.serviceWarrantyMonths ?? 12),
         fullWarrantyMonths: Number(firstItem.fullWarrantyMonthsTotal ?? firstItem.fullWarrantyMonths ?? orderForScm?.fullWarrantyMonths ?? 24),
         orderItems: updatedItems,
