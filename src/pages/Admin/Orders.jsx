@@ -716,19 +716,18 @@ export default function Orders({ userRole: propUserRole }) {
   }, [orders, selectedOrder, showToast, fetchOrders]);
 
   const generateBarcodeSequence = (startStr, count) => {
-    if (!startStr) return Array(count).fill("");
-    const match = startStr.match(/^(.*?)(\d+)$/);
+    const qty = Math.max(1, Number(count) || 1);
+    const base = (startStr || "BAR001").trim();
+    const match = base.match(/^(.*?)(\d+)$/);
     if (!match) {
-      const list = [startStr];
-      while (list.length < count) list.push("");
-      return list;
+      return Array.from({ length: qty }, (_, i) => `${base}-${i + 1}`);
     }
     const prefix = match[1];
     const numStr = match[2];
     const numLen = numStr.length;
     const startNum = parseInt(numStr, 10);
     const result = [];
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < qty; i++) {
       const nextNum = String(startNum + i).padStart(numLen, "0");
       result.push(`${prefix}${nextNum}`);
     }
@@ -893,63 +892,27 @@ export default function Orders({ userRole: propUserRole }) {
       const itemQty = Math.max(1, Number(item.quantity) || 1);
       let startStr = item.startBarcode?.trim() || "";
       let endStr = item.endBarcode?.trim() || "";
-
-      if (itemQty === 1) {
-        if (!startStr) {
-          errors[`startBarcode_${idx}`] = "Barcode is required";
-        } else {
-          endStr = startStr;
-        }
-      } else {
-        if (!startStr) {
-          errors[`startBarcode_${idx}`] = "Start Barcode is required";
-        }
-        if (!endStr) {
-          errors[`endBarcode_${idx}`] = "End Barcode is required";
-        }
-      }
+      const startDate = item.warrantyStartDate || new Date().toISOString().split("T")[0];
 
       let itemBarcodes = [];
-      if (startStr && endStr) {
-        if (itemQty === 1) {
-          itemBarcodes = [startStr];
-        } else {
-          const matchStart = startStr.match(/^(.*?)(\d+)$/);
-          const matchEnd = endStr.match(/^(.*?)(\d+)$/);
-
-          if (matchStart && matchEnd) {
-            const prefixStart = matchStart[1];
-            const numStart = parseInt(matchStart[2], 10);
-            const prefixEnd = matchEnd[1];
-            const numEnd = parseInt(matchEnd[2], 10);
-
-            if (prefixStart !== prefixEnd) {
-              errors[`endBarcode_${idx}`] = `Prefix mismatch: '${prefixStart}' vs '${prefixEnd}'`;
-            } else if (numEnd < numStart) {
-              errors[`endBarcode_${idx}`] = "End Barcode must not be smaller than Start Barcode";
-            } else {
-              const rangeCount = numEnd - numStart + 1;
-              if (rangeCount !== itemQty) {
-                errors[`endBarcode_${idx}`] = `Range contains ${rangeCount} barcode(s), but product quantity requires ${itemQty}`;
-              } else {
-                itemBarcodes = generateBarcodeSequence(startStr, itemQty);
-              }
-            }
-          } else if (startStr > endStr) {
-            errors[`endBarcode_${idx}`] = "End Barcode must not be smaller than Start Barcode";
-          } else {
-            itemBarcodes = generateBarcodeSequence(startStr, itemQty);
-          }
+      if (itemQty === 1) {
+        if (!startStr) {
+          startStr = `BC-${orderForScm?.id || "0"}-${idx + 1}-1`;
         }
-      }
-
-      if (!item.warrantyStartDate) {
-        errors[`warrantyStartDate_${idx}`] = "Warranty Start Date is required";
+        endStr = startStr;
+        itemBarcodes = [startStr];
+      } else {
+        if (!startStr) {
+          startStr = `BC-${orderForScm?.id || "0"}-${idx + 1}-1`;
+        }
+        const generated = generateBarcodeSequence(startStr, itemQty);
+        itemBarcodes = generated;
+        endStr = itemBarcodes[itemBarcodes.length - 1] || startStr;
       }
 
       // Compute exact expiry date & total months per item matching Battery Inventory
       const { totalWarrantyLabel, expiryDateStr, fullWarrantyMonths, serviceWarrantyMonths } = calculateExpiryAndTotal(
-        item.warrantyStartDate,
+        startDate,
         item.fullWarrantyYears ?? "1",
         item.fullWarrantyMonths ?? "0",
         item.serviceWarrantyYears ?? "0",
@@ -961,9 +924,9 @@ export default function Orders({ userRole: propUserRole }) {
         quantity: itemQty,
         startBarcode: startStr,
         endBarcode: endStr,
-        barcodes: itemBarcodes.length > 0 ? itemBarcodes : [startStr],
+        barcodes: itemBarcodes,
         barcode: itemQty === 1 ? startStr : `${startStr} - ${endStr}`,
-        warrantyStartDate: item.warrantyStartDate,
+        warrantyStartDate: startDate,
         warrantyEndDate: expiryDateStr,
         fullWarrantyYears: Number(item.fullWarrantyYears ?? Math.floor(fullWarrantyMonths / 12)),
         fullWarrantyMonths: Number(item.fullWarrantyMonths ?? (fullWarrantyMonths % 12)),
@@ -995,28 +958,41 @@ export default function Orders({ userRole: propUserRole }) {
       const barcodeStr = allBarcodes.length <= 1 ? startBc : `${startBc} - ${endBc}`;
       const todayStr = new Date().toISOString().split("T")[0];
 
-      const formattedItemsForScm = updatedItems.map((item) => {
+      const formattedItemsForScm = [];
+      updatedItems.forEach((item, idx) => {
         const fullMonths = (Number(item.fullWarrantyYears) || 0) * 12 + (Number(item.fullWarrantyMonths) || 0);
         const serviceMonths = (Number(item.serviceWarrantyYears) || 0) * 12 + (Number(item.serviceWarrantyMonths) || 0);
         const itemQty = Math.max(1, Number(item.quantity) || 1);
+
         let itemBarcodes = item.barcodes;
-        if (!Array.isArray(itemBarcodes) || itemBarcodes.length === 0) {
-          itemBarcodes = generateBarcodeSequence(item.startBarcode, itemQty);
+        if (!Array.isArray(itemBarcodes) || itemBarcodes.length !== itemQty || itemBarcodes.some((b) => !b)) {
+          const startBc = item.startBarcode || `BAR-${orderForScm?.id || "0"}-${idx + 1}-1`;
+          itemBarcodes = generateBarcodeSequence(startBc, itemQty);
         }
 
-        return {
-          orderItemId: Number(item.id || item.orderItemId || 1),
-          barcodes: itemBarcodes,
-          serviceWarrantyMonths: serviceMonths,
-          fullWarrantyMonths: fullMonths
-        };
+        let rawItemId = item.orderItemId ?? item.id;
+        if (isNaN(Number(rawItemId)) || Number(rawItemId) <= 0) {
+          const apiMatch = Array.isArray(orderForScm?.orderItems) ? orderForScm.orderItems[idx] : null;
+          if (apiMatch && !isNaN(Number(apiMatch.id)) && Number(apiMatch.id) > 0) {
+            rawItemId = apiMatch.id;
+          }
+        }
+
+        const numericItemId = Number(rawItemId);
+        if (!isNaN(numericItemId) && numericItemId > 0) {
+          formattedItemsForScm.push({
+            orderItemId: numericItemId,
+            barcodes: itemBarcodes,
+            serviceWarrantyMonths: serviceMonths,
+            fullWarrantyMonths: fullMonths
+          });
+        }
       });
 
       const payload = {
         invoiceNumber: scmFormData.invoiceNumber.trim(),
         trackingId: scmFormData.trackingId.trim(),
         courierName: scmFormData.courierName?.trim() || "Standard",
-        items: formattedItemsForScm,
         serviceWarrantyMonths: Number(firstItem.serviceWarrantyMonthsTotal ?? firstItem.serviceWarrantyMonths ?? orderForScm?.serviceWarrantyMonths ?? 12),
         fullWarrantyMonths: Number(firstItem.fullWarrantyMonthsTotal ?? firstItem.fullWarrantyMonths ?? orderForScm?.fullWarrantyMonths ?? 24),
         orderItems: updatedItems,
@@ -1027,6 +1003,10 @@ export default function Orders({ userRole: propUserRole }) {
         warrantyStartDate: firstItem.warrantyStartDate || todayStr,
         warrantyEndDate: firstItem.warrantyEndDate || todayStr
       };
+
+      if (formattedItemsForScm.length > 0) {
+        payload.items = formattedItemsForScm;
+      }
 
       const updated = await orderService.scmUpdateDetails(orderForScm.id, payload);
 
