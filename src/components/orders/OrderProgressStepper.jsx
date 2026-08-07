@@ -1,14 +1,15 @@
 import React from "react";
 import { ShoppingBag, ShieldCheck, Box, Truck, MapPin, CheckCircle } from "lucide-react";
 
-export const OrderProgressStepper = React.memo(({ currentStatus, orderId }) => {
-  const status = (orderId ? localStorage.getItem(`order_status_${orderId}`) : null) || currentStatus;
+export const OrderProgressStepper = React.memo(({ currentStatus, orderId, selectedOrder }) => {
+  const status = selectedOrder?.orderStatus || selectedOrder?.productionStatus || currentStatus || (orderId ? localStorage.getItem(`order_status_${orderId}`) : null) || "sales_registered";
+  const id = selectedOrder?.id || orderId;
 
   const stages = [
     { key: "sales_registered", label: "Order Placed", desc: "Order details registered in sales", icon: ShoppingBag },
     { key: "in_production", label: "Confirmed", desc: "Production confirmed & active", icon: ShieldCheck },
     { key: "production_complete", label: "Packed", desc: "Manufacturing complete & packed", icon: Box },
-    { key: "scm_complete", label: "Shipped", desc: "SCM verified & ready for transport", icon: Truck },
+    { key: "scm_complete", label: "Shipped", desc: "SCM verified & barcode assigned", icon: Truck },
     { key: "dispatched", label: "Out For Delivery", desc: "In transit with courier partner", icon: MapPin },
     { key: "delivered", label: "Delivered ✅", desc: "Successfully delivered to customer", icon: CheckCircle },
   ];
@@ -27,12 +28,31 @@ export const OrderProgressStepper = React.memo(({ currentStatus, orderId }) => {
 
   const currentIndex = getStageIndex(status);
 
+  const getStageTimestamp = (key) => {
+    if (!selectedOrder) return null;
+    let dStr = null;
+    if (key === "sales_registered") dStr = selectedOrder.createdAt || selectedOrder.createdDate;
+    else if (key === "in_production") dStr = selectedOrder.productionStartedAt || (currentIndex >= 1 ? (selectedOrder.updatedAt || selectedOrder.createdAt) : null);
+    else if (key === "production_complete") dStr = selectedOrder.productionCompletedAt || (currentIndex >= 2 ? selectedOrder.updatedAt : null);
+    else if (key === "scm_complete") dStr = selectedOrder.scmCompletedAt || (currentIndex >= 3 ? selectedOrder.updatedAt : null);
+    else if (key === "dispatched") dStr = selectedOrder.dispatchedAt || (currentIndex >= 4 ? selectedOrder.updatedAt : null);
+    else if (key === "delivered") dStr = selectedOrder.deliveredAt || (id ? localStorage.getItem(`order_delivered_date_${id}`) : null) || (currentIndex >= 5 ? selectedOrder.updatedAt : null);
+
+    if (!dStr) return null;
+    try {
+      return new Date(dStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch {
+      return null;
+    }
+  };
+
   return (
     <div className="vertical-stepper">
       {stages.map((stage, idx) => {
         const isPassed = idx < currentIndex;
         const isActive = idx === currentIndex;
         const IconComponent = stage.icon;
+        const ts = getStageTimestamp(stage.key);
 
         let statusClass = "pending";
         if (isPassed) statusClass = "passed";
@@ -49,10 +69,13 @@ export const OrderProgressStepper = React.memo(({ currentStatus, orderId }) => {
               )}
             </div>
             <div className="vertical-step-right">
-              <div className="vertical-step-label">{stage.label}</div>
+              <div className="vertical-step-label">
+                {stage.label}
+                {ts && <span style={{ fontSize: "11px", fontWeight: 400, color: "#64748B", marginLeft: "8px" }}>({ts})</span>}
+              </div>
               <div className="vertical-step-desc">
-                {stage.key === "delivered" && status === "delivered"
-                  ? `Delivered on ${localStorage.getItem(`order_delivered_date_${orderId}`) ? new Date(localStorage.getItem(`order_delivered_date_${orderId}`)).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN')}`
+                {stage.key === "delivered" && status === "delivered" && ts
+                  ? `Delivered on ${ts}`
                   : stage.desc}
               </div>
             </div>

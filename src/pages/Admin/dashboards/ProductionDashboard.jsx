@@ -125,16 +125,16 @@ export default function ProductionDashboard() {
     <div style={{ padding: "16px 24px", maxWidth: "1400px", margin: "0 auto", boxSizing: "border-box" }}>
       {/* Header Banner */}
       <div className="production-banner" style={{
-          background: "linear-gradient(135deg, #78350F 0%, #D97706 100%)",
-          borderRadius: "16px",
-          padding: "24px 32px",
-          color: "#FFFFFF",
-          marginBottom: "28px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          boxShadow: "0 10px 25px -5px rgba(217, 119, 6, 0.3)"
-        }}>
+        background: "linear-gradient(135deg, #78350F 0%, #D97706 100%)",
+        borderRadius: "16px",
+        padding: "24px 32px",
+        color: "#FFFFFF",
+        marginBottom: "28px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        boxShadow: "0 10px 25px -5px rgba(217, 119, 6, 0.3)"
+      }}>
         <div>
           <span style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px", background: "rgba(255, 255, 255, 0.2)", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
             Production Module Dashboard

@@ -147,7 +147,7 @@ export default function Orders({ userRole: propUserRole }) {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
-  // Fetch Orders based on role
+  // Fetch Orders based on role & sync any unpersisted local orders to backend database
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -166,46 +166,96 @@ export default function Orders({ userRole: propUserRole }) {
         }
       }
 
-      // Merge API results with locally cached production orders so completed orders stay visible
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      const dataArray = Array.isArray(data) ? data : [];
+      let dataArray = Array.isArray(data) ? data : Array.isArray(data?.orders) ? data.orders : [];
 
-      const mergedMap = new Map();
-      localCache.forEach((o) => {
-        if (o && (o.id || o.orderNumber)) {
-          mergedMap.set(o.id || o.orderNumber, o);
+      if (isSalesAdmin) {
+        try {
+          const salesData = await orderService.salesGetMyOrders();
+          const salesArr = Array.isArray(salesData) ? salesData : Array.isArray(salesData?.orders) ? salesData.orders : [];
+          const map = new Map();
+          dataArray.forEach((o) => { if (o && (o.id || o.orderNumber)) map.set(o.id || o.orderNumber, o); });
+          salesArr.forEach((o) => { if (o && (o.id || o.orderNumber)) map.set(o.id || o.orderNumber, o); });
+          dataArray = Array.from(map.values());
+        } catch (sErr) {
+          console.warn("Error fetching salesGetMyOrders:", sErr);
         }
-      });
-      dataArray.forEach((o) => {
-        if (o && (o.id || o.orderNumber)) {
-          const key = o.id || o.orderNumber;
-          const existing = mergedMap.get(key) || {};
-          const localStatus = localStorage.getItem(`order_status_${o.id}`);
-
-          let mergedItems = o.orderItems;
-          if (Array.isArray(existing.orderItems) && existing.orderItems.length > 0) {
-            if (Array.isArray(o.orderItems) && o.orderItems.length > 0) {
-              mergedItems = o.orderItems.map((apiItem, idx) => ({
-                ...(existing.orderItems[idx] || {}),
-                ...apiItem
-              }));
-            } else {
-              mergedItems = existing.orderItems;
-            }
-          }
-
-          mergedMap.set(key, { ...existing, ...o, orderItems: mergedItems || o.orderItems, orderStatus: localStatus || o.orderStatus });
-        }
-      });
-
-      const mergedList = Array.from(mergedMap.values());
-      try {
-        localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
-      } catch (e) {
-        console.warn("Failed to update production_orders_cache:", e);
       }
 
-      setOrders(mergedList);
+      const backendKeys = new Set(
+        dataArray.map((o) => String(o.id || o.orderNumber || "")).filter(Boolean)
+      );
+
+      // Detect any unpersisted orders in local storage cache and sync them to backend database
+      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+      let syncedCount = 0;
+
+      if (Array.isArray(localCache) && localCache.length > 0) {
+        for (const localOrd of localCache) {
+          if (!localOrd) continue;
+          const key = String(localOrd.id || localOrd.orderNumber || "");
+          if (key && !backendKeys.has(key) && !localOrd.isSyncedToBackend) {
+            try {
+              let currentUserId = 1;
+              const token = localStorage.getItem("token");
+              if (token) {
+                try {
+                  const payloadToken = JSON.parse(atob(token.split('.')[1]));
+                  currentUserId = payloadToken.userId || payloadToken.id || payloadToken.subId || 1;
+                } catch { currentUserId = 1; }
+              }
+
+              // Attempt to persist local-only order to backend database via POST API
+              const payload = {
+                assignedUserId: Number(localOrd.assignedUserId || currentUserId),
+                customerName: (localOrd.customerName || "Customer").trim(),
+                customerEmail: (localOrd.customerEmail || "").trim(),
+                piNumber: (localOrd.piNumber || localOrd.orderNumber || `PI-${Date.now()}`).trim(),
+                project: localOrd.project || "EV Battery",
+                orderItems: Array.isArray(localOrd.orderItems) && localOrd.orderItems.length > 0
+                  ? localOrd.orderItems.map((item) => ({
+                    project: item.project || "EV Battery",
+                    productDetails: (item.productDetails || formatProductDetails(item)).trim(),
+                    quantity: Math.max(1, Number(item.quantity) || 1)
+                  }))
+                  : [
+                    {
+                      project: localOrd.project || "EV Battery",
+                      productDetails: (localOrd.productDetails || "EV Battery Unit").trim(),
+                      quantity: Math.max(1, Number(localOrd.quantity) || 1)
+                    }
+                  ],
+                mobileNumber: (localOrd.mobileNumber || "0000000000").trim(),
+                expectedDeliveryDate: localOrd.expectedDeliveryDate || new Date().toISOString().split("T")[0],
+                priority: localOrd.priority || "medium",
+                gstNumber: localOrd.gstNumber || null,
+                address: localOrd.address || null,
+                totalInvoiceAmount: Number(localOrd.totalInvoiceAmount || localOrd.totalAmount || localOrd.totalPrice) || 0,
+                receivedAmount: Number(localOrd.receivedAmount) || 0
+              };
+
+              const created = await orderService.salesCreateOrder(payload);
+              if (created && (created.id || created.orderNumber)) {
+                syncedCount++;
+                localOrd.isSyncedToBackend = true;
+              }
+            } catch (syncErr) {
+              console.warn("Could not sync local order to backend:", localOrd, syncErr);
+            }
+          }
+        }
+      }
+
+      // If any local orders were synced to backend, re-fetch complete list directly from backend
+      if (syncedCount > 0) {
+        try {
+          data = await orderService.adminGetAllOrders();
+          dataArray = Array.isArray(data) ? data : Array.isArray(data?.orders) ? data.orders : [];
+        } catch (reErr) {
+          console.warn("Failed to re-fetch after sync:", reErr);
+        }
+      }
+
+      setOrders(dataArray);
     } catch (err) {
       console.error("Failed to fetch orders:", err);
       setError(err.message || "Failed to load orders");
@@ -262,32 +312,24 @@ export default function Orders({ userRole: propUserRole }) {
           }
         }
 
-        const enriched = {
+        setSelectedOrder({
           ...cachedOrder,
           ...rawDetails,
           orderItems: mergedOrderItems || rawDetails.orderItems,
-          orderStatus: localStatus || rawDetails.orderStatus || cachedOrder.orderStatus,
-        };
-        setSelectedOrder(enriched);
-      } else {
-        setSelectedOrder(null);
+          orderStatus: localStatus || rawDetails.orderStatus
+        });
+        setShowDrawer(true);
       }
-      setShowDrawer(true);
     } catch (err) {
       const fallback = orders.find((o) => o.id === orderId);
       if (fallback) {
-        const localStatus = localStorage.getItem(`order_status_${orderId}`);
-        const enriched = {
-          ...fallback,
-          orderStatus: localStatus || fallback.orderStatus,
-        };
-        setSelectedOrder(enriched);
+        setSelectedOrder(fallback);
         setShowDrawer(true);
       } else {
-        showToast(err.message || "Failed to fetch order details", "error");
+        showToast("Failed to load order details", "error");
       }
     }
-  }, [orders, isSalesAdmin, isProductionAdmin, isScmAdmin, showToast]);
+  }, [isSalesAdmin, isProductionAdmin, isScmAdmin, orders, showToast]);
 
   // Validate Sales Form
   const validateSalesForm = (data) => {
@@ -361,8 +403,6 @@ export default function Orders({ userRole: propUserRole }) {
         );
         if (matched) {
           targetUserId = matched.id || matched.userId;
-        } else {
-          targetUserId = registeredUsers[0].id || registeredUsers[0].userId;
         }
       }
       if (!targetUserId && token) {
@@ -402,7 +442,7 @@ export default function Orders({ userRole: propUserRole }) {
       };
 
       const created = await orderService.salesCreateOrder(payload);
-      showToast(`Order ${created.orderNumber || ""} created successfully!`, "success");
+      showToast(`Order ${created?.orderNumber || created?.id || ""} created successfully!`, "success");
       setShowCreateModal(false);
       setSalesFormData({
         customerName: "",
@@ -418,7 +458,14 @@ export default function Orders({ userRole: propUserRole }) {
         address: "",
       });
       setCustomerSearchTerm("");
-      fetchOrders();
+
+      if (created && (created.id || created.orderNumber)) {
+        setOrders((prev) => {
+          const exists = prev.some((o) => (o.id && o.id === created.id) || (o.orderNumber && o.orderNumber === created.orderNumber));
+          return exists ? prev : [created, ...prev];
+        });
+      }
+      await fetchOrders();
     } catch (err) {
       showToast(err.message || "Failed to create order", "error");
     } finally {
