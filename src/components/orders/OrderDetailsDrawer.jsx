@@ -65,6 +65,17 @@ export const OrderDetailsDrawer = React.memo(({
     let servY = item.serviceWarrantyYears;
     let servM = item.serviceWarrantyMonths;
 
+    if (fullY === undefined && (item.fullWarrantyMonthsTotal !== undefined || item.fullWarrantyMonths !== undefined)) {
+      const fM = Number(item.fullWarrantyMonthsTotal ?? item.fullWarrantyMonths) || 0;
+      fullY = Math.floor(fM / 12);
+      fullM = fM % 12;
+    }
+    if (servY === undefined && (item.serviceWarrantyMonthsTotal !== undefined || item.serviceWarrantyMonths !== undefined)) {
+      const sM = Number(item.serviceWarrantyMonthsTotal ?? item.serviceWarrantyMonths) || 0;
+      servY = Math.floor(sM / 12);
+      servM = sM % 12;
+    }
+
     if (fullY === undefined && fullM === undefined && selectedOrder.fullWarrantyMonths !== undefined) {
       const fM = Number(selectedOrder.fullWarrantyMonths) || 0;
       fullY = Math.floor(fM / 12);
@@ -76,12 +87,17 @@ export const OrderDetailsDrawer = React.memo(({
       servM = sM % 12;
     }
 
+    fullY = fullY ?? 1;
+    fullM = fullM ?? 0;
+    servY = servY ?? 0;
+    servM = servM ?? 0;
+
     const { totalWarrantyLabel, expiryDateStr } = calculateExpiryAndTotal(
       startDate,
-      fullY ?? "1",
-      fullM ?? "0",
-      servY ?? "0",
-      servM ?? "0"
+      fullY,
+      fullM,
+      servY,
+      servM
     );
 
     const formatDuration = (years, months) => {
@@ -108,8 +124,8 @@ export const OrderDetailsDrawer = React.memo(({
       productName: item.productDetails || selectedOrder.productDetails || "EV Battery Unit",
       barcode: barcodeStr || "—",
       warrantyStartDate: startDate || "—",
-      fullWarranty: formatDuration(fullY ?? 1, fullM ?? 0),
-      serviceWarranty: formatDuration(servY ?? 0, servM ?? 0),
+      fullWarranty: formatDuration(fullY, fullM),
+      serviceWarranty: formatDuration(servY, servM),
       totalWarranty: item.totalWarrantyLabel || totalWarrantyLabel || "—",
       warrantyEndDate: endDate || expiryDateStr || "—"
     };

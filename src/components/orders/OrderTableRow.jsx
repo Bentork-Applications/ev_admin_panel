@@ -1,5 +1,5 @@
 import React from "react";
-import { Eye, Edit2, Truck, FileText } from "lucide-react";
+import { Eye, Edit2, Truck, FileText, CheckCircle } from "lucide-react";
 
 export const OrderTableRow = React.memo(({
   order,
@@ -13,6 +13,7 @@ export const OrderTableRow = React.memo(({
   onUpdateProductionStatus,
   onOpenScmModal,
   onDispatchOrder,
+  onMarkAsDelivered,
   onGeneratePdfReport,
   getStatusBadge,
   getPriorityBadge,

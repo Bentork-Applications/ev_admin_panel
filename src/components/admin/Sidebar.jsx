@@ -43,11 +43,11 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           authorities.push(payload.roles.toUpperCase());
         }
       }
-      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN") || authorities.includes("SALES")) {
         resolvedRole = "SALES_ADMIN";
-      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN") || authorities.includes("PRODUCTION")) {
         resolvedRole = "PRODUCTION_ADMIN";
-      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN") || authorities.includes("SCM") || authorities.includes("ROLE_SCM")) {
         resolvedRole = "SCM_ADMIN";
       } else if (authorities.includes("DEALER")) {
         resolvedRole = "DEALER";
@@ -111,7 +111,7 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
           name: "Order Tracking",
           icon: sessionsIcon,
           path: "/dashboard/orders",
-          roles: ["ADMIN", "ADMIN_STAFF", "SALES_ADMIN", "PRODUCTION_ADMIN", "SCM_ADMIN"],
+          roles: ["ADMIN", "ADMIN_STAFF", "SALES_ADMIN", "PRODUCTION_ADMIN", "SCM_ADMIN", "SCM"],
           getPendingCount: async () => {
             const role = localStorage.getItem("userRole") || "";
             return await orderService.getPendingCount(role);

@@ -132,11 +132,11 @@ export default function Dashboard({ onLogout }) {
           authorities.push(payload.roles.toUpperCase());
         }
       }
-      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN") || authorities.includes("SALES")) {
         resolvedRole = "SALES_ADMIN";
-      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN") || authorities.includes("PRODUCTION")) {
         resolvedRole = "PRODUCTION_ADMIN";
-      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN") || authorities.includes("SCM") || authorities.includes("ROLE_SCM")) {
         resolvedRole = "SCM_ADMIN";
       } else if (authorities.includes("DEALER")) {
         resolvedRole = "DEALER";
@@ -1392,7 +1392,7 @@ export default function Dashboard({ onLogout }) {
                 </>
               )}
 
-              {(userRole === "SALES_ADMIN" || userRole === "PRODUCTION_ADMIN" || userRole === "SCM_ADMIN") && (
+              {(userRole === "SALES_ADMIN" || userRole === "SALES" || userRole === "PRODUCTION_ADMIN" || userRole === "PRODUCTION" || userRole === "SCM_ADMIN" || userRole === "SCM") && (
                 <>
                   <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
                 </>

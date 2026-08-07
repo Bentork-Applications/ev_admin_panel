@@ -35,6 +35,91 @@ function AnimatedCounter({ value }) {
   return <>{count}</>;
 }
 
+// Helper to normalize image URL (Data URIs, Base64, HTTP URLs, or Relative paths)
+const normalizeImageUrl = (url, baseUrl) => {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
+    return trimmed;
+  }
+
+  if (/^[A-Za-z0-9+/=]{100,}$/.test(trimmed) && !trimmed.includes("http") && !trimmed.includes("/")) {
+    return `data:image/jpeg;base64,${trimmed}`;
+  }
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
+  const cleanBase = (baseUrl || "").replace(/\/api\/?$/, "");
+  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return `${cleanBase}${cleanPath}`;
+};
+
+// Helper to extract image URLs from support request objects across possible property names
+const getRequestImages = (request, baseUrl) => {
+  if (!request) return [];
+  const rawItems = [];
+
+  const arrayProps = [
+    "images", "imageUrls", "image_urls", "attachments", "attachmentUrls",
+    "attachment_urls", "photos", "files", "mediaUrls", "documents"
+  ];
+  for (const prop of arrayProps) {
+    if (request[prop]) {
+      if (Array.isArray(request[prop])) {
+        rawItems.push(...request[prop]);
+      } else if (typeof request[prop] === "string") {
+        try {
+          const parsed = JSON.parse(request[prop]);
+          if (Array.isArray(parsed)) {
+            rawItems.push(...parsed);
+            continue;
+          }
+        } catch {
+          if (request[prop].includes(",")) {
+            rawItems.push(...request[prop].split(","));
+            continue;
+          }
+        }
+        rawItems.push(request[prop]);
+      }
+    }
+  }
+
+  const singleProps = [
+    "imageUrl", "image_url", "image", "attachment", "attachmentUrl",
+    "attachment_url", "photo", "photoUrl", "photo_url", "photoBase64",
+    "file", "filePath", "file_path", "fileUrl", "file_url", "media",
+    "mediaUrl", "documentUrl"
+  ];
+  for (const prop of singleProps) {
+    if (request[prop]) {
+      rawItems.push(request[prop]);
+    }
+  }
+
+  const stringUrls = [];
+  rawItems.forEach(item => {
+    if (typeof item === "string") {
+      stringUrls.push(item);
+    } else if (item && typeof item === "object") {
+      const val = item.url || item.path || item.link || item.src || item.fileUrl || item.filePath;
+      if (val && typeof val === "string") {
+        stringUrls.push(val);
+      }
+    }
+  });
+
+  const normalized = stringUrls
+    .map(u => normalizeImageUrl(u, baseUrl))
+    .filter(Boolean);
+
+  return Array.from(new Set(normalized));
+};
+
 export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
   const navigate = useNavigate();
@@ -59,6 +144,60 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
 
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
+
+  // Lightbox modal state for full-size image preview
+  const [lightboxState, setLightboxState] = useState({
+    isOpen: false,
+    images: [],
+    currentIndex: 0
+  });
+
+  const openLightbox = (images, index = 0) => {
+    setLightboxState({
+      isOpen: true,
+      images,
+      currentIndex: index
+    });
+  };
+
+  const closeLightbox = useCallback(() => {
+    setLightboxState({
+      isOpen: false,
+      images: [],
+      currentIndex: 0
+    });
+  }, []);
+
+  const nextLightboxImage = useCallback(() => {
+    setLightboxState(prev => ({
+      ...prev,
+      currentIndex: (prev.currentIndex + 1) % prev.images.length
+    }));
+  }, []);
+
+  const prevLightboxImage = useCallback(() => {
+    setLightboxState(prev => ({
+      ...prev,
+      currentIndex: (prev.currentIndex - 1 + prev.images.length) % prev.images.length
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!lightboxState.isOpen) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        closeLightbox();
+      } else if (e.key === "ArrowRight") {
+        nextLightboxImage();
+      } else if (e.key === "ArrowLeft") {
+        prevLightboxImage();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxState.isOpen, lightboxState.images.length, closeLightbox, nextLightboxImage, prevLightboxImage]);
 
   // Toast notifications state
   const [toast, setToast] = useState({ message: "", type: "" });
@@ -393,6 +532,210 @@ const completedCount = requests.filter(r => r.status === "completed").length;
         @keyframes scaleUpModal {
           from { transform: scale(0.95); opacity: 0; }
           to { transform: scale(1); opacity: 1; }
+        }
+
+        /* Image Gallery & Lightbox Styles */
+        .image-gallery-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+          gap: 12px;
+          margin-top: 8px;
+        }
+
+        .gallery-thumb-card {
+          position: relative;
+          width: 100%;
+          height: 110px;
+          border-radius: 12px;
+          overflow: hidden;
+          border: 1px solid #E5E7EB;
+          background: #F3F4F6;
+          cursor: pointer;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .gallery-thumb-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+          border-color: #3B82F6;
+        }
+
+        .gallery-thumb-card img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          transition: transform 0.3s ease;
+        }
+
+        .gallery-thumb-card:hover img {
+          transform: scale(1.06);
+        }
+
+        .gallery-thumb-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(17, 24, 39, 0.6);
+          backdrop-filter: blur(2px);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          color: #ffffff;
+          opacity: 0;
+          transition: opacity 0.2s ease;
+        }
+
+        .gallery-thumb-card:hover .gallery-thumb-overlay {
+          opacity: 1;
+        }
+
+        .gallery-thumb-overlay span {
+          font-size: 10.5px;
+          font-weight: 500;
+          text-align: center;
+          padding: 0 4px;
+        }
+
+        .gallery-badge {
+          position: absolute;
+          bottom: 6px;
+          right: 6px;
+          background: rgba(0, 0, 0, 0.65);
+          color: #ffffff;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 7px;
+          border-radius: 9999px;
+          backdrop-filter: blur(4px);
+        }
+
+        .no-image-placeholder {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 24px 16px;
+          background: #F9FAFB;
+          border: 1.5px dashed #E5E7EB;
+          border-radius: 12px;
+          text-align: center;
+          margin-top: 6px;
+        }
+
+        /* Lightbox Preview Modal */
+        .lightbox-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.85);
+          backdrop-filter: blur(8px);
+          z-index: 10000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          animation: fadeInOverlay 0.2s ease forwards;
+        }
+
+        .lightbox-content-wrapper {
+          position: relative;
+          max-width: 90vw;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .lightbox-img-container {
+          max-width: 85vw;
+          max-height: 80vh;
+          overflow: hidden;
+          border-radius: 12px;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #000000;
+        }
+
+        .lightbox-image {
+          max-width: 85vw;
+          max-height: 80vh;
+          object-fit: contain;
+          display: block;
+          border-radius: 8px;
+        }
+
+        .lightbox-close-btn {
+          position: absolute;
+          top: -45px;
+          right: 0;
+          background: rgba(255, 255, 255, 0.2);
+          border: none;
+          color: #ffffff;
+          font-size: 28px;
+          width: 38px;
+          height: 38px;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+          line-height: 1;
+        }
+
+        .lightbox-close-btn:hover {
+          background: rgba(255, 255, 255, 0.4);
+          transform: scale(1.1);
+        }
+
+        .lightbox-nav-btn {
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          background: rgba(255, 255, 255, 0.2);
+          border: none;
+          color: #ffffff;
+          font-size: 36px;
+          width: 46px;
+          height: 46px;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+          line-height: 1;
+          user-select: none;
+        }
+
+        .lightbox-nav-btn:hover {
+          background: rgba(255, 255, 255, 0.4);
+          transform: translateY(-50%) scale(1.1);
+        }
+
+        .lightbox-prev-btn {
+          left: -60px;
+        }
+
+        .lightbox-next-btn {
+          right: -60px;
+        }
+
+        .lightbox-counter-badge {
+          position: absolute;
+          bottom: -40px;
+          background: rgba(0, 0, 0, 0.6);
+          color: #ffffff;
+          padding: 4px 14px;
+          border-radius: 9999px;
+          font-size: 13px;
+          font-weight: 500;
         }
 
         .support-page-wrapper {
@@ -1660,6 +2003,56 @@ const completedCount = requests.filter(r => r.status === "completed").length;
                 <div className="desc-box">{selectedRequest.issueDescription}</div>
               </div>
 
+              {/* Uploaded User Images Section */}
+              {(() => {
+                const reqImages = getRequestImages(selectedRequest, baseUrl);
+                return (
+                  <div style={{ marginTop: 12, marginBottom: 24 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span className="detail-item-label">
+                        Uploaded Images {reqImages.length > 0 ? `(${reqImages.length})` : ''}
+                      </span>
+                    </div>
+
+                    {reqImages.length > 0 ? (
+                      <div className="image-gallery-grid">
+                        {reqImages.map((imgSrc, idx) => (
+                          <div
+                            key={idx}
+                            className="gallery-thumb-card"
+                            onClick={() => openLightbox(reqImages, idx)}
+                          >
+                            <img src={imgSrc} alt={`Uploaded image ${idx + 1}`} />
+                            <div className="gallery-thumb-overlay">
+                              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="8" />
+                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                <line x1="11" y1="8" x2="11" y2="14" />
+                                <line x1="8" y1="11" x2="14" y2="11" />
+                              </svg>
+                              <span>Enlarge Image</span>
+                            </div>
+                            {reqImages.length > 1 && (
+                              <span className="gallery-badge">{idx + 1} / {reqImages.length}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="no-image-placeholder">
+                        <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="18" height="18" rx="4" ry="4" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 600, marginTop: 6 }}>No Image Available</span>
+                        <span style={{ fontSize: 11, color: "#9CA3AF" }}>No attachments uploaded for this support request</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Visual Status Tracker Stepper */}
               <div className="stepper-container">
                 <div className="stepper-header">Ticket Progress</div>
@@ -1771,6 +2164,45 @@ const completedCount = requests.filter(r => r.status === "completed").length;
           </div>
         )}
       </div>
+
+      {/* Lightbox / Image Preview Modal */}
+      {lightboxState.isOpen && (
+        <div className="lightbox-overlay" onClick={closeLightbox}>
+          <div className="lightbox-content-wrapper" onClick={(e) => e.stopPropagation()}>
+            <button className="lightbox-close-btn" onClick={closeLightbox} title="Close (Esc)">
+              ×
+            </button>
+            <div className="lightbox-img-container">
+              <img
+                src={lightboxState.images[lightboxState.currentIndex]}
+                alt={`Full size preview ${lightboxState.currentIndex + 1}`}
+                className="lightbox-image"
+              />
+            </div>
+            {lightboxState.images.length > 1 && (
+              <>
+                <button
+                  className="lightbox-nav-btn lightbox-prev-btn"
+                  onClick={prevLightboxImage}
+                  title="Previous image (Left Arrow)"
+                >
+                  ‹
+                </button>
+                <button
+                  className="lightbox-nav-btn lightbox-next-btn"
+                  onClick={nextLightboxImage}
+                  title="Next image (Right Arrow)"
+                >
+                  ›
+                </button>
+                <div className="lightbox-counter-badge">
+                  {lightboxState.currentIndex + 1} / {lightboxState.images.length}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toast.message && (

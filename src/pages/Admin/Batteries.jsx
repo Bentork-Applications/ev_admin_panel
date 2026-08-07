@@ -230,10 +230,60 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     try {
       const data = await batteryService.getAllBatteries();
       const normalized = Array.isArray(data) ? data : [];
-      setBatteries(normalized);
+
+      const scmBatteries = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");
+      const existingKeys = new Set(normalized.map(b => String(b.barcode || b.startBarcode || b.id)));
+
+      try {
+        const ordersCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+        ordersCache.forEach(ord => {
+          if (ord && Array.isArray(ord.orderItems)) {
+            ord.orderItems.forEach((it, idx) => {
+              if (it && (it.barcode || it.startBarcode)) {
+                const bc = String(it.barcode || it.startBarcode).trim();
+                scmBatteries.push({
+                  id: `order_scm_${ord.id}_${it.id || idx}`,
+                  customerName: ord.customerName || "Customer",
+                  productDetails: it.productDetails || ord.productDetails || "EV Battery Unit",
+                  invoiceNumber: ord.invoiceNumber || "",
+                  warrantyStartDate: it.warrantyStartDate || ord.warrantyStartDate,
+                  warrantyEndDate: it.warrantyEndDate || ord.warrantyEndDate,
+                  fullWarrantyYears: it.fullWarrantyYears,
+                  fullWarrantyMonths: it.fullWarrantyMonths,
+                  serviceWarrantyYears: it.serviceWarrantyYears,
+                  serviceWarrantyMonths: it.serviceWarrantyMonths,
+                  totalWarrantyLabel: it.totalWarrantyLabel,
+                  barcode: bc,
+                  startBarcode: it.startBarcode || bc,
+                  endBarcode: it.endBarcode || bc,
+                  barcodes: it.barcodes || [bc]
+                });
+              }
+            });
+          }
+        });
+      } catch (errCache) {
+        console.warn("Error parsing production_orders_cache for batteries:", errCache);
+      }
+
+      const additionalScmBatteries = [];
+      scmBatteries.forEach(scmb => {
+        const key = String(scmb.barcode || scmb.startBarcode || scmb.id);
+        if (key && !existingKeys.has(key)) {
+          additionalScmBatteries.push(scmb);
+          existingKeys.add(key);
+        }
+      });
+
+      setBatteries([...normalized, ...additionalScmBatteries]);
     } catch (err) {
       console.error("[BATTERY PIPELINE] ERROR in fetchBatteries:", err);
-      setError(err.message || "Failed to load batteries list");
+      const scmBatteries = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");
+      if (scmBatteries.length > 0) {
+        setBatteries(scmBatteries);
+      } else {
+        setError(err.message || "Failed to load batteries list");
+      }
     } finally {
       setLoading(false);
     }
@@ -329,7 +379,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   // --- Excel upload handler ---
   const handleExcelFileChange = async (e) => {
     const file = e.target.files && e.target.files[0];
-    // Reset the input so the same file can be re-selected if needed
     if (excelFileInputRef.current) excelFileInputRef.current.value = "";
 
     setExcelFileError(null);
@@ -369,13 +418,11 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`
-          // NOTE: Do NOT set Content-Type — browser sets it automatically with the multipart boundary
         },
         body: formData
       });
 
       const rawBody = await response.text();
-      console.log("[EXCEL UPLOAD] Status:", response.status, "| Body:", rawBody);
 
       let parsedData = null;
       try {
@@ -386,7 +433,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
       if (response.ok) {
         setExcelUploadResult({ success: true, data: parsedData || {} });
-        fetchBatteries(); // Refresh the battery list
+        fetchBatteries();
       } else {
         let errorMsg = "Upload failed. Please try again.";
         if (parsedData) {
@@ -397,7 +444,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         setExcelUploadResult({ success: false, error: errorMsg, data: parsedData || {} });
       }
     } catch (err) {
-      console.error("[EXCEL UPLOAD] Network/Server error:", err);
       setExcelUploadResult({
         success: false,
         error: err.message || "A network or server error occurred. Please check your connection and try again.",
@@ -420,7 +466,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
     const token = localStorage.getItem("token");
 
-    // Trim all text fields
     const customerName = (formData.customerName || "").trim();
     const invoiceNumber = (formData.invoiceNumber || "").trim();
     const warrantyStartDate = (formData.warrantyStartDate || "").trim();
@@ -439,7 +484,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       ? `${madeProductVal} - ${productDetailsRaw}`
       : productDetailsRaw;
 
-    // --- Frontend validation ---
     if (!customerName) {
       setFormError("Customer name is required.");
       setRegisterLoading(false);
@@ -466,7 +510,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       return;
     }
 
-    // --- Build payload matching backend BatteryDataDTO exactly ---
     const payload = {
       customerName,
       productDetails: combinedDetails,
@@ -476,17 +519,13 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     };
 
     if (registerMode === "single") {
-      // Backend expects 'barcode' for single registration
       payload.barcode = barcode;
-      // NOTE: do NOT send productSerialNumber — backend derives the unique key from barcode
     } else {
-      // Backend expects 'startBarcode' and 'endBarcode' for bulk/series registration
       payload.startBarcode = startBarcode;
       payload.endBarcode = endBarcode;
     }
 
     try {
-      console.log("[REGISTER] Sending payload:", JSON.stringify(payload, null, 2));
       const response = await fetch(`${baseUrl}/battery-data/admin/register`, {
         method: "POST",
         headers: {
@@ -496,70 +535,54 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         body: JSON.stringify(payload)
       });
 
-      // Read body ONCE as text — avoids "body stream already read" TypeError
       const rawBody = await response.text();
-      console.log("[REGISTER] Response status:", response.status, "| Raw body:", rawBody);
 
       if (response.ok) {
         alert("Battery data registered successfully!");
         setShowModal(false);
         fetchBatteries();
       } else {
-        // Try to parse JSON from the raw text; fall back to raw text itself
         let errorMsg = rawBody || "Registration failed";
         try {
           const errJson = JSON.parse(rawBody);
           errorMsg = errJson.message || errJson.error || errJson.detail || rawBody || "Registration failed";
         } catch {
-          // rawBody is already plain text — use it as-is
         }
-        console.error("[REGISTER] Backend error (HTTP", response.status, "):", errorMsg);
         throw new Error(errorMsg);
       }
     } catch (err) {
-      console.error("Registration error:", err);
       setFormError(err.message);
     } finally {
       setRegisterLoading(false);
     }
   };
 
-  // Timezone-safe and start-date-aware warranty active checker (IST)
   const checkWarrantyActive = (startDateStr, endDateStr) => {
-    if (!startDateStr || !endDateStr) return false;
+    if (!endDateStr) return false;
     try {
       const now = new Date();
       const istTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
       const todayIST = new Date(istTimeStr);
       todayIST.setHours(0, 0, 0, 0);
 
-      const start = new Date(startDateStr);
-      start.setHours(0, 0, 0, 0);
-
       const end = new Date(endDateStr);
       end.setHours(0, 0, 0, 0);
 
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
-      return todayIST >= start && todayIST <= end;
+      if (isNaN(end.getTime())) return false;
+      return todayIST <= end;
     } catch (e) {
       console.error("Error evaluating warranty status:", e);
       return false;
     }
   };
 
-  // Reset page number on filter changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, warrantyYearFilter, productCategoryFilter]);
 
-  // Synchronize deletedIds, deletedBarcodes, and editedRecords with the current API response.
-  // Removes any stale local state for IDs that no longer exist in the database.
   useEffect(() => {
-    console.log("[BATTERY PIPELINE] SYNC EFFECT: batteries.length=", batteries.length, "| deletedIds=", deletedIds, "| editedRecordKeys=", Object.keys(editedRecords));
-
     const liveIds = new Set(batteries.map(b => b.id));
 
-    // Prune deletedIds: keep only IDs that still exist in the live DB response
     if (deletedIds.length > 0) {
       const cleanedIds = deletedIds.filter(id => liveIds.has(id));
       const cleanedBarcodes = cleanedIds.map(id => {
@@ -568,7 +591,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       }).filter(Boolean);
 
       if (cleanedIds.length !== deletedIds.length) {
-        console.log("[BATTERY PIPELINE] SYNC: Pruning deletedIds from", deletedIds.length, "→", cleanedIds.length);
         setDeletedIds(cleanedIds);
         setDeletedBarcodes(cleanedBarcodes);
         localStorage.setItem("battery_inventory_deleted_ids", JSON.stringify(cleanedIds));
@@ -576,11 +598,9 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       }
     }
 
-    // Prune editedRecords: remove overrides for IDs that no longer exist in the DB
     const editedKeys = Object.keys(editedRecords).map(Number);
     const staleEditKeys = editedKeys.filter(id => !liveIds.has(id));
     if (staleEditKeys.length > 0) {
-      console.log("[BATTERY PIPELINE] SYNC: Pruning editedRecords keys:", staleEditKeys);
       const cleanedEdits = { ...editedRecords };
       staleEditKeys.forEach(id => delete cleanedEdits[id]);
       setEditedRecords(cleanedEdits);
@@ -588,26 +608,81 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     }
   }, [batteries, deletedIds, editedRecords]);
 
-  // Merge backend batteries with local edited overrides and filter out deleted ones
   const activeBatteries = React.useMemo(() => {
+    const scmWarrantyMap = new Map();
+
+    try {
+      const scmSyncList = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");
+      scmSyncList.forEach(item => {
+        if (item) {
+          if (item.barcode) scmWarrantyMap.set(String(item.barcode).trim(), item);
+          if (item.startBarcode) scmWarrantyMap.set(String(item.startBarcode).trim(), item);
+        }
+      });
+
+      const ordersCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+      ordersCache.forEach(ord => {
+        if (ord && Array.isArray(ord.orderItems)) {
+          ord.orderItems.forEach(it => {
+            if (it) {
+              const itemRecord = {
+                productDetails: it.productDetails || ord.productDetails,
+                customerName: ord.customerName,
+                invoiceNumber: ord.invoiceNumber,
+                warrantyStartDate: it.warrantyStartDate || ord.warrantyStartDate,
+                warrantyEndDate: it.warrantyEndDate || ord.warrantyEndDate,
+                fullWarrantyYears: it.fullWarrantyYears,
+                fullWarrantyMonths: it.fullWarrantyMonths,
+                serviceWarrantyYears: it.serviceWarrantyYears,
+                serviceWarrantyMonths: it.serviceWarrantyMonths,
+                totalWarrantyLabel: it.totalWarrantyLabel,
+                barcode: it.barcode || it.startBarcode,
+                startBarcode: it.startBarcode,
+                endBarcode: it.endBarcode,
+                barcodes: it.barcodes
+              };
+              if (it.barcode) scmWarrantyMap.set(String(it.barcode).trim(), itemRecord);
+              if (it.startBarcode) scmWarrantyMap.set(String(it.startBarcode).trim(), itemRecord);
+              if (Array.isArray(it.barcodes)) {
+                it.barcodes.forEach(bc => scmWarrantyMap.set(String(bc).trim(), itemRecord));
+              }
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.warn("Failed to parse SCM warranty sync map:", e);
+    }
+
     const result = batteries
       .filter(b => b && !deletedIds.includes(b.id))
       .map(b => {
         const edited = editedRecords[b.id] || {};
-        const finalStart = edited.warrantyStartDate || b.warrantyStartDate;
-        const finalEnd = edited.warrantyEndDate || b.warrantyEndDate;
+        const bBarcode = String(b.barcode || b.startBarcode || "").trim();
+        const scmOverride = scmWarrantyMap.get(bBarcode) || {};
+
+        const finalProductDetails = edited.productDetails || scmOverride.productDetails || b.productDetails;
+        const finalStart = edited.warrantyStartDate || scmOverride.warrantyStartDate || b.warrantyStartDate;
+        const finalEnd = edited.warrantyEndDate || scmOverride.warrantyEndDate || b.warrantyEndDate;
         const active = checkWarrantyActive(finalStart, finalEnd);
+
         return {
           ...b,
+          productDetails: finalProductDetails,
+          warrantyStartDate: finalStart,
+          warrantyEndDate: finalEnd,
+          fullWarrantyYears: scmOverride.fullWarrantyYears ?? b.fullWarrantyYears,
+          fullWarrantyMonths: scmOverride.fullWarrantyMonths ?? b.fullWarrantyMonths,
+          serviceWarrantyYears: scmOverride.serviceWarrantyYears ?? b.serviceWarrantyYears,
+          serviceWarrantyMonths: scmOverride.serviceWarrantyMonths ?? b.serviceWarrantyMonths,
+          totalWarrantyLabel: scmOverride.totalWarrantyLabel ?? b.totalWarrantyLabel,
           ...edited,
           warrantyActive: active
         };
       });
-    console.log("[BATTERY PIPELINE] 3. activeBatteries:", result.length, "| deletedIds filtering:", deletedIds, "| batteries.length:", batteries.length);
     return result;
   }, [batteries, deletedIds, editedRecords]);
 
-  // Group batteries into series
   const groupedBatteries = React.useMemo(() => {
     const result = groupBatteries(activeBatteries);
     console.log("[BATTERY PIPELINE] 4. groupedBatteries:", result.length);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { orderService } from "../../services/orderService";
+import { batteryService } from "../../services/batteryService";
 import { apiClient } from "../../services/apiClient";
 import { generateOrderPdfReport } from "../../services/pdfReportService";
 import { OrderHeader } from "../../components/orders/OrderHeader";
@@ -47,11 +48,11 @@ export default function Orders({ userRole: propUserRole }) {
             authorities.push(payload.roles.toUpperCase());
           }
         }
-        if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
+        if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN") || authorities.includes("SALES")) {
           resolvedRole = "SALES_ADMIN";
-        } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
+        } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN") || authorities.includes("PRODUCTION")) {
           resolvedRole = "PRODUCTION_ADMIN";
-        } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
+        } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN") || authorities.includes("SCM") || authorities.includes("ROLE_SCM")) {
           resolvedRole = "SCM_ADMIN";
         } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
           resolvedRole = "ADMIN";
@@ -180,7 +181,20 @@ export default function Orders({ userRole: propUserRole }) {
           const key = o.id || o.orderNumber;
           const existing = mergedMap.get(key) || {};
           const localStatus = localStorage.getItem(`order_status_${o.id}`);
-          mergedMap.set(key, { ...existing, ...o, orderStatus: localStatus || o.orderStatus });
+
+          let mergedItems = o.orderItems;
+          if (Array.isArray(existing.orderItems) && existing.orderItems.length > 0) {
+            if (Array.isArray(o.orderItems) && o.orderItems.length > 0) {
+              mergedItems = o.orderItems.map((apiItem, idx) => ({
+                ...(existing.orderItems[idx] || {}),
+                ...apiItem
+              }));
+            } else {
+              mergedItems = existing.orderItems;
+            }
+          }
+
+          mergedMap.set(key, { ...existing, ...o, orderItems: mergedItems || o.orderItems, orderStatus: localStatus || o.orderStatus });
         }
       });
 
@@ -232,10 +246,27 @@ export default function Orders({ userRole: propUserRole }) {
       }
       const rawDetails = details || orders.find((o) => o.id === orderId);
       if (rawDetails) {
+        const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+        const cachedOrder = localCache.find((c) => c && (c.id === orderId || c.orderNumber === rawDetails.orderNumber)) || {};
         const localStatus = localStorage.getItem(`order_status_${orderId}`);
+
+        let mergedOrderItems = rawDetails.orderItems;
+        if (Array.isArray(cachedOrder.orderItems) && cachedOrder.orderItems.length > 0) {
+          if (Array.isArray(rawDetails.orderItems) && rawDetails.orderItems.length > 0) {
+            mergedOrderItems = rawDetails.orderItems.map((apiItem, idx) => ({
+              ...(cachedOrder.orderItems[idx] || {}),
+              ...apiItem
+            }));
+          } else {
+            mergedOrderItems = cachedOrder.orderItems;
+          }
+        }
+
         const enriched = {
+          ...cachedOrder,
           ...rawDetails,
-          orderStatus: localStatus || rawDetails.orderStatus,
+          orderItems: mergedOrderItems || rawDetails.orderItems,
+          orderStatus: localStatus || rawDetails.orderStatus || cachedOrder.orderStatus,
         };
         setSelectedOrder(enriched);
       } else {
@@ -671,7 +702,34 @@ export default function Orders({ userRole: propUserRole }) {
       const startDate = it.warrantyStartDate || order.warrantyStartDate || todayStr;
       let fullY = "1", fullM = "0", servY = "0", servM = "0";
 
-      if (it.warrantyStartDate && it.warrantyEndDate) {
+      // 1. Check explicit item-level full & service warranty fields FIRST
+      if (
+        it.fullWarrantyYears !== undefined ||
+        it.fullWarrantyMonths !== undefined ||
+        it.serviceWarrantyYears !== undefined ||
+        it.serviceWarrantyMonths !== undefined
+      ) {
+        const fM = Number(it.fullWarrantyMonthsTotal ?? it.fullWarrantyMonths) || 0;
+        const fY = it.fullWarrantyYears !== undefined ? Number(it.fullWarrantyYears) : Math.floor(fM / 12);
+        fullY = fY.toString();
+        fullM = (fM % 12).toString();
+
+        const sM = Number(it.serviceWarrantyMonthsTotal ?? it.serviceWarrantyMonths) || 0;
+        const sY = it.serviceWarrantyYears !== undefined ? Number(it.serviceWarrantyYears) : Math.floor(sM / 12);
+        servY = sY.toString();
+        servM = (sM % 12).toString();
+      }
+      // 2. Check order-level explicit full & service warranty fields NEXT
+      else if (order.fullWarrantyMonths !== undefined || order.serviceWarrantyMonths !== undefined) {
+        const fM = Number(order.fullWarrantyMonths) || 24;
+        const sM = Number(order.serviceWarrantyMonths) || 0;
+        fullY = Math.floor(fM / 12).toString();
+        fullM = (fM % 12).toString();
+        servY = Math.floor(sM / 12).toString();
+        servM = (sM % 12).toString();
+      }
+      // 3. Fallback to parseWarrantyPeriod ONLY if dates exist without explicit warranty breakdown
+      else if (it.warrantyStartDate && it.warrantyEndDate) {
         const parsed = parseWarrantyPeriod(it.warrantyStartDate, it.warrantyEndDate);
         fullY = parsed.years.toString();
         fullM = parsed.months.toString();
@@ -679,13 +737,6 @@ export default function Orders({ userRole: propUserRole }) {
         const parsed = parseWarrantyPeriod(order.warrantyStartDate, order.warrantyEndDate);
         fullY = parsed.years.toString();
         fullM = parsed.months.toString();
-      } else if (it.fullWarrantyMonths !== undefined || order.fullWarrantyMonths !== undefined) {
-        const fM = Number(it.fullWarrantyMonths ?? order.fullWarrantyMonths) || 12;
-        const sM = Number(it.serviceWarrantyMonths ?? order.serviceWarrantyMonths) || 0;
-        fullY = Math.floor(fM / 12).toString();
-        fullM = (fM % 12).toString();
-        servY = Math.floor(sM / 12).toString();
-        servM = (sM % 12).toString();
       }
 
       const { totalWarrantyLabel, expiryDateStr } = calculateExpiryAndTotal(startDate, fullY, fullM, servY, servM);
@@ -696,8 +747,8 @@ export default function Orders({ userRole: propUserRole }) {
         fullWarrantyMonths: fullM,
         serviceWarrantyYears: servY,
         serviceWarrantyMonths: servM,
-        warrantyEndDate: expiryDateStr,
-        totalWarrantyLabel
+        warrantyEndDate: it.warrantyEndDate || expiryDateStr,
+        totalWarrantyLabel: it.totalWarrantyLabel || totalWarrantyLabel
       };
     };
 
@@ -867,8 +918,12 @@ export default function Orders({ userRole: propUserRole }) {
         barcode: itemQty === 1 ? startStr : `${startStr} - ${endStr}`,
         warrantyStartDate: item.warrantyStartDate,
         warrantyEndDate: expiryDateStr,
-        fullWarrantyMonths,
-        serviceWarrantyMonths,
+        fullWarrantyYears: Number(item.fullWarrantyYears ?? Math.floor(fullWarrantyMonths / 12)),
+        fullWarrantyMonths: Number(item.fullWarrantyMonths ?? (fullWarrantyMonths % 12)),
+        fullWarrantyMonthsTotal: fullWarrantyMonths,
+        serviceWarrantyYears: Number(item.serviceWarrantyYears ?? Math.floor(serviceWarrantyMonths / 12)),
+        serviceWarrantyMonths: Number(item.serviceWarrantyMonths ?? (serviceWarrantyMonths % 12)),
+        serviceWarrantyMonthsTotal: serviceWarrantyMonths,
         totalWarrantyLabel
       };
       if (item.orderItemId && !isNaN(Number(item.orderItemId))) {
@@ -897,8 +952,8 @@ export default function Orders({ userRole: propUserRole }) {
         invoiceNumber: scmFormData.invoiceNumber.trim(),
         trackingId: scmFormData.trackingId.trim(),
         courierName: scmFormData.courierName?.trim() || "Standard",
-        serviceWarrantyMonths: Number(firstItem.serviceWarrantyMonths ?? orderForScm?.serviceWarrantyMonths ?? 12),
-        fullWarrantyMonths: Number(firstItem.fullWarrantyMonths ?? orderForScm?.fullWarrantyMonths ?? 24),
+        serviceWarrantyMonths: Number(firstItem.serviceWarrantyMonthsTotal ?? firstItem.serviceWarrantyMonths ?? orderForScm?.serviceWarrantyMonths ?? 12),
+        fullWarrantyMonths: Number(firstItem.fullWarrantyMonthsTotal ?? firstItem.fullWarrantyMonths ?? orderForScm?.fullWarrantyMonths ?? 24),
         orderItems: updatedItems,
         startBarcode: startBc,
         endBarcode: endBc,
@@ -909,6 +964,61 @@ export default function Orders({ userRole: propUserRole }) {
       };
 
       const updated = await orderService.scmUpdateDetails(orderForScm.id, payload);
+
+      // Synchronize each product line item's warranty details into Battery Inventory
+      try {
+        const scmBatteriesToSync = [];
+        for (const item of updatedItems) {
+          const batteryRecord = {
+            id: `scm_${orderForScm.id}_${item.id || item.startBarcode || Math.random().toString(36).substring(2, 8)}`,
+            customerName: orderForScm.customerName || "Customer",
+            productDetails: item.productDetails || orderForScm.productDetails || "EV Battery Unit",
+            invoiceNumber: scmFormData.invoiceNumber.trim(),
+            warrantyStartDate: item.warrantyStartDate || todayStr,
+            warrantyEndDate: item.warrantyEndDate || todayStr,
+            fullWarrantyYears: String(item.fullWarrantyYears ?? 1),
+            fullWarrantyMonths: String(item.fullWarrantyMonths ?? 0),
+            serviceWarrantyYears: String(item.serviceWarrantyYears ?? 0),
+            serviceWarrantyMonths: String(item.serviceWarrantyMonths ?? 0),
+            totalWarrantyLabel: item.totalWarrantyLabel || "1 Year",
+            barcode: item.barcode || item.startBarcode,
+            startBarcode: item.startBarcode,
+            endBarcode: item.endBarcode,
+            barcodes: item.barcodes || [item.startBarcode],
+            createdAt: new Date().toISOString()
+          };
+          scmBatteriesToSync.push(batteryRecord);
+
+          try {
+            const apiBatteryPayload = {
+              customerName: orderForScm.customerName || "Customer",
+              productDetails: item.productDetails || orderForScm.productDetails || "EV Battery Unit",
+              invoiceNumber: scmFormData.invoiceNumber.trim(),
+              warrantyStartDate: item.warrantyStartDate || null,
+              warrantyEndDate: item.warrantyEndDate || null
+            };
+            if (item.quantity === 1) {
+              apiBatteryPayload.barcode = item.startBarcode;
+            } else {
+              apiBatteryPayload.startBarcode = item.startBarcode;
+              apiBatteryPayload.endBarcode = item.endBarcode;
+            }
+            await batteryService.registerBattery(apiBatteryPayload);
+          } catch (regErr) {
+            console.warn("Battery API sync note:", regErr);
+          }
+        }
+
+        const existingScmSync = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");
+        const scmMap = new Map();
+        existingScmSync.forEach(b => { if (b && (b.barcode || b.startBarcode || b.id)) scmMap.set(b.barcode || b.startBarcode || b.id, b); });
+        scmBatteriesToSync.forEach(b => { scmMap.set(b.barcode || b.startBarcode || b.id, b); });
+
+        localStorage.setItem("battery_inventory_scm_sync", JSON.stringify(Array.from(scmMap.values())));
+      } catch (syncErr) {
+        console.warn("Battery inventory sync error:", syncErr);
+      }
+
       showToast(`SCM details saved and marked as SCM Complete for ${orderForScm.orderNumber}`, "success");
       setShowScmModal(false);
 
@@ -919,7 +1029,8 @@ export default function Orders({ userRole: propUserRole }) {
         id: orderForScm.id,
         orderStatus: "scm_complete",
         scmCompletedAt: new Date().toISOString(),
-        ...payload
+        ...payload,
+        orderItems: updatedItems
       };
 
       const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
@@ -1181,6 +1292,7 @@ export default function Orders({ userRole: propUserRole }) {
                   onUpdateProductionStatus={handleUpdateProductionStatus}
                   onOpenScmModal={openScmModal}
                   onDispatchOrder={handleDispatchOrder}
+                  onMarkAsDelivered={handleMarkAsDelivered}
                   onGeneratePdfReport={generateOrderPdfReport}
                   getStatusBadge={getStatusBadgeConfig}
                   getPriorityBadge={getPriorityBadgeConfig}
