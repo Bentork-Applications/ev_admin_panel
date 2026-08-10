@@ -26,6 +26,8 @@ import {
 import { getStatusBadgeConfig, getPriorityBadgeConfig } from "../../config/orderConfig";
 import { Package, Plus, AlertTriangle } from "lucide-react";
 
+let globalSalesOrderLock = false;
+
 export default function Orders({ userRole: propUserRole }) {
   // Memoize effective user role calculation safely
   const role = useMemo(() => {
@@ -434,7 +436,7 @@ export default function Orders({ userRole: propUserRole }) {
 
   const handleCreateSalesOrder = useCallback(async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (submitting || isCreatingRef.current) return;
+    if (submitting || isCreatingRef.current || globalSalesOrderLock) return;
 
     const errors = validateSalesForm(salesFormData);
     if (Object.keys(errors).length > 0) {
@@ -449,6 +451,7 @@ export default function Orders({ userRole: propUserRole }) {
       return;
     }
 
+    globalSalesOrderLock = true;
     isCreatingRef.current = true;
     submittedPiNumbersRef.current.add(trimmedPi);
     setSalesFormErrors({});
@@ -569,6 +572,7 @@ export default function Orders({ userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
       isCreatingRef.current = false;
+      globalSalesOrderLock = false;
     }
   }, [salesFormData, registeredUsers, submitting, showToast, fetchOrders, recordOrderActivity]);
 

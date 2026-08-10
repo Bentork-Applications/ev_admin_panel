@@ -123,14 +123,15 @@ export default function Dashboard({ onLogout }) {
       localStorage.setItem("userRole", resolvedRole);
     }
   }
-  if (!resolvedRole) resolvedRole = "ADMIN";
 
-  const rawRole = resolvedRole.toUpperCase();
-  const userRole = (rawRole === "ADMINISTRATOR" || rawRole === "ADMIN") ? "ADMIN" : rawRole;
-  const isDealer = userRole === "DEALER";
-  const baseUrl = import.meta.env.VITE_API_URL;
-
-  const isAdminStaff = userRole === "ADMIN_STAFF";
+  const rawRole = (resolvedRole || "").toUpperCase();
+  const isSalesAdmin = rawRole.includes("SALES");
+  const isProductionAdmin = rawRole.includes("PRODUCTION");
+  const isScmAdmin = rawRole.includes("SCM");
+  const isDealer = rawRole.includes("DEALER");
+  const isAdminStaff = rawRole.includes("STAFF");
+  const userRole = isSalesAdmin ? "SALES_ADMIN" : isProductionAdmin ? "PRODUCTION_ADMIN" : isScmAdmin ? "SCM_ADMIN" : isDealer ? "DEALER" : isAdminStaff ? "ADMIN_STAFF" : "ADMIN";
+  const isSuperAdmin = userRole === "ADMIN" && !isSalesAdmin && !isProductionAdmin && !isScmAdmin;
   let allowedPages = [];
   if (isAdminStaff && token) {
     try {

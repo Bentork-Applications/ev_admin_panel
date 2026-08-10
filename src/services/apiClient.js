@@ -33,8 +33,8 @@ const getAuthHeaders = (customHeaders = {}) => {
     "Content-Type": "application/json",
     ...customHeaders
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  if (token && token !== "null" && token !== "undefined" && token.trim() !== "") {
+    headers["Authorization"] = `Bearer ${token.trim()}`;
   }
   return headers;
 };
