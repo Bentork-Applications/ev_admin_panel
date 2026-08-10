@@ -378,6 +378,13 @@ export default function Orders({ userRole: propUserRole }) {
     if (!data.customerName?.trim()) errors.customerName = "Customer name is required";
     if (!data.piNumber?.trim()) errors.piNumber = "P.I. Number is required";
 
+    if (data.customerEmail?.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(data.customerEmail.trim())) {
+        errors.customerEmail = "Please enter a valid email address";
+      }
+    }
+
     if (!data.orderItems || !Array.isArray(data.orderItems) || data.orderItems.length === 0) {
       errors.orderItems = "At least one product line item is required";
     } else {
@@ -423,6 +430,7 @@ export default function Orders({ userRole: propUserRole }) {
   };
 
   const isCreatingRef = useRef(false);
+  const submittedPiNumbersRef = useRef(new Set());
 
   const handleCreateSalesOrder = useCallback(async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -434,7 +442,15 @@ export default function Orders({ userRole: propUserRole }) {
       return;
     }
 
+    const trimmedPi = salesFormData.piNumber.trim().toUpperCase();
+    if (submittedPiNumbersRef.current.has(trimmedPi)) {
+      showToast(`An order for P.I. Number "${salesFormData.piNumber}" is already being processed or created.`, "warning");
+      setShowCreateModal(false);
+      return;
+    }
+
     isCreatingRef.current = true;
+    submittedPiNumbersRef.current.add(trimmedPi);
     setSalesFormErrors({});
     setSubmitting(true);
 
@@ -450,6 +466,8 @@ export default function Orders({ userRole: propUserRole }) {
         );
         if (matched) {
           targetUserId = matched.id || matched.userId;
+        } else if (registeredUsers[0]) {
+          targetUserId = registeredUsers[0].id || registeredUsers[0].userId || 1;
         }
       }
       if (!targetUserId && token) {
@@ -465,10 +483,12 @@ export default function Orders({ userRole: propUserRole }) {
 
       const deliveryDate = salesFormData.expectedDeliveryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
+      const cleanEmail = salesFormData.customerEmail?.trim();
+
       const payload = {
         assignedUserId: Number(targetUserId) > 0 ? Number(targetUserId) : 1,
         customerName: salesFormData.customerName.trim(),
-        customerEmail: salesFormData.customerEmail?.trim() || "",
+        customerEmail: cleanEmail ? cleanEmail : null,
         piNumber: salesFormData.piNumber.trim(),
         project: firstProject,
         orderItems: salesFormData.orderItems.map((item) => {
@@ -532,6 +552,20 @@ export default function Orders({ userRole: propUserRole }) {
       await fetchOrders();
     } catch (err) {
       showToast(err.message || "Failed to create order", "error");
+      setShowCreateModal(false);
+      setSalesFormData({
+        customerName: "",
+        customerEmail: "",
+        mobileNumber: "",
+        piNumber: "",
+        orderItems: [createDefaultOrderItem()],
+        expectedDeliveryDate: "",
+        totalInvoiceAmount: "",
+        receivedAmount: "",
+        priority: "medium",
+        gstNumber: "",
+        address: "",
+      });
     } finally {
       setSubmitting(false);
       isCreatingRef.current = false;

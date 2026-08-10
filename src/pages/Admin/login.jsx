@@ -47,8 +47,8 @@ export default function AdminLogin() {
       const role = extractRoleFromToken(data.token) || "ADMIN";
       localStorage.setItem("userRole", role);
 
-      // Check if the user is suspended/deactivated
-      if (email) {
+      // Check if the user is suspended/deactivated (SUPER ADMIN ONLY)
+      if (email && role === "ADMIN") {
         try {
           const adminsList = await staffService.getAllStaff();
           if (Array.isArray(adminsList)) {

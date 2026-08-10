@@ -319,7 +319,7 @@ export default function Dashboard({ onLogout }) {
         console.error("Failed to decode token for email:", decodeErr);
       }
 
-      if (email) {
+      if (email && isSuperAdmin) {
         try {
           const adminsList = await staffService.getAllStaff();
           if (Array.isArray(adminsList)) {
