@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../services/authService";
 import { staffService } from "../../services/staffService";
+import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -37,45 +38,14 @@ export default function AdminLogin() {
     try {
       const data = await authService.login(formData);
 
-      // Decode JWT to extract role and email
+      // Decode JWT safely to extract role and email in production
       let email = "";
-      try {
-        const payload = JSON.parse(atob(data.token.split('.')[1]));
-        email = payload.sub;
-        const authorities = [];
-        if (Array.isArray(payload.authorities)) {
-          authorities.push(...payload.authorities.map(a => String(a).toUpperCase()));
-        } else if (typeof payload.authorities === "string") {
-          authorities.push(payload.authorities.toUpperCase());
-        }
-        if (payload.role) authorities.push(String(payload.role).toUpperCase());
-        if (payload.roles) {
-          if (Array.isArray(payload.roles)) {
-            authorities.push(...payload.roles.map(r => String(r).toUpperCase()));
-          } else if (typeof payload.roles === "string") {
-            authorities.push(payload.roles.toUpperCase());
-          }
-        }
-
-        let role = "ADMIN";
-        if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN")) {
-          role = "SALES_ADMIN";
-        } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN")) {
-          role = "PRODUCTION_ADMIN";
-        } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN")) {
-          role = "SCM_ADMIN";
-        } else if (authorities.includes("DEALER")) {
-          role = "DEALER";
-        } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
-          role = "ADMIN_STAFF";
-        } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
-          role = "ADMIN";
-        }
-        localStorage.setItem("userRole", role);
-      } catch (decodeErr) {
-        console.error("Failed to decode token for role:", decodeErr);
-        localStorage.setItem("userRole", "ADMIN"); // Default fallback
+      const payload = safeDecodeJwt(data.token);
+      if (payload) {
+        email = payload.sub || payload.email || "";
       }
+      const role = extractRoleFromToken(data.token) || "ADMIN";
+      localStorage.setItem("userRole", role);
 
       // Check if the user is suspended/deactivated
       if (email) {

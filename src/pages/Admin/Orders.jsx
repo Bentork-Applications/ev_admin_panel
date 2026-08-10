@@ -14,6 +14,7 @@ import { ScmDetailsModal } from "../../components/orders/ScmDetailsModal";
 import { WarrantyRegistrationModal } from "../../components/orders/WarrantyRegistrationModal";
 import { Toast } from "../../components/common/Toast";
 import { Pagination } from "../../components/common/Pagination";
+import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
 import {
   formatDate,
   parseProductDetails,
@@ -38,34 +39,8 @@ export default function Orders({ userRole: propUserRole }) {
     else if (rawRole.includes("ADMIN")) resolvedRole = "ADMIN";
 
     if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        const authorities = [];
-        if (Array.isArray(payload.authorities)) {
-          authorities.push(...payload.authorities.map((a) => String(a).toUpperCase()));
-        } else if (typeof payload.authorities === "string") {
-          authorities.push(payload.authorities.toUpperCase());
-        }
-        if (payload.role) authorities.push(String(payload.role).toUpperCase());
-        if (payload.roles) {
-          if (Array.isArray(payload.roles)) {
-            authorities.push(...payload.roles.map((r) => String(r).toUpperCase()));
-          } else if (typeof payload.roles === "string") {
-            authorities.push(payload.roles.toUpperCase());
-          }
-        }
-        if (payload.sub && String(payload.sub).toLowerCase().includes("sales")) {
-          authorities.push("SALES_ADMIN");
-        }
-
-        const authStr = authorities.join(",");
-        if (authStr.includes("SALES")) resolvedRole = "SALES_ADMIN";
-        else if (authStr.includes("PRODUCTION")) resolvedRole = "PRODUCTION_ADMIN";
-        else if (authStr.includes("SCM")) resolvedRole = "SCM_ADMIN";
-        else if (authStr.includes("ADMIN")) resolvedRole = "ADMIN";
-      } catch (e) {
-        console.error("Token decode error in Orders:", e);
-      }
+      const roleFromToken = extractRoleFromToken(token);
+      if (roleFromToken) resolvedRole = roleFromToken;
     }
 
     if (!resolvedRole) resolvedRole = "SALES_ADMIN";
@@ -214,21 +189,36 @@ export default function Orders({ userRole: propUserRole }) {
         if (!res) return;
         const arr = Array.isArray(res) ? res : Array.isArray(res?.orders) ? res.orders : [];
         arr.forEach((o) => {
-          if (o && (o.id || o.orderNumber)) {
-            const key = String(o.id || o.orderNumber);
-            fetchedMap.set(key, { ...(fetchedMap.get(key) || {}), ...o });
+          if (o && (o.id || o.orderNumber || o.piNumber)) {
+            let existingKey = null;
+            for (const [k, existingObj] of fetchedMap.entries()) {
+              if (
+                (o.id && String(existingObj.id) === String(o.id)) ||
+                (o.orderNumber && String(existingObj.orderNumber) === String(o.orderNumber)) ||
+                (o.piNumber && String(existingObj.piNumber) === String(o.piNumber))
+              ) {
+                existingKey = k;
+                break;
+              }
+            }
+
+            const primaryKey = existingKey || String(o.id || o.orderNumber || o.piNumber);
+            const existing = fetchedMap.get(primaryKey) || {};
+            fetchedMap.set(primaryKey, { ...existing, ...o });
           }
         });
       });
 
       const dataArray = Array.from(fetchedMap.values());
 
-      // Apply overrides from localStorage (local status, timestamps, and activity history)
+      // Apply overrides from localStorage (local status, timestamps, activity history, and Created By)
       const mergedList = dataArray.map((ord) => {
         const id = ord.id || ord.orderNumber;
         const localStatus = localStorage.getItem(`order_status_${id}`);
         const localDelivered = localStorage.getItem(`order_delivered_date_${id}`);
         const localHistory = JSON.parse(localStorage.getItem(`order_history_${id}`) || "[]");
+        const localCreatedBy = localStorage.getItem(`order_created_by_${id}`);
+        const createdBy = ord.createdByAdminEmail || ord.createdBy || ord.createdByName || ord.salesAdminEmail || ord.assignedUserEmail || localCreatedBy || "N/A";
 
         let statusHistory = ord.statusHistory || [];
         if (Array.isArray(localHistory) && localHistory.length > 0) {
@@ -308,6 +298,8 @@ export default function Orders({ userRole: propUserRole }) {
 
         return {
           ...ord,
+          createdBy,
+          createdByAdminEmail: createdBy !== "N/A" ? createdBy : ord.createdByAdminEmail,
           orderStatus: localStatus || ord.orderStatus || "sales_registered",
           deliveredAt: localDelivered || ord.deliveredAt,
           statusHistory
@@ -461,11 +453,9 @@ export default function Orders({ userRole: propUserRole }) {
         }
       }
       if (!targetUserId && token) {
-        try {
-          const payloadToken = JSON.parse(atob(token.split('.')[1]));
+        const payloadToken = safeDecodeJwt(token);
+        if (payloadToken) {
           targetUserId = payloadToken.userId || payloadToken.id || payloadToken.subId || 1;
-        } catch {
-          targetUserId = 1;
         }
       }
       if (!targetUserId) targetUserId = 1;
@@ -501,13 +491,23 @@ export default function Orders({ userRole: propUserRole }) {
       const created = await orderService.salesCreateOrder(payload);
       const createdOrderId = created?.id || created?.orderNumber;
 
+      let creatorEmail = localStorage.getItem("userEmail") || localStorage.getItem("adminEmail") || "";
+      if (token) {
+        const payloadToken = safeDecodeJwt(token);
+        if (payloadToken) {
+          creatorEmail = payloadToken.sub || payloadToken.email || creatorEmail;
+        }
+      }
+      if (!creatorEmail) creatorEmail = "Sales Admin";
+
       if (createdOrderId) {
+        localStorage.setItem(`order_created_by_${createdOrderId}`, creatorEmail);
         recordOrderActivity(createdOrderId, {
           title: "Sales Order Created",
-          description: `Sales Order #${created?.orderNumber || createdOrderId} registered for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
+          description: `Sales Order #${created?.orderNumber || createdOrderId} registered by ${creatorEmail} for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
           status: "sales_registered",
           stage: "Sales Registered",
-          updatedBy: localStorage.getItem("userRole") || "Sales Admin"
+          updatedBy: creatorEmail
         });
       }
 
@@ -1199,7 +1199,7 @@ export default function Orders({ userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  }, [selectedOrder, showToast, fetchOrders]);
+  }, [selectedOrder, showToast, fetchOrders, recordOrderActivity]);
 
   const handleMarkAsDelivered = useCallback(async (orderId) => {
     setSubmitting(true);
@@ -1232,7 +1232,8 @@ export default function Orders({ userRole: propUserRole }) {
       if (selectedOrder && selectedOrder.id === orderId) {
         const updatedOrderDetail = {
           ...selectedOrder,
-          orderStatus: "delivered"
+          orderStatus: "delivered",
+          statusHistory: updatedHistory
         };
         setSelectedOrder(updatedOrderDetail);
       }
@@ -1243,7 +1244,7 @@ export default function Orders({ userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  }, [orders, selectedOrder, showToast, fetchOrders]);
+  }, [orders, selectedOrder, showToast, fetchOrders, recordOrderActivity, generateOrderPdfReport]);
 
   // Memoized Filter & Sort
   const filteredOrders = useMemo(() => {

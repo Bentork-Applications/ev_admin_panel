@@ -17,50 +17,25 @@ import LogoutModal from "../../components/admin/LogoutModal";
 import { warrantyService } from "../../services/warrantyService";
 import { orderService } from "../../services/orderService";
 import { apiClient } from "../../services/apiClient";
+import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
 
-export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
+export default function Sidebar({ onLogout, isMobileOpen, setIsMobileOpen, userRole, baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
 
-  let resolvedRole = userRole || localStorage.getItem("userRole") || "ADMIN";
   const token = localStorage.getItem("token");
+  let resolvedRole = userRole || localStorage.getItem("userRole") || "";
+
   if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const authorities = [];
-      if (Array.isArray(payload.authorities)) {
-        authorities.push(...payload.authorities.map(a => String(a).toUpperCase()));
-      } else if (typeof payload.authorities === "string") {
-        authorities.push(payload.authorities.toUpperCase());
-      }
-      if (payload.role) authorities.push(String(payload.role).toUpperCase());
-      if (payload.roles) {
-        if (Array.isArray(payload.roles)) {
-          authorities.push(...payload.roles.map(r => String(r).toUpperCase()));
-        } else if (typeof payload.roles === "string") {
-          authorities.push(payload.roles.toUpperCase());
-        }
-      }
-      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN") || authorities.includes("SALES")) {
-        resolvedRole = "SALES_ADMIN";
-      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN") || authorities.includes("PRODUCTION")) {
-        resolvedRole = "PRODUCTION_ADMIN";
-      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN") || authorities.includes("SCM") || authorities.includes("ROLE_SCM")) {
-        resolvedRole = "SCM_ADMIN";
-      } else if (authorities.includes("DEALER")) {
-        resolvedRole = "DEALER";
-      } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
-        resolvedRole = "ADMIN_STAFF";
-      } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
-        resolvedRole = "ADMIN";
-      }
+    const roleFromToken = extractRoleFromToken(token);
+    if (roleFromToken) {
+      resolvedRole = roleFromToken;
       localStorage.setItem("userRole", resolvedRole);
-    } catch (e) {
-      console.error("Sidebar token decode failed:", e);
     }
   }
+  if (!resolvedRole) resolvedRole = "ADMIN";
 
   const rawRole = resolvedRole.toUpperCase();
   const currentRole = (rawRole === "ADMINISTRATOR" || rawRole === "ADMIN") ? "ADMIN" : rawRole;
@@ -68,8 +43,8 @@ export default function Sidebar({ onLogout, userRole, baseUrl: propBaseUrl }) {
   let allowedPages = [];
   if (currentRole === "ADMIN_STAFF" && token) {
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const email = payload.sub;
+      const payload = safeDecodeJwt(token);
+      const email = payload?.sub;
       const stored = localStorage.getItem("staff_page_access_" + email);
       if (stored) {
         allowedPages = JSON.parse(stored);

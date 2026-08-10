@@ -13,7 +13,18 @@ export class ApiError extends Error {
 }
 
 const getBaseUrl = () => {
-  return import.meta.env.VITE_API_URL || "";
+  const envUrl = import.meta.env.VITE_API_URL || "";
+  return envUrl.replace(/\/+$/, "");
+};
+
+const formatUrl = (endpoint) => {
+  const baseUrl = getBaseUrl();
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+
+  if (baseUrl.endsWith("/api") && cleanEndpoint.startsWith("/api/")) {
+    return `${baseUrl}${cleanEndpoint.substring(4)}`;
+  }
+  return `${baseUrl}${cleanEndpoint}`;
 };
 
 const getAuthHeaders = (customHeaders = {}) => {
@@ -69,7 +80,7 @@ const parseResponse = async (response) => {
 export const apiClient = {
   get: async (endpoint, customHeaders = {}) => {
     try {
-      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+      const response = await fetch(formatUrl(endpoint), {
         method: "GET",
         headers: getAuthHeaders(customHeaders)
       });
@@ -82,7 +93,7 @@ export const apiClient = {
 
   post: async (endpoint, body = {}, customHeaders = {}) => {
     try {
-      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+      const response = await fetch(formatUrl(endpoint), {
         method: "POST",
         headers: getAuthHeaders(customHeaders),
         body: JSON.stringify(body)
@@ -96,7 +107,7 @@ export const apiClient = {
 
   put: async (endpoint, body = {}, customHeaders = {}) => {
     try {
-      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+      const response = await fetch(formatUrl(endpoint), {
         method: "PUT",
         headers: getAuthHeaders(customHeaders),
         body: JSON.stringify(body)
@@ -110,7 +121,7 @@ export const apiClient = {
 
   delete: async (endpoint, customHeaders = {}) => {
     try {
-      const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+      const response = await fetch(formatUrl(endpoint), {
         method: "DELETE",
         headers: getAuthHeaders(customHeaders)
       });

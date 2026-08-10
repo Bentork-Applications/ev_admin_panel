@@ -8,6 +8,7 @@ import { authService } from "../../services/authService";
 import Topbar from "../../components/admin/topbar";
 import Sidebar from "../../components/admin/Sidebar";
 import OverviewChart from "../../components/admin/OverviewChart";
+import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
 import LogoutModal from "../../components/admin/LogoutModal";
 import VectorIcon from "../../assets/icons/stafficon/Vector-3.svg";
 import StationIcon from "../../assets/icons/station.svg";
@@ -113,43 +114,16 @@ export default function Dashboard({ onLogout }) {
   const [showLogout, setShowLogout] = useState(false);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  let resolvedRole = localStorage.getItem("userRole") || "ADMIN";
+  let resolvedRole = localStorage.getItem("userRole") || "";
   const token = localStorage.getItem("token");
   if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const authorities = [];
-      if (Array.isArray(payload.authorities)) {
-        authorities.push(...payload.authorities.map(a => String(a).toUpperCase()));
-      } else if (typeof payload.authorities === "string") {
-        authorities.push(payload.authorities.toUpperCase());
-      }
-      if (payload.role) authorities.push(String(payload.role).toUpperCase());
-      if (payload.roles) {
-        if (Array.isArray(payload.roles)) {
-          authorities.push(...payload.roles.map(r => String(r).toUpperCase()));
-        } else if (typeof payload.roles === "string") {
-          authorities.push(payload.roles.toUpperCase());
-        }
-      }
-      if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN") || authorities.includes("SALES")) {
-        resolvedRole = "SALES_ADMIN";
-      } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN") || authorities.includes("PRODUCTION")) {
-        resolvedRole = "PRODUCTION_ADMIN";
-      } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN") || authorities.includes("SCM") || authorities.includes("ROLE_SCM")) {
-        resolvedRole = "SCM_ADMIN";
-      } else if (authorities.includes("DEALER")) {
-        resolvedRole = "DEALER";
-      } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
-        resolvedRole = "ADMIN_STAFF";
-      } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
-        resolvedRole = "ADMIN";
-      }
+    const roleFromToken = extractRoleFromToken(token);
+    if (roleFromToken) {
+      resolvedRole = roleFromToken;
       localStorage.setItem("userRole", resolvedRole);
-    } catch (e) {
-      console.error("Dashboard token decode failed:", e);
     }
   }
+  if (!resolvedRole) resolvedRole = "ADMIN";
 
   const rawRole = resolvedRole.toUpperCase();
   const userRole = (rawRole === "ADMINISTRATOR" || rawRole === "ADMIN") ? "ADMIN" : rawRole;
@@ -160,8 +134,8 @@ export default function Dashboard({ onLogout }) {
   let allowedPages = [];
   if (isAdminStaff && token) {
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const email = payload.sub;
+      const payload = safeDecodeJwt(token);
+      const email = payload?.sub;
       const stored = localStorage.getItem("staff_page_access_" + email);
       if (stored) {
         allowedPages = JSON.parse(stored);
@@ -180,8 +154,8 @@ export default function Dashboard({ onLogout }) {
       const token = localStorage.getItem("token");
       if (token) {
         try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          const email = payload.sub;
+          const payload = safeDecodeJwt(token);
+          const email = payload?.sub;
           const stored = localStorage.getItem("staff_page_access_" + email);
           if (stored) allowed = JSON.parse(stored);
         } catch {
@@ -446,8 +420,10 @@ export default function Dashboard({ onLogout }) {
         } catch (err) {
           console.error("Admin Staff dashboard fetch error:", err);
         }
+      } else if (isSalesAdmin || isProductionAdmin || isScmAdmin) {
+        // Sales, Production, and SCM roles use their dedicated dashboards and do not call super-admin endpoints
       } else {
-        // Admin summary endpoints
+        // Admin summary endpoints (Super Admin ONLY)
         const endpoints = {
           users: "/user/total",
           revenue: "/revenue/total",
