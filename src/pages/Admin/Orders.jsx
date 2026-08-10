@@ -208,44 +208,35 @@ export default function Orders({ userRole: propUserRole }) {
     }
   }, []);
 
-  // Fetch Orders based on role & sync any unpersisted local orders to backend database
+  // Fetch Orders based on role (100% READ-ONLY GET - NEVER triggers POST or order creation)
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let dataArray = [];
       const fetchedMap = new Map();
 
-      // Attempt 1: Get admin all orders
-      try {
-        const adminData = await orderService.adminGetAllOrders();
-        const arr = Array.isArray(adminData) ? adminData : Array.isArray(adminData?.orders) ? adminData.orders : [];
-        arr.forEach((o) => { if (o && (o.id || o.orderNumber)) fetchedMap.set(String(o.id || o.orderNumber), o); });
-      } catch (allErr) {
-        console.warn("adminGetAllOrders failed, attempting role endpoints:", allErr);
-      }
+      // Execute GET endpoints concurrently using Promise.all for maximum page load speed
+      const promises = [
+        orderService.adminGetAllOrders().catch(() => null),
+        orderService.salesGetMyOrders().catch(() => null),
+        orderService.productionGetOrders().catch(() => null),
+        orderService.scmGetOrders().catch(() => null)
+      ];
 
-      // Also try specific role endpoints to ensure no orders missed
-      try {
-        const salesData = await orderService.salesGetMyOrders();
-        const salesArr = Array.isArray(salesData) ? salesData : Array.isArray(salesData?.orders) ? salesData.orders : [];
-        salesArr.forEach((o) => { if (o && (o.id || o.orderNumber)) fetchedMap.set(String(o.id || o.orderNumber), { ...(fetchedMap.get(String(o.id || o.orderNumber)) || {}), ...o }); });
-      } catch (sErr) { /* ignore */ }
+      const results = await Promise.all(promises);
 
-      try {
-        const prodData = await orderService.productionGetOrders();
-        const prodArr = Array.isArray(prodData) ? prodData : Array.isArray(prodData?.orders) ? prodData.orders : [];
-        prodArr.forEach((o) => { if (o && (o.id || o.orderNumber)) fetchedMap.set(String(o.id || o.orderNumber), { ...(fetchedMap.get(String(o.id || o.orderNumber)) || {}), ...o }); });
-      } catch (pErr) { /* ignore */ }
+      results.forEach((res) => {
+        if (!res) return;
+        const arr = Array.isArray(res) ? res : Array.isArray(res?.orders) ? res.orders : [];
+        arr.forEach((o) => {
+          if (o && (o.id || o.orderNumber)) {
+            const key = String(o.id || o.orderNumber);
+            fetchedMap.set(key, { ...(fetchedMap.get(key) || {}), ...o });
+          }
+        });
+      });
 
-      try {
-        const scmData = await orderService.scmGetOrders();
-        const scmArr = Array.isArray(scmData) ? scmData : Array.isArray(scmData?.orders) ? scmData.orders : [];
-        scmArr.forEach((o) => { if (o && (o.id || o.orderNumber)) fetchedMap.set(String(o.id || o.orderNumber), { ...(fetchedMap.get(String(o.id || o.orderNumber)) || {}), ...o }); });
-      } catch (scErr) { /* ignore */ }
-
-      dataArray = Array.from(fetchedMap.values());
-
+      const dataArray = Array.from(fetchedMap.values());
       const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
 
       // Merge local cache orders and status overrides into combined list
@@ -268,7 +259,7 @@ export default function Orders({ userRole: propUserRole }) {
 
       // Apply overrides from localStorage (local status, timestamps, and activity history)
       const mergedList = Array.from(finalMap.values()).map((ord) => {
-        const id = ord.id;
+        const id = ord.id || ord.orderNumber;
         const localStatus = localStorage.getItem(`order_status_${id}`);
         const localDelivered = localStorage.getItem(`order_delivered_date_${id}`);
         const localHistory = JSON.parse(localStorage.getItem(`order_history_${id}`) || "[]");
@@ -291,7 +282,7 @@ export default function Orders({ userRole: propUserRole }) {
           const createdTime = ord.createdAt || ord.createdDate || new Date().toISOString();
           statusHistory = [
             {
-              id: `init_${ord.id}`,
+              id: `init_${ord.id || ord.orderNumber}`,
               timestamp: createdTime,
               title: "Order Registered",
               description: `Sales Order created with P.I. #${ord.piNumber || ord.orderNumber || ord.id}`,
@@ -302,7 +293,7 @@ export default function Orders({ userRole: propUserRole }) {
           ];
           if (ord.productionStatus && ord.productionStatus !== "pending") {
             statusHistory.unshift({
-              id: `prod_${ord.id}`,
+              id: `prod_${ord.id || ord.orderNumber}`,
               timestamp: ord.productionStartedAt || ord.updatedAt || createdTime,
               title: ord.productionStatus === "completed" ? "Production Completed" : `Production ${ord.productionStatus}`,
               description: `Production stage updated to ${ord.productionStatus.replace("_", " ")}`,
@@ -313,7 +304,7 @@ export default function Orders({ userRole: propUserRole }) {
           }
           if (ord.trackingId || ord.invoiceNumber || ord.orderStatus === "scm_complete") {
             statusHistory.unshift({
-              id: `scm_${ord.id}`,
+              id: `scm_${ord.id || ord.orderNumber}`,
               timestamp: ord.scmCompletedAt || ord.updatedAt || createdTime,
               title: "SCM Verified & Barcodes Filled",
               description: `Courier: ${ord.courierName || "Standard"}, Tracking ID: ${ord.trackingId || "—"}`,
@@ -324,7 +315,7 @@ export default function Orders({ userRole: propUserRole }) {
           }
           if (ord.orderStatus === "dispatched" || ord.dispatchedAt) {
             statusHistory.unshift({
-              id: `disp_${ord.id}`,
+              id: `disp_${ord.id || ord.orderNumber}`,
               timestamp: ord.dispatchedAt || ord.updatedAt || createdTime,
               title: "Order Dispatched",
               description: `Order shipped via ${ord.courierName || "Courier"} (Tracking: ${ord.trackingId || "N/A"})`,
@@ -335,7 +326,7 @@ export default function Orders({ userRole: propUserRole }) {
           }
           if (ord.orderStatus === "delivered" || localDelivered) {
             statusHistory.unshift({
-              id: `deliv_${ord.id}`,
+              id: `deliv_${ord.id || ord.orderNumber}`,
               timestamp: ord.deliveredAt || localDelivered || ord.updatedAt || createdTime,
               title: "Order Delivered",
               description: "Order marked as successfully delivered to customer.",
@@ -573,13 +564,44 @@ export default function Orders({ userRole: propUserRole }) {
 
       const created = await orderService.salesCreateOrder(payload);
       const createdOrderId = created?.id || created?.orderNumber;
+
+      const fullCreatedOrder = {
+        ...(created || {}),
+        id: created?.id || createdOrderId,
+        orderNumber: created?.orderNumber || createdOrderId,
+        createdByAdminEmail: creatorEmail,
+        createdBy: creatorEmail,
+        orderStatus: "sales_registered",
+        createdAt: new Date().toISOString()
+      };
+
       if (createdOrderId) {
         localStorage.setItem(`order_created_by_${createdOrderId}`, creatorEmail);
-        created.createdByAdminEmail = creatorEmail;
-        created.createdBy = creatorEmail;
-        created.isSyncedToBackend = true;
       }
-      showToast(`Order ${created?.orderNumber || created?.id || ""} created successfully!`, "success");
+
+      const initialHistory = recordOrderActivity(createdOrderId, {
+        title: "Sales Order Created",
+        description: `Sales Order #${fullCreatedOrder.orderNumber || createdOrderId} registered by ${creatorEmail} for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
+        status: "sales_registered",
+        stage: "Sales Registered",
+        updatedBy: creatorEmail
+      });
+
+      fullCreatedOrder.statusHistory = initialHistory;
+
+      // Persist to production_orders_cache in localStorage immediately
+      try {
+        const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
+        const updatedCache = [fullCreatedOrder, ...localCache.filter((o) => o && o.id !== fullCreatedOrder.id && o.orderNumber !== fullCreatedOrder.orderNumber)];
+        localStorage.setItem("production_orders_cache", JSON.stringify(updatedCache));
+      } catch (e) {
+        console.warn("Failed to update production_orders_cache:", e);
+      }
+
+      // Update state immediately for instant table update
+      setOrders((prev) => [fullCreatedOrder, ...prev.filter((o) => o.id !== fullCreatedOrder.id && o.orderNumber !== fullCreatedOrder.orderNumber)]);
+
+      showToast(`Order ${fullCreatedOrder.orderNumber || createdOrderId} created successfully!`, "success");
       setShowCreateModal(false);
       setSalesFormData({
         customerName: "",
@@ -596,19 +618,6 @@ export default function Orders({ userRole: propUserRole }) {
       });
       setCustomerSearchTerm("");
 
-      if (created && (created.id || created.orderNumber)) {
-        recordOrderActivity(created.id || created.orderNumber, {
-          title: "Sales Order Created",
-          description: `Sales Order #${created.orderNumber || created.id} registered by ${creatorEmail} for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
-          status: "sales_registered",
-          stage: "Sales Registered",
-          updatedBy: creatorEmail
-        });
-        setOrders((prev) => {
-          const exists = prev.some((o) => (o.id && o.id === created.id) || (o.orderNumber && o.orderNumber === created.orderNumber));
-          return exists ? prev : [created, ...prev];
-        });
-      }
       await fetchOrders();
     } catch (err) {
       showToast(err.message || "Failed to create order", "error");
