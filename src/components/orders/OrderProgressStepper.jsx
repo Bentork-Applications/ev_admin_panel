@@ -31,12 +31,24 @@ export const OrderProgressStepper = React.memo(({ currentStatus, orderId, select
   const getStageTimestamp = (key) => {
     if (!selectedOrder) return null;
     let dStr = null;
-    if (key === "sales_registered") dStr = selectedOrder.createdAt || selectedOrder.createdDate;
-    else if (key === "in_production") dStr = selectedOrder.productionStartedAt || (currentIndex >= 1 ? (selectedOrder.updatedAt || selectedOrder.createdAt) : null);
-    else if (key === "production_complete") dStr = selectedOrder.productionCompletedAt || (currentIndex >= 2 ? selectedOrder.updatedAt : null);
-    else if (key === "scm_complete") dStr = selectedOrder.scmCompletedAt || (currentIndex >= 3 ? selectedOrder.updatedAt : null);
-    else if (key === "dispatched") dStr = selectedOrder.dispatchedAt || (currentIndex >= 4 ? selectedOrder.updatedAt : null);
-    else if (key === "delivered") dStr = selectedOrder.deliveredAt || (id ? localStorage.getItem(`order_delivered_date_${id}`) : null) || (currentIndex >= 5 ? selectedOrder.updatedAt : null);
+
+    if (Array.isArray(selectedOrder.statusHistory) && selectedOrder.statusHistory.length > 0) {
+      const matchedEvent = selectedOrder.statusHistory.find(
+        (h) => (h.status === key || h.stage?.toLowerCase()?.includes(key.replace("_", " ")) || (key === "sales_registered" && h.title?.includes("Registered")) || (key === "dispatched" && h.title?.includes("Dispatched")))
+      );
+      if (matchedEvent && matchedEvent.timestamp) {
+        dStr = matchedEvent.timestamp;
+      }
+    }
+
+    if (!dStr) {
+      if (key === "sales_registered") dStr = selectedOrder.createdAt || selectedOrder.createdDate;
+      else if (key === "in_production") dStr = selectedOrder.productionStartedAt || (currentIndex >= 1 ? (selectedOrder.updatedAt || selectedOrder.createdAt) : null);
+      else if (key === "production_complete") dStr = selectedOrder.productionCompletedAt || (currentIndex >= 2 ? selectedOrder.updatedAt : null);
+      else if (key === "scm_complete") dStr = selectedOrder.scmCompletedAt || (currentIndex >= 3 ? selectedOrder.updatedAt : null);
+      else if (key === "dispatched") dStr = selectedOrder.dispatchedAt || (currentIndex >= 4 ? selectedOrder.updatedAt : null);
+      else if (key === "delivered") dStr = selectedOrder.deliveredAt || (id ? localStorage.getItem(`order_delivered_date_${id}`) : null) || (currentIndex >= 5 ? selectedOrder.updatedAt : null);
+    }
 
     if (!dStr) return null;
     try {

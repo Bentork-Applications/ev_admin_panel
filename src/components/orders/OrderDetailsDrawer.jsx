@@ -476,6 +476,56 @@ export const OrderDetailsDrawer = React.memo(({
             </div>
           </div>
 
+          {/* Order Tracking & Activity History Timeline */}
+          <div className="drawer-section">
+            <h4 className="section-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Clock size={16} /> Order Tracking & Activity History
+            </h4>
+            {Array.isArray(selectedOrder.statusHistory) && selectedOrder.statusHistory.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px" }}>
+                {selectedOrder.statusHistory.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    style={{
+                      background: "#F8FAFC",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: "8px",
+                      padding: "12px",
+                      position: "relative"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
+                        {item.title}
+                      </span>
+                      <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 500 }}>
+                        {formatDate(item.timestamp)}
+                      </span>
+                    </div>
+                    {item.description && (
+                      <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px" }}>
+                        {item.description}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px", fontSize: "11px", color: "#64748B" }}>
+                      <span>Updated by: <strong style={{ color: "#334155" }}>{item.updatedBy || "System Admin"}</strong></span>
+                      {item.stage && (
+                        <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>
+                          {item.stage}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: "12px", color: "#64748B", fontStyle: "italic", padding: "8px 0" }}>
+                No tracking activities recorded yet.
+              </div>
+            )}
+          </div>
+
+
           {/* Action Toolbar Inside Drawer */}
           {(isSalesAdmin || isProductionAdmin || isScmAdmin || isSuperAdmin) && (
             <div className="drawer-actions-bar" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
