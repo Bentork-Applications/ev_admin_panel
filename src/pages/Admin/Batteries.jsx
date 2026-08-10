@@ -234,37 +234,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       const scmBatteries = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");
       const existingKeys = new Set(normalized.map(b => String(b.barcode || b.startBarcode || b.id)));
 
-      try {
-        const ordersCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-        ordersCache.forEach(ord => {
-          if (ord && Array.isArray(ord.orderItems)) {
-            ord.orderItems.forEach((it, idx) => {
-              if (it && (it.barcode || it.startBarcode)) {
-                const bc = String(it.barcode || it.startBarcode).trim();
-                scmBatteries.push({
-                  id: `order_scm_${ord.id}_${it.id || idx}`,
-                  customerName: ord.customerName || "Customer",
-                  productDetails: it.productDetails || ord.productDetails || "EV Battery Unit",
-                  invoiceNumber: ord.invoiceNumber || "",
-                  warrantyStartDate: it.warrantyStartDate || ord.warrantyStartDate,
-                  warrantyEndDate: it.warrantyEndDate || ord.warrantyEndDate,
-                  fullWarrantyYears: it.fullWarrantyYears,
-                  fullWarrantyMonths: it.fullWarrantyMonths,
-                  serviceWarrantyYears: it.serviceWarrantyYears,
-                  serviceWarrantyMonths: it.serviceWarrantyMonths,
-                  totalWarrantyLabel: it.totalWarrantyLabel,
-                  barcode: bc,
-                  startBarcode: it.startBarcode || bc,
-                  endBarcode: it.endBarcode || bc,
-                  barcodes: it.barcodes || [bc]
-                });
-              }
-            });
-          }
-        });
-      } catch (errCache) {
-        console.warn("Error parsing production_orders_cache for batteries:", errCache);
-      }
+
 
       const additionalScmBatteries = [];
       scmBatteries.forEach(scmb => {
@@ -617,37 +587,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         if (item) {
           if (item.barcode) scmWarrantyMap.set(String(item.barcode).trim(), item);
           if (item.startBarcode) scmWarrantyMap.set(String(item.startBarcode).trim(), item);
-        }
-      });
-
-      const ordersCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      ordersCache.forEach(ord => {
-        if (ord && Array.isArray(ord.orderItems)) {
-          ord.orderItems.forEach(it => {
-            if (it) {
-              const itemRecord = {
-                productDetails: it.productDetails || ord.productDetails,
-                customerName: ord.customerName,
-                invoiceNumber: ord.invoiceNumber,
-                warrantyStartDate: it.warrantyStartDate || ord.warrantyStartDate,
-                warrantyEndDate: it.warrantyEndDate || ord.warrantyEndDate,
-                fullWarrantyYears: it.fullWarrantyYears,
-                fullWarrantyMonths: it.fullWarrantyMonths,
-                serviceWarrantyYears: it.serviceWarrantyYears,
-                serviceWarrantyMonths: it.serviceWarrantyMonths,
-                totalWarrantyLabel: it.totalWarrantyLabel,
-                barcode: it.barcode || it.startBarcode,
-                startBarcode: it.startBarcode,
-                endBarcode: it.endBarcode,
-                barcodes: it.barcodes
-              };
-              if (it.barcode) scmWarrantyMap.set(String(it.barcode).trim(), itemRecord);
-              if (it.startBarcode) scmWarrantyMap.set(String(it.startBarcode).trim(), itemRecord);
-              if (Array.isArray(it.barcodes)) {
-                it.barcodes.forEach(bc => scmWarrantyMap.set(String(bc).trim(), itemRecord));
-              }
-            }
-          });
         }
       });
     } catch (e) {

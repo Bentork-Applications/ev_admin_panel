@@ -31,29 +31,13 @@ export default function ProductionDashboard() {
             ? data.items
             : [];
 
-    const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-    const mergedMap = new Map();
-    localCache.forEach((o) => {
-      if (o && (o.id || o.orderNumber)) {
-        mergedMap.set(o.id || o.orderNumber, o);
-      }
+    return dataArray.map((o) => {
+      const localStatus = localStorage.getItem(`order_status_${o.id}`);
+      return {
+        ...o,
+        orderStatus: localStatus || o.orderStatus
+      };
     });
-    dataArray.forEach((o) => {
-      if (o && (o.id || o.orderNumber)) {
-        const key = o.id || o.orderNumber;
-        const existing = mergedMap.get(key) || {};
-        const localStatus = localStorage.getItem(`order_status_${o.id}`);
-        mergedMap.set(key, { ...existing, ...o, orderStatus: localStatus || o.orderStatus });
-      }
-    });
-
-    const mergedList = Array.from(mergedMap.values());
-    try {
-      localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
-    } catch (e) {
-      console.warn("Failed to update production_orders_cache:", e);
-    }
-    return mergedList;
   }, []);
 
   const { orders, loading, refresh: fetchProductionDataHandler } = useDashboardData(fetchProductionData);

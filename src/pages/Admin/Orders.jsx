@@ -174,18 +174,6 @@ export default function Orders({ userRole: propUserRole }) {
         localStorage.setItem(storageKey, JSON.stringify(updatedHistory));
       }
 
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      const updatedCache = localCache.map((ord) => {
-        if (ord && (ord.id === orderId || ord.orderNumber === activity.orderNumber)) {
-          return {
-            ...ord,
-            statusHistory: updatedHistory,
-            updatedAt: newEntry.timestamp
-          };
-        }
-        return ord;
-      });
-      localStorage.setItem("production_orders_cache", JSON.stringify(updatedCache));
       return updatedHistory;
     } catch (err) {
       console.warn("Failed to record order activity:", err);
@@ -228,28 +216,9 @@ export default function Orders({ userRole: propUserRole }) {
       });
 
       const dataArray = Array.from(fetchedMap.values());
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-
-      // Merge local cache orders and status overrides into combined list
-      const finalMap = new Map();
-      if (Array.isArray(localCache)) {
-        localCache.forEach((c) => {
-          if (c && (c.id || c.orderNumber)) {
-            const key = String(c.id || c.orderNumber);
-            finalMap.set(key, c);
-          }
-        });
-      }
-      dataArray.forEach((o) => {
-        if (o && (o.id || o.orderNumber)) {
-          const key = String(o.id || o.orderNumber);
-          const existing = finalMap.get(key) || {};
-          finalMap.set(key, { ...existing, ...o });
-        }
-      });
 
       // Apply overrides from localStorage (local status, timestamps, and activity history)
-      const mergedList = Array.from(finalMap.values()).map((ord) => {
+      const mergedList = dataArray.map((ord) => {
         const id = ord.id || ord.orderNumber;
         const localStatus = localStorage.getItem(`order_status_${id}`);
         const localDelivered = localStorage.getItem(`order_delivered_date_${id}`);
@@ -339,12 +308,6 @@ export default function Orders({ userRole: propUserRole }) {
         };
       });
 
-      try {
-        localStorage.setItem("production_orders_cache", JSON.stringify(mergedList));
-      } catch (e) {
-        console.warn("Failed to write production_orders_cache:", e);
-      }
-
       setOrders(mergedList);
     } catch (err) {
       console.error("Failed to fetch orders:", err);
@@ -386,31 +349,13 @@ export default function Orders({ userRole: propUserRole }) {
       }
       const rawDetails = details || orders.find((o) => o.id === orderId);
       if (rawDetails) {
-        const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-        const cachedOrder = localCache.find((c) => c && (c.id === orderId || c.orderNumber === rawDetails.orderNumber)) || {};
         const localStatus = localStorage.getItem(`order_status_${orderId}`);
         const localHistory = JSON.parse(localStorage.getItem(`order_history_${orderId}`) || "[]");
 
-        let mergedOrderItems = rawDetails.orderItems;
-        if (Array.isArray(cachedOrder.orderItems) && cachedOrder.orderItems.length > 0) {
-          if (Array.isArray(rawDetails.orderItems) && rawDetails.orderItems.length > 0) {
-            mergedOrderItems = rawDetails.orderItems.map((apiItem, idx) => ({
-              ...(cachedOrder.orderItems[idx] || {}),
-              ...apiItem
-            }));
-          } else {
-            mergedOrderItems = cachedOrder.orderItems;
-          }
-        }
-
-        const combinedHistory = (localHistory.length > 0 ? localHistory : cachedOrder.statusHistory || rawDetails.statusHistory || []);
-
         setSelectedOrder({
-          ...cachedOrder,
           ...rawDetails,
-          orderItems: mergedOrderItems || rawDetails.orderItems,
-          orderStatus: localStatus || rawDetails.orderStatus || cachedOrder.orderStatus,
-          statusHistory: combinedHistory
+          orderStatus: localStatus || rawDetails.orderStatus,
+          statusHistory: localHistory.length > 0 ? localHistory : rawDetails.statusHistory || []
         });
         setShowDrawer(true);
       }
@@ -549,37 +494,17 @@ export default function Orders({ userRole: propUserRole }) {
       const created = await orderService.salesCreateOrder(payload);
       const createdOrderId = created?.id || created?.orderNumber;
 
-      const fullCreatedOrder = {
-        ...(created || {}),
-        id: created?.id || createdOrderId,
-        orderNumber: created?.orderNumber || createdOrderId,
-        orderStatus: "sales_registered",
-        createdAt: new Date().toISOString()
-      };
-
-      const initialHistory = recordOrderActivity(createdOrderId, {
-        title: "Sales Order Created",
-        description: `Sales Order #${fullCreatedOrder.orderNumber || createdOrderId} registered for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
-        status: "sales_registered",
-        stage: "Sales Registered",
-        updatedBy: localStorage.getItem("userRole") || "Sales Admin"
-      });
-
-      fullCreatedOrder.statusHistory = initialHistory;
-
-      // Persist to production_orders_cache in localStorage immediately
-      try {
-        const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-        const updatedCache = [fullCreatedOrder, ...localCache.filter((o) => o && o.id !== fullCreatedOrder.id && o.orderNumber !== fullCreatedOrder.orderNumber)];
-        localStorage.setItem("production_orders_cache", JSON.stringify(updatedCache));
-      } catch (e) {
-        console.warn("Failed to update production_orders_cache:", e);
+      if (createdOrderId) {
+        recordOrderActivity(createdOrderId, {
+          title: "Sales Order Created",
+          description: `Sales Order #${created?.orderNumber || createdOrderId} registered for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
+          status: "sales_registered",
+          stage: "Sales Registered",
+          updatedBy: localStorage.getItem("userRole") || "Sales Admin"
+        });
       }
 
-      // Update state immediately for instant table update
-      setOrders((prev) => [fullCreatedOrder, ...prev.filter((o) => o.id !== fullCreatedOrder.id && o.orderNumber !== fullCreatedOrder.orderNumber)]);
-
-      showToast(`Order ${fullCreatedOrder.orderNumber || createdOrderId} created successfully!`, "success");
+      showToast(`Order ${created?.orderNumber || createdOrderId || ""} created successfully!`, "success");
       setShowCreateModal(false);
       setSalesFormData({
         customerName: "",
@@ -596,6 +521,7 @@ export default function Orders({ userRole: propUserRole }) {
       });
       setCustomerSearchTerm("");
 
+      // Re-fetch backend Orders API to display the newly created order directly from backend database
       await fetchOrders();
     } catch (err) {
       showToast(err.message || "Failed to create order", "error");
@@ -840,30 +766,8 @@ export default function Orders({ userRole: propUserRole }) {
         updatedBy: "Production Admin"
       });
 
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrder?.id === orderId ? selectedOrder : null);
-      const orderToSave = {
-        ...(targetOrder || {}),
-        ...(updated || {}),
-        id: orderId,
-        productionStatus: targetStatus,
-        orderStatus: resolvedOrderStatus,
-        productionCompletedAt: targetStatus === "completed" ? new Date().toISOString() : targetOrder?.productionCompletedAt,
-        statusHistory: updatedHistory
-      };
-
-      const updatedCacheMap = new Map();
-      localCache.forEach(o => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
-      updatedCacheMap.set(orderId, orderToSave);
-
-      try {
-        localStorage.setItem("production_orders_cache", JSON.stringify(Array.from(updatedCacheMap.values())));
-      } catch (e) {
-        console.warn("Failed to write production_orders_cache:", e);
-      }
-
       if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder((prev) => ({ ...prev, ...orderToSave }));
+        setSelectedOrder((prev) => ({ ...prev, ...(updated || {}), productionStatus: targetStatus, orderStatus: resolvedOrderStatus }));
       }
       fetchOrders();
     } catch (err) {
@@ -1245,19 +1149,8 @@ export default function Orders({ userRole: propUserRole }) {
         statusHistory: updatedHistory
       };
 
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      const updatedCacheMap = new Map();
-      localCache.forEach(o => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
-      updatedCacheMap.set(orderForScm.id, orderToSave);
-
-      try {
-        localStorage.setItem("production_orders_cache", JSON.stringify(Array.from(updatedCacheMap.values())));
-      } catch (e) {
-        console.warn("Failed to write production_orders_cache:", e);
-      }
-
       if (selectedOrder && selectedOrder.id === orderForScm.id) {
-        setSelectedOrder((prev) => ({ ...prev, ...orderToSave }));
+        setSelectedOrder((prev) => ({ ...prev, ...(updated || {}), orderStatus: "scm_complete" }));
       }
       fetchOrders();
     } catch (err) {
@@ -1290,19 +1183,8 @@ export default function Orders({ userRole: propUserRole }) {
         statusHistory: updatedHistory
       };
 
-      const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      const updatedCacheMap = new Map();
-      localCache.forEach((o) => { if (o && (o.id || o.orderNumber)) updatedCacheMap.set(o.id || o.orderNumber, o); });
-      updatedCacheMap.set(orderId, { ...(updatedCacheMap.get(orderId) || {}), ...orderToSave });
-
-      try {
-        localStorage.setItem("production_orders_cache", JSON.stringify(Array.from(updatedCacheMap.values())));
-      } catch (e) {
-        console.warn("Failed to write production_orders_cache:", e);
-      }
-
       if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder((prev) => ({ ...prev, ...orderToSave }));
+        setSelectedOrder((prev) => ({ ...prev, ...(updated || {}), orderStatus: "dispatched" }));
       }
       fetchOrders();
     } catch (err) {
