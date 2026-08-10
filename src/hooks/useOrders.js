@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { orderService } from "../services/orderService";
+import { extractRoleFromToken } from "../utils/jwtUtils";
 
-export const useOrders = (userRole) => {
+export const useOrders = (userRoleFromProp) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -24,11 +25,15 @@ export const useOrders = (userRole) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showScmModal, setShowScmModal] = useState(false);
 
-  const roleUpper = (userRole || "").toUpperCase();
-  const isSalesAdmin = roleUpper === "SALES_ADMIN" || roleUpper === "SALES";
-  const isProductionAdmin = roleUpper === "PRODUCTION_ADMIN" || roleUpper === "PRODUCTION";
-  const isScmAdmin = roleUpper === "SCM_ADMIN" || roleUpper === "SCM";
-  const isSuperAdmin = !isSalesAdmin && !isProductionAdmin && !isScmAdmin;
+  const token = localStorage.getItem("token");
+  const storedRole = localStorage.getItem("userRole");
+  const resolvedRole = userRoleFromProp || storedRole || (token ? extractRoleFromToken(token) : "");
+  const roleUpper = (resolvedRole || "").toUpperCase();
+
+  const isSalesAdmin = roleUpper.includes("SALES");
+  const isProductionAdmin = roleUpper.includes("PRODUCTION");
+  const isScmAdmin = roleUpper.includes("SCM");
+  const isSuperAdmin = roleUpper.includes("ADMIN") && !isSalesAdmin && !isProductionAdmin && !isScmAdmin;
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
