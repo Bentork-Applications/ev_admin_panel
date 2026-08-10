@@ -24,14 +24,6 @@ export const OrderTableRow = React.memo(({
   const isSalesRegistered = order.orderStatus === "sales_registered";
   const isScmComplete = order.orderStatus === "scm_complete";
 
-  const createdBy =
-    order.createdByAdminEmail ||
-    order.createdBy ||
-    order.createdByName ||
-    order.salesAdminEmail ||
-    order.assignedUserEmail ||
-    "N/A";
-
   return (
     <tr onClick={() => onViewDetails(order.id)}>
       {/* Order Number & PI */}
@@ -44,28 +36,6 @@ export const OrderTableRow = React.memo(({
       <td>
         <div className="customer-name">{order.customerName || "—"}</div>
         <div className="sub-text">📞 {order.mobileNumber || "—"}</div>
-      </td>
-
-      {/* Created By Sales Admin */}
-      <td>
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: createdBy !== "N/A" ? "#1D4ED8" : "#64748B",
-            background: createdBy !== "N/A" ? "#EFF6FF" : "#F1F5F9",
-            padding: "3px 8px",
-            borderRadius: "6px",
-            display: "inline-block",
-            maxWidth: 140,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap"
-          }}
-          title={createdBy}
-        >
-          {createdBy !== "N/A" ? `👤 ${createdBy}` : "N/A"}
-        </div>
       </td>
 
       {/* Product Details */}

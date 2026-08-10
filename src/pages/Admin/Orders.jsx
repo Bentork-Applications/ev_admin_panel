@@ -147,21 +147,6 @@ export default function Orders({ userRole: propUserRole }) {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
-  // Get currently logged-in admin email/identifier
-  const getLoggedInAdminEmail = useCallback(() => {
-    let email = localStorage.getItem("userEmail") || localStorage.getItem("adminEmail") || localStorage.getItem("email") || "";
-    const token = localStorage.getItem("token");
-    if (token) {
-      try {
-        const payloadToken = JSON.parse(atob(token.split('.')[1]));
-        email = payloadToken.sub || payloadToken.email || payloadToken.name || email;
-      } catch (e) {
-        console.error("Token decode error:", e);
-      }
-    }
-    return email || "Sales Admin";
-  }, []);
-
   // Helper to record tracking activities & status changes
   const recordOrderActivity = useCallback((orderId, activity) => {
     if (!orderId) return [];
@@ -215,13 +200,19 @@ export default function Orders({ userRole: propUserRole }) {
     try {
       const fetchedMap = new Map();
 
-      // Execute GET endpoints concurrently using Promise.all for maximum page load speed
-      const promises = [
-        orderService.adminGetAllOrders().catch(() => null),
-        orderService.salesGetMyOrders().catch(() => null),
-        orderService.productionGetOrders().catch(() => null),
-        orderService.scmGetOrders().catch(() => null)
-      ];
+      // Only execute GET endpoint for the current user's authorized role to prevent 403 Forbidden console errors
+      const promises = [];
+      if (isSuperAdmin) {
+        promises.push(orderService.adminGetAllOrders().catch(() => null));
+      } else if (isSalesAdmin) {
+        promises.push(orderService.salesGetMyOrders().catch(() => null));
+      } else if (isProductionAdmin) {
+        promises.push(orderService.productionGetOrders().catch(() => null));
+      } else if (isScmAdmin) {
+        promises.push(orderService.scmGetOrders().catch(() => null));
+      } else {
+        promises.push(orderService.salesGetMyOrders().catch(() => null));
+      }
 
       const results = await Promise.all(promises);
 
@@ -340,13 +331,8 @@ export default function Orders({ userRole: propUserRole }) {
           } catch {}
         }
 
-        const localCreatedBy = localStorage.getItem(`order_created_by_${id}`);
-        const createdByAdminEmail = ord.createdByAdminEmail || ord.createdBy || ord.createdByName || ord.salesAdminEmail || ord.assignedUserEmail || localCreatedBy || null;
-
         return {
           ...ord,
-          createdByAdminEmail,
-          createdBy: createdByAdminEmail || ord.createdBy,
           orderStatus: localStatus || ord.orderStatus || "sales_registered",
           deliveredAt: localDelivered || ord.deliveredAt,
           statusHistory
@@ -366,7 +352,7 @@ export default function Orders({ userRole: propUserRole }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin, isSalesAdmin, isProductionAdmin, isScmAdmin]);
 
   useEffect(() => {
     fetchOrders();
@@ -541,8 +527,6 @@ export default function Orders({ userRole: propUserRole }) {
         assignedUserId: Number(targetUserId),
         customerName: salesFormData.customerName.trim(),
         customerEmail: salesFormData.customerEmail?.trim() || "",
-        createdByAdminEmail: creatorEmail,
-        createdBy: creatorEmail,
         piNumber: salesFormData.piNumber.trim(),
         project: firstProject,
         orderItems: salesFormData.orderItems.map((item) => {
@@ -569,22 +553,16 @@ export default function Orders({ userRole: propUserRole }) {
         ...(created || {}),
         id: created?.id || createdOrderId,
         orderNumber: created?.orderNumber || createdOrderId,
-        createdByAdminEmail: creatorEmail,
-        createdBy: creatorEmail,
         orderStatus: "sales_registered",
         createdAt: new Date().toISOString()
       };
 
-      if (createdOrderId) {
-        localStorage.setItem(`order_created_by_${createdOrderId}`, creatorEmail);
-      }
-
       const initialHistory = recordOrderActivity(createdOrderId, {
         title: "Sales Order Created",
-        description: `Sales Order #${fullCreatedOrder.orderNumber || createdOrderId} registered by ${creatorEmail} for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
+        description: `Sales Order #${fullCreatedOrder.orderNumber || createdOrderId} registered for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
         status: "sales_registered",
         stage: "Sales Registered",
-        updatedBy: creatorEmail
+        updatedBy: localStorage.getItem("userRole") || "Sales Admin"
       });
 
       fullCreatedOrder.statusHistory = initialHistory;
@@ -625,7 +603,7 @@ export default function Orders({ userRole: propUserRole }) {
       setSubmitting(false);
       isCreatingRef.current = false;
     }
-  }, [salesFormData, registeredUsers, submitting, showToast, fetchOrders, getLoggedInAdminEmail, recordOrderActivity]);
+  }, [salesFormData, registeredUsers, submitting, showToast, fetchOrders, recordOrderActivity]);
 
   const openEditSalesModal = useCallback((order) => {
     let items = [];
@@ -1397,8 +1375,6 @@ export default function Orders({ userRole: propUserRole }) {
         !q ||
         o.orderNumber?.toLowerCase().includes(q) ||
         o.customerName?.toLowerCase().includes(q) ||
-        o.createdByAdminEmail?.toLowerCase().includes(q) ||
-        o.createdBy?.toLowerCase().includes(q) ||
         o.piNumber?.toLowerCase().includes(q) ||
         o.productDetails?.toLowerCase().includes(q) ||
         o.mobileNumber?.includes(q) ||
@@ -1521,7 +1497,6 @@ export default function Orders({ userRole: propUserRole }) {
               <tr>
                 <th>Order # & PI</th>
                 <th>Customer & Contact</th>
-                <th>Created By</th>
                 <th>Product Details</th>
                 <th>Address</th>
                 <th>Order Status</th>
