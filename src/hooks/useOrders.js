@@ -39,13 +39,14 @@ export const useOrders = (userRole) => {
     setError(null);
     try {
       let data = [];
-      try {
+      if (isSalesAdmin) {
+        data = await orderService.salesGetMyOrders();
+      } else if (isProductionAdmin) {
+        data = await orderService.productionGetOrders();
+      } else if (isScmAdmin) {
+        data = await orderService.scmGetOrders();
+      } else {
         data = await orderService.adminGetAllOrders();
-      } catch (allErr) {
-        if (isSalesAdmin) data = await orderService.salesGetMyOrders();
-        else if (isProductionAdmin) data = await orderService.productionGetOrders();
-        else if (isScmAdmin) data = await orderService.scmGetOrders();
-        else throw allErr;
       }
       setOrders(Array.isArray(data) ? data : []);
     } catch (err) {

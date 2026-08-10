@@ -26,10 +26,16 @@ import { getStatusBadgeConfig, getPriorityBadgeConfig } from "../../config/order
 import { Package, Plus, AlertTriangle } from "lucide-react";
 
 export default function Orders({ userRole: propUserRole }) {
-  // Memoize effective user role calculation
+  // Memoize effective user role calculation safely
   const role = useMemo(() => {
+    const rawRole = (propUserRole || localStorage.getItem("userRole") || "").toUpperCase();
     const token = localStorage.getItem("token");
-    let resolvedRole = propUserRole || localStorage.getItem("userRole") || "ADMIN";
+    let resolvedRole = "";
+
+    if (rawRole.includes("SALES")) resolvedRole = "SALES_ADMIN";
+    else if (rawRole.includes("PRODUCTION")) resolvedRole = "PRODUCTION_ADMIN";
+    else if (rawRole.includes("SCM")) resolvedRole = "SCM_ADMIN";
+    else if (rawRole.includes("ADMIN")) resolvedRole = "ADMIN";
 
     if (token) {
       try {
@@ -48,21 +54,21 @@ export default function Orders({ userRole: propUserRole }) {
             authorities.push(payload.roles.toUpperCase());
           }
         }
-        if (authorities.includes("SALES_ADMIN") || authorities.includes("ROLE_SALES_ADMIN") || authorities.includes("SALES")) {
-          resolvedRole = "SALES_ADMIN";
-        } else if (authorities.includes("PRODUCTION_ADMIN") || authorities.includes("ROLE_PRODUCTION_ADMIN") || authorities.includes("PRODUCTION")) {
-          resolvedRole = "PRODUCTION_ADMIN";
-        } else if (authorities.includes("SCM_ADMIN") || authorities.includes("ROLE_SCM_ADMIN") || authorities.includes("SCM") || authorities.includes("ROLE_SCM")) {
-          resolvedRole = "SCM_ADMIN";
-        } else if (authorities.includes("ADMINISTRATOR") || authorities.includes("ADMIN") || authorities.includes("ROLE_ADMIN")) {
-          resolvedRole = "ADMIN";
-        } else if (authorities.includes("ADMIN_STAFF") || authorities.includes("ROLE_ADMIN_STAFF")) {
-          resolvedRole = "ADMIN_STAFF";
+        if (payload.sub && String(payload.sub).toLowerCase().includes("sales")) {
+          authorities.push("SALES_ADMIN");
         }
+
+        const authStr = authorities.join(",");
+        if (authStr.includes("SALES")) resolvedRole = "SALES_ADMIN";
+        else if (authStr.includes("PRODUCTION")) resolvedRole = "PRODUCTION_ADMIN";
+        else if (authStr.includes("SCM")) resolvedRole = "SCM_ADMIN";
+        else if (authStr.includes("ADMIN")) resolvedRole = "ADMIN";
       } catch (e) {
         console.error("Token decode error in Orders:", e);
       }
     }
+
+    if (!resolvedRole) resolvedRole = "SALES_ADMIN";
     return resolvedRole;
   }, [propUserRole]);
 
@@ -467,9 +473,10 @@ export default function Orders({ userRole: propUserRole }) {
       const firstItem = salesFormData.orderItems[0] || {};
       const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
 
-      const creatorEmail = getLoggedInAdminEmail();
+      const deliveryDate = salesFormData.expectedDeliveryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
       const payload = {
-        assignedUserId: Number(targetUserId),
+        assignedUserId: Number(targetUserId) > 0 ? Number(targetUserId) : 1,
         customerName: salesFormData.customerName.trim(),
         customerEmail: salesFormData.customerEmail?.trim() || "",
         piNumber: salesFormData.piNumber.trim(),
@@ -483,8 +490,8 @@ export default function Orders({ userRole: propUserRole }) {
           };
         }),
         mobileNumber: salesFormData.mobileNumber.trim(),
-        expectedDeliveryDate: salesFormData.expectedDeliveryDate,
-        priority: salesFormData.priority,
+        expectedDeliveryDate: deliveryDate,
+        priority: salesFormData.priority || "medium",
         gstNumber: salesFormData.gstNumber?.trim() || null,
         address: salesFormData.address?.trim() || null,
         totalInvoiceAmount: Number(salesFormData.totalInvoiceAmount) || 0,

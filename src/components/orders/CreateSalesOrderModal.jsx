@@ -235,7 +235,7 @@ export const CreateSalesOrderModal = React.memo(({
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="sec-btn" onClick={onClose}>
+            <button type="button" className="sec-btn" onClick={onClose} disabled={submitting}>
               Cancel
             </button>
             <button type="submit" className="primary-action-btn" disabled={submitting}>

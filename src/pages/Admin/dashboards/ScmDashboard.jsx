@@ -12,8 +12,9 @@ export default function ScmDashboard() {
   const fetchScmData = useCallback(async () => {
     try {
       return await orderService.scmGetOrders();
-    } catch {
-      return await orderService.adminGetAllOrders();
+    } catch (err) {
+      console.warn("Failed to fetch SCM orders for dashboard:", err);
+      return [];
     }
   }, []);
 

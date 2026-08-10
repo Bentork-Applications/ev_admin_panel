@@ -12,8 +12,9 @@ export default function SalesDashboard() {
   const fetchSalesData = useCallback(async () => {
     try {
       return await orderService.salesGetMyOrders();
-    } catch {
-      return await orderService.adminGetAllOrders();
+    } catch (err) {
+      console.warn("Failed to fetch sales orders for dashboard:", err);
+      return [];
     }
   }, []);
 

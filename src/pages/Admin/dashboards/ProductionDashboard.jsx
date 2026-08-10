@@ -13,12 +13,8 @@ export default function ProductionDashboard() {
     let data = [];
     try {
       data = await orderService.productionGetOrders();
-    } catch {
-      try {
-        data = await orderService.adminGetAllOrders();
-      } catch (adminErr) {
-        console.warn("Failed to fetch production orders:", adminErr);
-      }
+    } catch (err) {
+      console.warn("Failed to fetch production orders for dashboard:", err);
     }
 
     const dataArray = Array.isArray(data)
