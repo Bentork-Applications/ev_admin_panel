@@ -33,11 +33,11 @@ export const CreateSalesOrderModal = React.memo(({
   if (!showCreateModal) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={() => !submitting && onClose()}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Create New Sales Order</h2>
-          <button className="close-btn" onClick={onClose}>
+          <button className="close-btn" onClick={onClose} disabled={submitting}>
             <X size={20} />
           </button>
         </div>

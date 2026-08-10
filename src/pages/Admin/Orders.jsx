@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { orderService } from "../../services/orderService";
 import { batteryService } from "../../services/batteryService";
 import { apiClient } from "../../services/apiClient";
@@ -246,69 +246,7 @@ export default function Orders({ userRole: propUserRole }) {
 
       dataArray = Array.from(fetchedMap.values());
 
-      const backendKeys = new Set(
-        dataArray.map((o) => String(o.id || o.orderNumber || "")).filter(Boolean)
-      );
-
-      // Detect any unpersisted orders in local storage cache and sync them to backend database
       const localCache = JSON.parse(localStorage.getItem("production_orders_cache") || "[]");
-      let syncedCount = 0;
-
-      if (Array.isArray(localCache) && localCache.length > 0) {
-        for (const localOrd of localCache) {
-          if (!localOrd) continue;
-          const key = String(localOrd.id || localOrd.orderNumber || "");
-          if (key && !backendKeys.has(key) && !localOrd.isSyncedToBackend) {
-            try {
-              let currentUserId = 1;
-              const token = localStorage.getItem("token");
-              if (token) {
-                try {
-                  const payloadToken = JSON.parse(atob(token.split('.')[1]));
-                  currentUserId = payloadToken.userId || payloadToken.id || payloadToken.subId || 1;
-                } catch { currentUserId = 1; }
-              }
-
-              // Attempt to persist local-only order to backend database via POST API
-              const payload = {
-                assignedUserId: Number(localOrd.assignedUserId || currentUserId),
-                customerName: (localOrd.customerName || "Customer").trim(),
-                customerEmail: (localOrd.customerEmail || "").trim(),
-                piNumber: (localOrd.piNumber || localOrd.orderNumber || `PI-${Date.now()}`).trim(),
-                project: localOrd.project || "EV Battery",
-                orderItems: Array.isArray(localOrd.orderItems) && localOrd.orderItems.length > 0
-                  ? localOrd.orderItems.map((item) => ({
-                    project: item.project || "EV Battery",
-                    productDetails: (item.productDetails || formatProductDetails(item)).trim(),
-                    quantity: Math.max(1, Number(item.quantity) || 1)
-                  }))
-                  : [
-                    {
-                      project: localOrd.project || "EV Battery",
-                      productDetails: (localOrd.productDetails || "EV Battery Unit").trim(),
-                      quantity: Math.max(1, Number(localOrd.quantity) || 1)
-                    }
-                  ],
-                mobileNumber: (localOrd.mobileNumber || "0000000000").trim(),
-                expectedDeliveryDate: localOrd.expectedDeliveryDate || new Date().toISOString().split("T")[0],
-                priority: localOrd.priority || "medium",
-                gstNumber: localOrd.gstNumber || null,
-                address: localOrd.address || null,
-                totalInvoiceAmount: Number(localOrd.totalInvoiceAmount || localOrd.totalAmount || localOrd.totalPrice) || 0,
-                receivedAmount: Number(localOrd.receivedAmount) || 0
-              };
-
-              const created = await orderService.salesCreateOrder(payload);
-              if (created && (created.id || created.orderNumber)) {
-                syncedCount++;
-                localOrd.isSyncedToBackend = true;
-              }
-            } catch (syncErr) {
-              console.warn("Could not sync local order to backend:", localOrd, syncErr);
-            }
-          }
-        }
-      }
 
       // Merge local cache orders and status overrides into combined list
       const finalMap = new Map();
@@ -564,13 +502,19 @@ export default function Orders({ userRole: propUserRole }) {
     return errors;
   };
 
+  const isCreatingRef = useRef(false);
+
   const handleCreateSalesOrder = useCallback(async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (submitting || isCreatingRef.current) return;
+
     const errors = validateSalesForm(salesFormData);
     if (Object.keys(errors).length > 0) {
       setSalesFormErrors(errors);
       return;
     }
+
+    isCreatingRef.current = true;
     setSalesFormErrors({});
     setSubmitting(true);
 
@@ -633,6 +577,7 @@ export default function Orders({ userRole: propUserRole }) {
         localStorage.setItem(`order_created_by_${createdOrderId}`, creatorEmail);
         created.createdByAdminEmail = creatorEmail;
         created.createdBy = creatorEmail;
+        created.isSyncedToBackend = true;
       }
       showToast(`Order ${created?.orderNumber || created?.id || ""} created successfully!`, "success");
       setShowCreateModal(false);
@@ -669,8 +614,9 @@ export default function Orders({ userRole: propUserRole }) {
       showToast(err.message || "Failed to create order", "error");
     } finally {
       setSubmitting(false);
+      isCreatingRef.current = false;
     }
-  }, [salesFormData, registeredUsers, showToast, fetchOrders]);
+  }, [salesFormData, registeredUsers, submitting, showToast, fetchOrders, getLoggedInAdminEmail, recordOrderActivity]);
 
   const openEditSalesModal = useCallback((order) => {
     let items = [];
