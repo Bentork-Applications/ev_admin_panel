@@ -147,6 +147,21 @@ export default function Orders({ userRole: propUserRole }) {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
+  // Get currently logged-in admin email/identifier
+  const getLoggedInAdminEmail = useCallback(() => {
+    let email = localStorage.getItem("userEmail") || localStorage.getItem("adminEmail") || localStorage.getItem("email") || "";
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const payloadToken = JSON.parse(atob(token.split('.')[1]));
+        email = payloadToken.sub || payloadToken.email || payloadToken.name || email;
+      } catch (e) {
+        console.error("Token decode error:", e);
+      }
+    }
+    return email || "Sales Admin";
+  }, []);
+
   // Helper to record tracking activities & status changes
   const recordOrderActivity = useCallback((orderId, activity) => {
     if (!orderId) return [];
@@ -396,8 +411,13 @@ export default function Orders({ userRole: propUserRole }) {
           } catch {}
         }
 
+        const localCreatedBy = localStorage.getItem(`order_created_by_${id}`);
+        const createdByAdminEmail = ord.createdByAdminEmail || ord.createdBy || ord.createdByName || ord.salesAdminEmail || ord.assignedUserEmail || localCreatedBy || null;
+
         return {
           ...ord,
+          createdByAdminEmail,
+          createdBy: createdByAdminEmail || ord.createdBy,
           orderStatus: localStatus || ord.orderStatus || "sales_registered",
           deliveredAt: localDelivered || ord.deliveredAt,
           statusHistory
@@ -581,10 +601,13 @@ export default function Orders({ userRole: propUserRole }) {
       const firstItem = salesFormData.orderItems[0] || {};
       const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
 
+      const creatorEmail = getLoggedInAdminEmail();
       const payload = {
         assignedUserId: Number(targetUserId),
         customerName: salesFormData.customerName.trim(),
         customerEmail: salesFormData.customerEmail?.trim() || "",
+        createdByAdminEmail: creatorEmail,
+        createdBy: creatorEmail,
         piNumber: salesFormData.piNumber.trim(),
         project: firstProject,
         orderItems: salesFormData.orderItems.map((item) => {
@@ -605,6 +628,12 @@ export default function Orders({ userRole: propUserRole }) {
       };
 
       const created = await orderService.salesCreateOrder(payload);
+      const createdOrderId = created?.id || created?.orderNumber;
+      if (createdOrderId) {
+        localStorage.setItem(`order_created_by_${createdOrderId}`, creatorEmail);
+        created.createdByAdminEmail = creatorEmail;
+        created.createdBy = creatorEmail;
+      }
       showToast(`Order ${created?.orderNumber || created?.id || ""} created successfully!`, "success");
       setShowCreateModal(false);
       setSalesFormData({
@@ -625,10 +654,10 @@ export default function Orders({ userRole: propUserRole }) {
       if (created && (created.id || created.orderNumber)) {
         recordOrderActivity(created.id || created.orderNumber, {
           title: "Sales Order Created",
-          description: `Sales Order #${created.orderNumber || created.id} registered for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
+          description: `Sales Order #${created.orderNumber || created.id} registered by ${creatorEmail} for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
           status: "sales_registered",
           stage: "Sales Registered",
-          updatedBy: "Sales Admin"
+          updatedBy: creatorEmail
         });
         setOrders((prev) => {
           const exists = prev.some((o) => (o.id && o.id === created.id) || (o.orderNumber && o.orderNumber === created.orderNumber));
@@ -1413,6 +1442,8 @@ export default function Orders({ userRole: propUserRole }) {
         !q ||
         o.orderNumber?.toLowerCase().includes(q) ||
         o.customerName?.toLowerCase().includes(q) ||
+        o.createdByAdminEmail?.toLowerCase().includes(q) ||
+        o.createdBy?.toLowerCase().includes(q) ||
         o.piNumber?.toLowerCase().includes(q) ||
         o.productDetails?.toLowerCase().includes(q) ||
         o.mobileNumber?.includes(q) ||
@@ -1535,6 +1566,7 @@ export default function Orders({ userRole: propUserRole }) {
               <tr>
                 <th>Order # & PI</th>
                 <th>Customer & Contact</th>
+                <th>Created By</th>
                 <th>Product Details</th>
                 <th>Address</th>
                 <th>Order Status</th>
