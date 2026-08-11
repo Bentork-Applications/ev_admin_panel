@@ -295,7 +295,7 @@ export default function Orders({ userRole: propUserRole }) {
           }
           try {
             localStorage.setItem(`order_history_${id}`, JSON.stringify(statusHistory));
-          } catch {}
+          } catch { }
         }
 
         return {
@@ -451,7 +451,7 @@ export default function Orders({ userRole: propUserRole }) {
     let sessionSubmittedPis = [];
     try {
       sessionSubmittedPis = JSON.parse(sessionStorage.getItem("submitted_pi_numbers") || "[]");
-    } catch {}
+    } catch { }
 
     if (submittedPiNumbersRef.current.has(trimmedPi) || sessionSubmittedPis.includes(trimmedPi)) {
       showToast(`An order for P.I. Number "${salesFormData.piNumber}" is already being processed or created.`, "warning");
@@ -478,7 +478,7 @@ export default function Orders({ userRole: propUserRole }) {
     submittedPiNumbersRef.current.add(trimmedPi);
     try {
       sessionStorage.setItem("submitted_pi_numbers", JSON.stringify([...sessionSubmittedPis, trimmedPi]));
-    } catch {}
+    } catch { }
 
     setSalesFormErrors({});
     setSubmitting(true);

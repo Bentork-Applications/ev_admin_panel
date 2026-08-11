@@ -217,14 +217,9 @@ export const OrderTableRow = React.memo(({
 
               {order.orderStatus === "dispatched" && (
                 <>
-                  <button
-                    className="scm-action-btn received-btn"
-                    style={{ background: "#059669", color: "#FFFFFF", border: "none", borderRadius: "6px", padding: "6px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                    disabled={submitting}
-                    onClick={() => onMarkAsDelivered && onMarkAsDelivered(order.id)}
-                  >
-                    <CheckCircle size={14} /> Received
-                  </button>
+                  <span className="done-badge dispatched" style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", padding: "5px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
+                    Dispatched
+                  </span>
                   <button
                     className="icon-action-btn pdf-btn"
                     title="Download Order Report (PDF)"
@@ -236,8 +231,10 @@ export const OrderTableRow = React.memo(({
                 </>
               )}
 
-              {order.orderStatus === "delivered" && (
-                <span className="done-badge delivered" style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0" }}>✅ Delivered</span>
+              {(order.orderStatus === "completed" || order.orderStatus === "delivered") && (
+                <span className="done-badge completed" style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", padding: "5px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
+                  ✅ Completed
+                </span>
               )}
 
               {(order.orderStatus === "sales_registered" || order.orderStatus === "in_production") && (

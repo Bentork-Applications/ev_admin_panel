@@ -606,15 +606,10 @@ export const OrderDetailsDrawer = React.memo(({
                     Register / Update Warranty
                   </button>
 
-                  {selectedOrder.orderStatus === "dispatched" && (
-                    <button
-                      className="primary-action-btn full-w"
-                      style={{ background: "#2563EB" }}
-                      onClick={() => handleMarkAsDelivered(selectedOrder.id)}
-                      disabled={submitting}
-                    >
-                      <CheckCircle size={16} /> Mark as Delivered & Generate Overview PDF
-                    </button>
+                  {(selectedOrder.orderStatus === "completed" || selectedOrder.orderStatus === "delivered") && (
+                    <div style={{ padding: "12px", background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: "10px", textAlign: "center", fontWeight: 700, fontSize: "14px" }}>
+                      ✅ Order Completed (Received by Customer)
+                    </div>
                   )}
                 </>
               )}
