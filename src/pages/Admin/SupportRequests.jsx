@@ -145,6 +145,16 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
 
+  const handleOpenDetails = useCallback((req) => {
+    setSelectedRequest(req);
+    setShowDetailsModal(true);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setShowDetailsModal(false);
+    setSelectedRequest(null);
+  }, []);
+
   // Lightbox modal state for full-size image preview
   const [lightboxState, setLightboxState] = useState({
     isOpen: false,
@@ -167,6 +177,23 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
       currentIndex: 0
     });
   }, []);
+
+  // Keyboard shortcut (Escape key) to close open modals
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        if (lightboxState.isOpen) {
+          closeLightbox();
+        } else if (showDetailsModal) {
+          handleCloseDetails();
+        } else if (showCreateModal) {
+          setShowCreateModal(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showDetailsModal, showCreateModal, lightboxState.isOpen, closeLightbox, handleCloseDetails]);
 
   const nextLightboxImage = useCallback(() => {
     setLightboxState(prev => ({
@@ -1136,13 +1163,15 @@ const completedCount = requests.filter(r => r.status === "completed").length;
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
+          background: rgba(0, 0, 0, 0.55);
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
+          z-index: 9999;
           backdrop-filter: blur(4px);
           animation: fadeInOverlay 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          padding: 16px;
+          box-sizing: border-box;
         }
 
         .modal-content {
@@ -1150,12 +1179,28 @@ const completedCount = requests.filter(r => r.status === "completed").length;
           padding: 32px;
           border-radius: 20px;
           width: 550px;
-          max-width: 90%;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+          max-width: 100%;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
           max-height: 90vh;
           overflow-y: auto;
           font-family: 'Lexend', sans-serif;
           animation: scaleUpModal 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+          box-sizing: border-box;
+        }
+
+        .modal-content::-webkit-scrollbar {
+          width: 6px;
+        }
+        .modal-content::-webkit-scrollbar-track {
+          background: #F3F4F6;
+          border-radius: 8px;
+        }
+        .modal-content::-webkit-scrollbar-thumb {
+          background: #CBD5E1;
+          border-radius: 8px;
+        }
+        .modal-content::-webkit-scrollbar-thumb:hover {
+          background: #94A3B8;
         }
 
         .modal-header {
@@ -1531,99 +1576,430 @@ const completedCount = requests.filter(r => r.status === "completed").length;
       <div className="decorative-blob blob-2"></div>
 
       <div className="support-container">
-        <div className="top-header animate-header">
-          <div className="header-left">
-            <h2 className="gradient-header-text">Support Requests</h2>
-            <span style={{ fontSize: "13px", color: "#6B7280", display: "block", marginTop: 4 }}>Manage and track dealer and customer support tickets</span>
-          </div>
-          {isDealer && (
-            <button className="primary-btn" onClick={() => setShowCreateModal(true)}>
-              <span style={{ fontSize: 18, fontWeight: "bold" }}>+</span> Raise Support Request
-            </button>
-          )}
-        </div>
+        {selectedRequest ? (
+          /* FULL PAGE REQUEST DETAILS VIEW */
+          <div className="fullpage-details-container" style={{ animation: "fadeInPage 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}>
+            {/* Full Page Header & Back Action */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "24px",
+              paddingBottom: "16px",
+              borderBottom: "1px solid #E5E7EB",
+              flexWrap: "wrap",
+              gap: "16px"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <button
+                  className="sec-btn"
+                  onClick={handleCloseDetails}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "9px 16px",
+                    fontWeight: 600,
+                    fontSize: "13.5px",
+                    borderRadius: "10px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                  }}
+                >
+                  ← Back to Support Requests
+                </button>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: "#111827" }}>
+                    Support Request Details
+                  </h2>
+                  <span style={{ fontSize: "13px", color: "#6B7280", marginTop: "2px", display: "block" }}>
+                    Ticket ID: <strong style={{ color: "#111827" }}>{selectedRequest.ticketNo || selectedRequest.requestId || (selectedRequest.customerType === "DEALER" ? `D-${selectedRequest.id}` : `EU-${selectedRequest.id}`)}</strong> • Submitted on {formatDate(selectedRequest.createdAt)}
+                  </span>
+                </div>
+              </div>
 
-        {/* Stats Grid */}
-        <div className="stats-grid animate-stats">
-          <div className="stat-card">
-            <div className="stat-card-left">
-              <div className="stat-icon-circle" style={{ background: "rgba(17, 24, 39, 0.05)", borderColor: "rgba(17, 24, 39, 0.1)" }}>
-                <svg className="stat-icon-svg" style={{ color: "#111827" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-              </div>
-              <div className="stat-info-group">
-                <span className="stat-label-text">Total Requests</span>
-                <span className="stat-value-text"><AnimatedCounter value={totalCount} /></span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="stat-card">
-            <div className="stat-card-left">
-              <div className="stat-icon-circle" style={{ background: "rgba(245, 158, 11, 0.08)", borderColor: "rgba(245, 158, 11, 0.15)" }}>
-                <svg className="stat-icon-svg" style={{ color: "#D97706" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-              </div>
-              <div className="stat-info-group">
-                <span className="stat-label-text">Pending</span>
-                <span className="stat-value-text" style={{ color: "#D97706" }}><AnimatedCounter value={pendingCount} /></span>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {(() => {
+                  const statusKey = (selectedRequest.status || "pending").toLowerCase();
+                  return (
+                    <span className={`status-badge status-${statusKey}`} style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}>
+                      {statusKey.replace("_", " ").toUpperCase()}
+                    </span>
+                  );
+                })()}
+                <button
+                  className="sec-btn"
+                  onClick={handleCloseDetails}
+                  style={{ padding: "9px 16px", fontSize: "13px" }}
+                >
+                  Close
+                </button>
               </div>
             </div>
-          </div>
 
-          <div className="stat-card">
-            <div className="stat-card-left">
-              <div className="stat-icon-circle" style={{ background: "rgba(59, 130, 246, 0.08)", borderColor: "rgba(59, 130, 246, 0.15)" }}>
-                <svg className="stat-icon-svg" style={{ color: "#2563EB" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                </svg>
-              </div>
-              <div className="stat-info-group">
-                <span className="stat-label-text">Approved</span>
-                <span className="stat-value-text" style={{ color: "#2563EB" }}><AnimatedCounter value={approvedCount} /></span>
-              </div>
-            </div>
-          </div>
+            {/* Grid Layout: Metadata Card & Workflow Status Card */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: "24px",
+              marginBottom: "24px"
+            }}>
+              {/* Card 1: Key Metadata */}
+              <div style={{
+                background: "#FFFFFF",
+                borderRadius: "16px",
+                padding: "24px",
+                border: "1px solid #E5E7EB",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.03)"
+              }}>
+                <h3 style={{ margin: "0 0 18px 0", fontSize: "16px", fontWeight: 700, color: "#111827", borderBottom: "1px solid #F3F4F6", paddingBottom: "12px" }}>
+                  Request & Customer Overview
+                </h3>
+                <div className="details-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "16px 20px" }}>
+                  <div className="detail-item">
+                    <span className="detail-item-label">Request ID</span>
+                    <span className="detail-item-value" style={{ fontWeight: 700, color: "#111827" }}>
+                      {selectedRequest.ticketNo || selectedRequest.requestId || (selectedRequest.customerType === "DEALER" ? `D-${selectedRequest.id}` : `EU-${selectedRequest.id}`)}
+                    </span>
+                  </div>
 
-          <div className="stat-card">
-            <div className="stat-card-left">
-              <div className="stat-icon-circle" style={{ background: "rgba(139, 92, 246, 0.08)", borderColor: "rgba(139, 92, 246, 0.15)" }}>
-                <svg className="stat-icon-svg" style={{ color: "#7C3AED" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 4 23 10 17 10"></polyline>
-                  <polyline points="1 20 1 14 7 14"></polyline>
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                </svg>
-              </div>
-              <div className="stat-info-group">
-                <span className="stat-label-text">In Progress</span>
-                <span className="stat-value-text" style={{ color: "#7C3AED" }}><AnimatedCounter value={inProgressCount} /></span>
-              </div>
-            </div>
-          </div>
+                  <div className="detail-item">
+                    <span className="detail-item-label">Customer Name</span>
+                    <span className="detail-item-value" style={{ fontWeight: 600 }}>
+                      {selectedRequest.customerFullName || selectedRequest.customerName || selectedRequest.name || selectedRequest.submitterName || "N/A"}
+                    </span>
+                  </div>
 
-          <div className="stat-card">
-            <div className="stat-card-left">
-              <div className="stat-icon-circle" style={{ background: "rgba(16, 185, 129, 0.08)", borderColor: "rgba(16, 185, 129, 0.15)" }}>
-                <svg className="stat-icon-svg" style={{ color: "#059669" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                </svg>
+                  <div className="detail-item">
+                    <span className="detail-item-label">Product / Battery</span>
+                    <span className="detail-item-value">
+                      {selectedRequest.product?.includes("(Invoice:")
+                        ? selectedRequest.product.split(" (Invoice:")[0]
+                        : selectedRequest.product || "N/A"}
+                    </span>
+                  </div>
+
+                  <div className="detail-item">
+                    <span className="detail-item-label">Invoice Number</span>
+                    <span className="detail-item-value" style={{ fontWeight: 700, color: "#1D4ED8" }}>
+                      {selectedRequest.invoiceNumber || selectedRequest.invoiceNo || (selectedRequest.product?.includes("(Invoice: ")
+                        ? selectedRequest.product.split("(Invoice: ")[1]?.replace(")", "")
+                        : "N/A")}
+                    </span>
+                  </div>
+
+                  <div className="detail-item">
+                    <span className="detail-item-label">User Type</span>
+                    <span className="detail-item-value">
+                      <span className={`type-badge ${selectedRequest.customerType === "DEALER" ? "type-dealer" : "type-user"}`}>
+                        {selectedRequest.customerType === "DEALER" ? "DEALER" : "END USER"}
+                      </span>
+                    </span>
+                  </div>
+
+                  <div className="detail-item">
+                    <span className="detail-item-label">Submitter Email</span>
+                    <span className="detail-item-value" style={{ wordBreak: "break-all" }}>
+                      {selectedRequest.submitterEmail || selectedRequest.email || "N/A"}
+                    </span>
+                  </div>
+
+                  {(selectedRequest.mobileNumber || selectedRequest.mobile || selectedRequest.phone) && (
+                    <div className="detail-item">
+                      <span className="detail-item-label">Mobile Number</span>
+                      <span className="detail-item-value">
+                        {selectedRequest.mobileNumber || selectedRequest.mobile || selectedRequest.phone}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="detail-item">
+                    <span className="detail-item-label">Date Created</span>
+                    <span className="detail-item-value">{formatDate(selectedRequest.createdAt)}</span>
+                  </div>
+                </div>
               </div>
-              <div className="stat-info-group">
-                <span className="stat-label-text">Completed</span>
-                <span className="stat-value-text"><AnimatedCounter value={completedCount} /></span>
+
+              {/* Card 2: Workflow Stepper & Admin Action */}
+              <div style={{
+                background: "#FFFFFF",
+                borderRadius: "16px",
+                padding: "24px",
+                border: "1px solid #E5E7EB",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.03)"
+              }}>
+                <h3 style={{ margin: "0 0 18px 0", fontSize: "16px", fontWeight: 700, color: "#111827", borderBottom: "1px solid #F3F4F6", paddingBottom: "12px" }}>
+                  Resolution Progress & Actions
+                </h3>
+
+                {/* Progress Stepper */}
+                {(() => {
+                  const s = (selectedRequest.status || "pending").toLowerCase();
+                  const progressPercent =
+                    s === "pending" ? "0%" :
+                    s === "approved" ? "33.3%" :
+                    s === "in_progress" ? "66.6%" :
+                    s === "completed" ? "100%" : "0%";
+
+                  return (
+                    <div className="stepper-container" style={{ margin: "10px 0 24px 0" }}>
+                      <div className="stepper-header">Ticket Resolution Lifecycle</div>
+                      <div className="stepper">
+                        <div className="stepper-progress-line" style={{ width: progressPercent }} />
+
+                        <div className={`step ${s === "pending" ? "active" : "completed"}`}>
+                          <div className="step-circle">{s !== "pending" ? "✓" : "1"}</div>
+                          <span className="step-label">Pending</span>
+                        </div>
+
+                        <div className={`step ${s === "pending" ? "" : s === "approved" ? "active" : "completed"}`}>
+                          <div className="step-circle">{["in_progress", "completed"].includes(s) ? "✓" : "2"}</div>
+                          <span className="step-label">Approved</span>
+                        </div>
+
+                        <div className={`step ${["pending", "approved"].includes(s) ? "" : s === "in_progress" ? "active" : "completed"}`}>
+                          <div className="step-circle">{s === "completed" ? "✓" : "3"}</div>
+                          <span className="step-label">In Progress</span>
+                        </div>
+
+                        <div className={`step ${s === "completed" ? "completed active" : ""}`}>
+                          <div className="step-circle">{s === "completed" ? "✓" : "4"}</div>
+                          <span className="step-label">Completed</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Admin Action Button */}
+                {!isDealer && getNextStatus(selectedRequest.status) && (
+                  <div style={{
+                    marginTop: 20,
+                    padding: 16,
+                    background: "#F9FAFB",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: 12,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Admin Action</span>
+                      <span style={{ fontSize: 13, color: '#374151' }}>
+                        Advance request status to: <b style={{ textTransform: 'capitalize', color: '#111827' }}>{getNextStatus(selectedRequest.status)?.replace("_", " ")}</b>
+                      </span>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      disabled={submitting}
+                      style={{ width: "100%", justifyContent: "center", padding: "12px" }}
+                      onClick={() => handleUpdateStatus(selectedRequest.id, getNextStatus(selectedRequest.status))}
+                    >
+                      {submitting && <span className="action-spinner"></span>}
+                      {getTransitionButtonLabel(getNextStatus(selectedRequest.status))}
+                    </button>
+                  </div>
+                )}
+
+                {(selectedRequest.status || "").toLowerCase() === "completed" && (
+                  <div style={{
+                    marginTop: 20,
+                    padding: 16,
+                    background: "#ECFDF5",
+                    border: "1px solid #A7F3D0",
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    color: "#047857",
+                    fontWeight: 700,
+                    fontSize: 14
+                  }}>
+                    <span>✓</span> Support request has been fully resolved.
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Card 3: Issue Description & Attachments */}
+            <div style={{
+              background: "#FFFFFF",
+              borderRadius: "16px",
+              padding: "24px",
+              border: "1px solid #E5E7EB",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.03)"
+            }}>
+              <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: 700, color: "#111827", borderBottom: "1px solid #F3F4F6", paddingBottom: "12px" }}>
+                Issue Details & Attachments
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 24 }}>
+                <span className="detail-item-label">Issue Description</span>
+                <div className="desc-box" style={{ marginBottom: 0, maxHeight: "none", minHeight: "100px" }}>
+                  {selectedRequest.issueDescription || selectedRequest.description || "No description provided."}
+                </div>
+              </div>
+
+              {/* Uploaded User Images Section */}
+              {(() => {
+                const reqImages = getRequestImages(selectedRequest, baseUrl);
+                return (
+                  <div>
+                    <span className="detail-item-label" style={{ display: "block", marginBottom: 10 }}>
+                      Uploaded Images {reqImages.length > 0 ? `(${reqImages.length})` : ''}
+                    </span>
+
+                    {reqImages.length > 0 ? (
+                      <div className="image-gallery-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 16 }}>
+                        {reqImages.map((imgSrc, idx) => (
+                          <div
+                            key={idx}
+                            className="gallery-thumb-card"
+                            style={{ height: "130px" }}
+                            onClick={() => openLightbox(reqImages, idx)}
+                            title="Click to view full image"
+                          >
+                            <img src={imgSrc} alt={`Uploaded image ${idx + 1}`} />
+                            <div className="gallery-thumb-overlay">
+                              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="8" />
+                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                <line x1="11" y1="8" x2="11" y2="14" />
+                                <line x1="8" y1="11" x2="14" y2="11" />
+                              </svg>
+                              <span>Enlarge Image</span>
+                            </div>
+                            {reqImages.length > 1 && (
+                              <span className="gallery-badge">{idx + 1} / {reqImages.length}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="no-image-placeholder" style={{ padding: "30px", background: "#F9FAFB", borderRadius: "12px", border: "1px dashed #E5E7EB" }}>
+                        <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="18" height="18" rx="4" ry="4" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 600, marginTop: 6 }}>No Attachments Available</span>
+                        <span style={{ fontSize: 11, color: "#9CA3AF" }}>No images were uploaded with this support request</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Bottom Footer Back Button */}
+            <div style={{
+              marginTop: "28px",
+              display: "flex",
+              justifyContent: "flex-start",
+              borderTop: "1px solid #E5E7EB",
+              paddingTop: "20px"
+            }}>
+              <button className="sec-btn" onClick={handleCloseDetails} style={{ padding: "11px 24px", fontSize: "14px", fontWeight: 600 }}>
+                ← Back to Support Requests
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* MAIN SUPPORT REQUESTS LIST & TABLE VIEW */
+          <>
+            <div className="top-header animate-header">
+              <div className="header-left">
+                <h2 className="gradient-header-text">Support Requests</h2>
+                <span style={{ fontSize: "13px", color: "#6B7280", display: "block", marginTop: 4 }}>Manage and track dealer and customer support tickets</span>
+              </div>
+              {isDealer && (
+                <button className="primary-btn" onClick={() => setShowCreateModal(true)}>
+                  <span style={{ fontSize: 18, fontWeight: "bold" }}>+</span> Raise Support Request
+                </button>
+              )}
+            </div>
+
+            {/* Stats Grid */}
+            <div className="stats-grid animate-stats">
+              <div className="stat-card">
+                <div className="stat-card-left">
+                  <div className="stat-icon-circle" style={{ background: "rgba(17, 24, 39, 0.05)", borderColor: "rgba(17, 24, 39, 0.1)" }}>
+                    <svg className="stat-icon-svg" style={{ color: "#111827" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="16" y1="13" x2="8" y2="13"></line>
+                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                      <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                  </div>
+                  <div className="stat-info-group">
+                    <span className="stat-label-text">Total Requests</span>
+                    <span className="stat-value-text"><AnimatedCounter value={totalCount} /></span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="stat-card">
+                <div className="stat-card-left">
+                  <div className="stat-icon-circle" style={{ background: "rgba(245, 158, 11, 0.08)", borderColor: "rgba(245, 158, 11, 0.15)" }}>
+                    <svg className="stat-icon-svg" style={{ color: "#D97706" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                  </div>
+                  <div className="stat-info-group">
+                    <span className="stat-label-text">Pending</span>
+                    <span className="stat-value-text" style={{ color: "#D97706" }}><AnimatedCounter value={pendingCount} /></span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-card-left">
+                  <div className="stat-icon-circle" style={{ background: "rgba(59, 130, 246, 0.08)", borderColor: "rgba(59, 130, 246, 0.15)" }}>
+                    <svg className="stat-icon-svg" style={{ color: "#2563EB" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  </div>
+                  <div className="stat-info-group">
+                    <span className="stat-label-text">Approved</span>
+                    <span className="stat-value-text" style={{ color: "#2563EB" }}><AnimatedCounter value={approvedCount} /></span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-card-left">
+                  <div className="stat-icon-circle" style={{ background: "rgba(139, 92, 246, 0.08)", borderColor: "rgba(139, 92, 246, 0.15)" }}>
+                    <svg className="stat-icon-svg" style={{ color: "#7C3AED" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </div>
+                  <div className="stat-info-group">
+                    <span className="stat-label-text">In Progress</span>
+                    <span className="stat-value-text" style={{ color: "#7C3AED" }}><AnimatedCounter value={inProgressCount} /></span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-card-left">
+                  <div className="stat-icon-circle" style={{ background: "rgba(16, 185, 129, 0.08)", borderColor: "rgba(16, 185, 129, 0.15)" }}>
+                    <svg className="stat-icon-svg" style={{ color: "#059669" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  </div>
+                  <div className="stat-info-group">
+                    <span className="stat-label-text">Completed</span>
+                    <span className="stat-value-text" style={{ color: "#059669" }}><AnimatedCounter value={completedCount} /></span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
         {/* Advanced Filters */}
         <div className="filters-section animate-filters">
@@ -1797,10 +2173,7 @@ const completedCount = requests.filter(r => r.status === "completed").length;
                         <td>
                           <button
                             className="action-btn"
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setShowDetailsModal(true);
-                            }}
+                            onClick={() => handleOpenDetails(req)}
                           >
                             View Details
                           </button>
@@ -1938,232 +2311,9 @@ const completedCount = requests.filter(r => r.status === "completed").length;
             </div>
           </div>
         )}
-
-        {/* DETAILS & STATUS STEPPER MODAL */}
-        {showDetailsModal && selectedRequest && (
-          <div className="modal-overlay">
-            <div className="modal-content" style={{ width: "600px" }}>
-              <div className="modal-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <h3>Support Request Details</h3>
-                  <span className={`status-badge status-${selectedRequest.status}`}>
-                    {selectedRequest.status?.replace("_", " ")}
-                  </span>
-                </div>
-                <button className="close-icon-btn" onClick={() => setShowDetailsModal(false)}>×</button>
-              </div>
-
-              <div className="details-grid">
-                <div className="detail-item">
-                  <span className="detail-item-label">Request ID</span>
-                  <span className="detail-item-value" style={{ fontWeight: 600 }}>
-                    {selectedRequest.customerType === "DEALER" ? `D${selectedRequest.id}` : `EU${selectedRequest.id}`}
-                  </span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-item-label">Customer Name</span>
-                  <span className="detail-item-value">{selectedRequest.customerFullName}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-item-label">Product</span>
-                  <span className="detail-item-value">
-                    {selectedRequest.product?.includes("(Invoice:")
-                      ? selectedRequest.product.split(" (Invoice:")[0]
-                      : selectedRequest.product}
-                  </span>
-                </div>
-                {selectedRequest.product?.includes("(Invoice:") && (
-                  <div className="detail-item">
-                    <span className="detail-item-label">Invoice Number</span>
-                    <span className="detail-item-value" style={{ fontWeight: 600, color: "#1D4ED8" }}>
-                      {selectedRequest.product.split("(Invoice: ")[1]?.replace(")", "")}
-                    </span>
-                  </div>
-                )}
-                <div className="detail-item">
-                  <span className="detail-item-label">Date Created</span>
-                  <span className="detail-item-value">{formatDate(selectedRequest.createdAt)}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-item-label">Submitter Email</span>
-                  <span className="detail-item-value">{selectedRequest.submitterEmail}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-item-label">User Type</span>
-                  <span className="detail-item-value">
-                    <span className={`type-badge ${selectedRequest.customerType === "DEALER" ? "type-dealer" : "type-user"}`}>
-                      {selectedRequest.customerType === "DEALER" ? "DEALER" : "END USER"}
-                    </span>
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="detail-item-label">Issue Description</span>
-                <div className="desc-box">{selectedRequest.issueDescription}</div>
-              </div>
-
-              {/* Uploaded User Images Section */}
-              {(() => {
-                const reqImages = getRequestImages(selectedRequest, baseUrl);
-                return (
-                  <div style={{ marginTop: 12, marginBottom: 24 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span className="detail-item-label">
-                        Uploaded Images {reqImages.length > 0 ? `(${reqImages.length})` : ''}
-                      </span>
-                    </div>
-
-                    {reqImages.length > 0 ? (
-                      <div className="image-gallery-grid">
-                        {reqImages.map((imgSrc, idx) => (
-                          <div
-                            key={idx}
-                            className="gallery-thumb-card"
-                            onClick={() => openLightbox(reqImages, idx)}
-                          >
-                            <img src={imgSrc} alt={`Uploaded image ${idx + 1}`} />
-                            <div className="gallery-thumb-overlay">
-                              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="11" cy="11" r="8" />
-                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                                <line x1="11" y1="8" x2="11" y2="14" />
-                                <line x1="8" y1="11" x2="14" y2="11" />
-                              </svg>
-                              <span>Enlarge Image</span>
-                            </div>
-                            {reqImages.length > 1 && (
-                              <span className="gallery-badge">{idx + 1} / {reqImages.length}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="no-image-placeholder">
-                        <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="3" width="18" height="18" rx="4" ry="4" />
-                          <circle cx="8.5" cy="8.5" r="1.5" />
-                          <polyline points="21 15 16 10 5 21" />
-                        </svg>
-                        <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 600, marginTop: 6 }}>No Image Available</span>
-                        <span style={{ fontSize: 11, color: "#9CA3AF" }}>No attachments uploaded for this support request</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Visual Status Tracker Stepper */}
-              <div className="stepper-container">
-                <div className="stepper-header">Ticket Progress</div>
-                <div className="stepper">
-                  {/* Progress Line */}
-                  <div
-                    className="stepper-progress-line"
-                    style={{
-                      width:
-                        selectedRequest.status === "pending" ? "0%" :
-                          selectedRequest.status === "approved" ? "33.3%" :
-                            selectedRequest.status === "in_progress" ? "66.6%" :
-                              selectedRequest.status === "completed" ? "100%" : "0%"
-                    }}
-                  />
-
-                  {/* Pending Step */}
-                  <div className={`step ${selectedRequest.status === "pending" ? "active" : "completed"
-                    }`}>
-                    <div className="step-circle">
-                      {selectedRequest.status !== "pending" ? "✓" : "1"}
-                    </div>
-                    <span className="step-label">Pending</span>
-                  </div>
-
-                  {/* Approved Step */}
-                  <div className={`step ${selectedRequest.status === "pending" ? "" :
-                    selectedRequest.status === "approved" ? "active" : "completed"
-                    }`}>
-                    <div className="step-circle">
-                      {["in_progress", "completed"].includes(selectedRequest.status) ? "✓" : "2"}
-                    </div>
-                    <span className="step-label">Approved</span>
-                  </div>
-
-                  {/* In Progress Step */}
-                  <div className={`step ${["pending", "approved"].includes(selectedRequest.status) ? "" :
-                    selectedRequest.status === "in_progress" ? "active" : "completed"
-                    }`}>
-                    <div className="step-circle">
-                      {selectedRequest.status === "completed" ? "✓" : "3"}
-                    </div>
-                    <span className="step-label">In Progress</span>
-                  </div>
-
-                  {/* Completed Step */}
-                  <div className={`step ${selectedRequest.status === "completed" ? "completed" : ""
-                    }`}>
-                    <div className="step-circle">
-                      4
-                    </div>
-                    <span className="step-label">Completed</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Admin Actions */}
-              {!isDealer && getNextStatus(selectedRequest.status) && (
-                <div style={{
-                  marginTop: 24,
-                  padding: 16,
-                  background: "#fdfdfd",
-                  border: "1px solid #f0f0f0",
-                  borderRadius: 12,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center"
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Available Admin Action</span>
-                    <span style={{ fontSize: 13, color: '#444' }}>
-                      Advance request status to: <b style={{ textTransform: 'capitalize' }}>{getNextStatus(selectedRequest.status)?.replace("_", " ")}</b>
-                    </span>
-                  </div>
-                  <button
-                    className="primary-btn"
-                    disabled={submitting}
-                    onClick={() => handleUpdateStatus(selectedRequest.id, getNextStatus(selectedRequest.status))}
-                  >
-                    {submitting && <span className="action-spinner"></span>}
-                    {getTransitionButtonLabel(getNextStatus(selectedRequest.status))}
-                  </button>
-                </div>
-              )}
-
-              {selectedRequest.status === "completed" && (
-                <div style={{
-                  marginTop: 24,
-                  padding: 14,
-                  background: "#e8f5e9",
-                  border: "1px solid #c8e6c9",
-                  borderRadius: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  color: "#2e7d32",
-                  fontWeight: 600,
-                  fontSize: 14
-                }}>
-                  <span>✓</span> Support request resolved.
-                </div>
-              )}
-
-              <div className="form-actions" style={{ marginTop: 24 }}>
-                <button className="sec-btn" onClick={() => setShowDetailsModal(false)}>Close</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      </>
+    )}
+  </div>
 
       {/* Lightbox / Image Preview Modal */}
       {lightboxState.isOpen && (
