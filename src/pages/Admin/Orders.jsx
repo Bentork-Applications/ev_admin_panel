@@ -639,6 +639,7 @@ export default function Orders({ userRole: propUserRole }) {
 
     setEditOrderData({
       id: order.id,
+      assignedUserId: order.assignedUserId || order.assignedUser?.id || order.userId || order.user?.id || 1,
       orderNumber: order.orderNumber,
       customerName: order.customerName || "",
       customerEmail: order.customerEmail || "",
@@ -751,8 +752,11 @@ export default function Orders({ userRole: propUserRole }) {
       const firstItem = editOrderData.orderItems[0] || {};
       const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
 
+      const targetUserId = editOrderData.assignedUserId || selectedOrder?.assignedUserId || 1;
+
       const payload = {
         ...editOrderData,
+        assignedUserId: Number(targetUserId) > 0 ? Number(targetUserId) : 1,
         project: firstProject,
         orderItems: editOrderData.orderItems.map((item) => {
           const itemProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
