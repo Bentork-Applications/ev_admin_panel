@@ -436,6 +436,7 @@ export default function Orders({ userRole: propUserRole }) {
 
   const handleCreateSalesOrder = useCallback(async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (submitting || isCreatingRef.current || globalSalesOrderLock) return;
 
     const errors = validateSalesForm(salesFormData);
@@ -445,15 +446,40 @@ export default function Orders({ userRole: propUserRole }) {
     }
 
     const trimmedPi = salesFormData.piNumber.trim().toUpperCase();
-    if (submittedPiNumbersRef.current.has(trimmedPi)) {
+
+    // Check persistent sessionStorage lock registry as well as React Ref
+    let sessionSubmittedPis = [];
+    try {
+      sessionSubmittedPis = JSON.parse(sessionStorage.getItem("submitted_pi_numbers") || "[]");
+    } catch {}
+
+    if (submittedPiNumbersRef.current.has(trimmedPi) || sessionSubmittedPis.includes(trimmedPi)) {
       showToast(`An order for P.I. Number "${salesFormData.piNumber}" is already being processed or created.`, "warning");
       setShowCreateModal(false);
+      setSalesFormData({
+        customerName: "",
+        customerEmail: "",
+        mobileNumber: "",
+        piNumber: "",
+        orderItems: [createDefaultOrderItem()],
+        expectedDeliveryDate: "",
+        totalInvoiceAmount: "",
+        receivedAmount: "",
+        priority: "medium",
+        gstNumber: "",
+        address: "",
+      });
       return;
     }
 
+    // Set immediate synchronous locks BEFORE any async execution
     globalSalesOrderLock = true;
     isCreatingRef.current = true;
     submittedPiNumbersRef.current.add(trimmedPi);
+    try {
+      sessionStorage.setItem("submitted_pi_numbers", JSON.stringify([...sessionSubmittedPis, trimmedPi]));
+    } catch {}
+
     setSalesFormErrors({});
     setSubmitting(true);
 
@@ -511,6 +537,23 @@ export default function Orders({ userRole: propUserRole }) {
         receivedAmount: Number(salesFormData.receivedAmount) || 0,
       };
 
+      // Immediately reset modal & form BEFORE API dispatch to prevent stale form re-submission
+      setShowCreateModal(false);
+      setSalesFormData({
+        customerName: "",
+        customerEmail: "",
+        mobileNumber: "",
+        piNumber: "",
+        orderItems: [createDefaultOrderItem()],
+        expectedDeliveryDate: "",
+        totalInvoiceAmount: "",
+        receivedAmount: "",
+        priority: "medium",
+        gstNumber: "",
+        address: "",
+      });
+      setCustomerSearchTerm("");
+
       const created = await orderService.salesCreateOrder(payload);
       const createdOrderId = created?.id || created?.orderNumber;
 
@@ -527,7 +570,7 @@ export default function Orders({ userRole: propUserRole }) {
         localStorage.setItem(`order_created_by_${createdOrderId}`, creatorEmail);
         recordOrderActivity(createdOrderId, {
           title: "Sales Order Created",
-          description: `Sales Order #${created?.orderNumber || createdOrderId} registered by ${creatorEmail} for ${salesFormData.customerName} (P.I. ${salesFormData.piNumber})`,
+          description: `Sales Order #${created?.orderNumber || createdOrderId} registered by ${creatorEmail} for ${payload.customerName} (P.I. ${payload.piNumber})`,
           status: "sales_registered",
           stage: "Sales Registered",
           updatedBy: creatorEmail
@@ -535,21 +578,6 @@ export default function Orders({ userRole: propUserRole }) {
       }
 
       showToast(`Order ${created?.orderNumber || createdOrderId || ""} created successfully!`, "success");
-      setShowCreateModal(false);
-      setSalesFormData({
-        customerName: "",
-        customerEmail: "",
-        mobileNumber: "",
-        piNumber: "",
-        orderItems: [createDefaultOrderItem()],
-        expectedDeliveryDate: "",
-        totalInvoiceAmount: "",
-        receivedAmount: "",
-        priority: "medium",
-        gstNumber: "",
-        address: "",
-      });
-      setCustomerSearchTerm("");
 
       // Re-fetch backend Orders API to display the newly created order directly from backend database
       await fetchOrders();

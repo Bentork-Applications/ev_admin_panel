@@ -1744,8 +1744,8 @@ const completedCount = requests.filter(r => r.status === "completed").length;
                 </thead>
                 <tbody>
                   {currentRequestsList.length > 0 ? (
-                    currentRequestsList.map((req) => (
-                       <tr key={req.id}>
+                    currentRequestsList.map((req, idx) => (
+                       <tr key={`${req.customerType || 'REQ'}_${req.id || idx}_${idx}`}>
                         <td style={{ fontWeight: 600 }}>
                           {req.customerType === "DEALER" ? `D${req.id}` : `EU${req.id}`}
                         </td>

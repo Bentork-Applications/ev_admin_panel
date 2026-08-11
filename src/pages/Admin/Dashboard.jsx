@@ -109,7 +109,8 @@ const AnimatedNumber = ({ value }) => {
   return <span>{displayValue}</span>;
 };
 
-export default function Dashboard({ onLogout }) {
+export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
+  const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL || "";
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showLogout, setShowLogout] = useState(false);
   const navigate = useNavigate();

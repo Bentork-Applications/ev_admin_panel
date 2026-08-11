@@ -42,7 +42,16 @@ export const CreateSalesOrderModal = React.memo(({
           </button>
         </div>
 
-        <form onSubmit={handleCreateSalesOrder}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!submitting) {
+              handleCreateSalesOrder(e);
+            }
+          }}
+          autoComplete="off"
+        >
           <div className="modal-body">
             {/* Registered Customer Search Autocomplete */}
             <div className="form-group" style={{ position: "relative" }}>

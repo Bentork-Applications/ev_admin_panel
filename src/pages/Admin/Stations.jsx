@@ -196,6 +196,9 @@ function Stations({ baseUrl, userRole }) {
             // Fetch locations for each station in parallel
             const stationsWithLocation = await Promise.all(
               list.map(async (station) => {
+                if (station.location && typeof station.location === 'object') {
+                  return station;
+                }
                 if (station.locationId) {
                   try {
                     const locRes = await fetch(`${baseUrl}/location/get/${station.locationId}`, { headers });
