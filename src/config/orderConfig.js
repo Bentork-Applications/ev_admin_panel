@@ -43,6 +43,22 @@ export const ORDER_STATUS_CONFIG = {
     border: "#A7F3D0",
     fg: "#047857",
     color: "#059669"
+  },
+  delivered: {
+    label: "Completed",
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
+    border: "#A7F3D0",
+    fg: "#047857",
+    color: "#059669"
+  },
+  completed: {
+    label: "Completed",
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
+    border: "#A7F3D0",
+    fg: "#047857",
+    color: "#059669"
   }
 };
 

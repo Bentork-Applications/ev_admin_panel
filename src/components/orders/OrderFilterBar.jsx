@@ -51,6 +51,7 @@ export const OrderFilterBar = React.memo(({
           <option value="production_complete">Production Complete</option>
           <option value="scm_complete">SCM Complete</option>
           <option value="dispatched">Dispatched</option>
+          <option value="delivered">Completed</option>
         </select>
 
         <select

@@ -23,10 +23,10 @@ export default function ScmDashboard() {
   // Compute SCM Metrics
   const awaitingScmCount = orders.filter((o) => o.orderStatus === "production_complete").length;
   const scmCompleteCount = orders.filter((o) => o.orderStatus === "scm_complete").length;
-  const dispatchedCount = orders.filter((o) => o.orderStatus === "dispatched").length;
+  const dispatchedCount = orders.filter((o) => o.orderStatus === "dispatched" || o.orderStatus === "delivered" || o.orderStatus === "completed").length;
 
   const totalFulfilledUnits = orders
-    .filter((o) => o.orderStatus === "scm_complete" || o.orderStatus === "dispatched")
+    .filter((o) => o.orderStatus === "scm_complete" || o.orderStatus === "dispatched" || o.orderStatus === "delivered" || o.orderStatus === "completed")
     .reduce((sum, o) => {
       if (Array.isArray(o.orderItems) && o.orderItems.length > 0) {
         return sum + o.orderItems.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);

@@ -45,7 +45,7 @@ export default function ProductionDashboard() {
   ).length;
   const testingCount = orders.filter((o) => o.productionStatus === "testing").length;
   const completedCount = orders.filter(
-    (o) => o.orderStatus === "production_complete" || o.productionStatus === "completed" || o.orderStatus === "scm_complete" || o.orderStatus === "dispatched"
+    (o) => o.orderStatus === "production_complete" || o.productionStatus === "completed" || o.orderStatus === "scm_complete" || o.orderStatus === "dispatched" || o.orderStatus === "delivered" || o.orderStatus === "completed"
   ).length;
 
   const totalUnitsInProduction = orders.reduce((sum, o) => {

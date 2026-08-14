@@ -391,7 +391,7 @@ export default function Dealers({ baseUrl = import.meta.env.VITE_API_URL }) {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
 
   const fetchDealers = useCallback(async () => {
-    setLoading(true);
+    if (!dealers || dealers.length === 0) setLoading(true);
     const token = localStorage.getItem("token");
     if (!token) { navigate("/"); return; }
     try {

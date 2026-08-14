@@ -251,7 +251,7 @@ function AdminStaff({ baseUrl: propBaseUrl }) {
   }, []);
 
   const fetchAllStaffData = useCallback(async () => {
-    setLoading(true);
+    if (!staffData || staffData.length === 0) setLoading(true);
     setError(null);
 
     const token = localStorage.getItem("token");

@@ -145,7 +145,7 @@ function Stations({ baseUrl, userRole }) {
   // Fetch Station, location coordinates, chargers, and sessions in parallel
   useEffect(() => {
     const fetchStationData = async () => {
-      setLoading(true);
+      if (!stations || stations.length === 0) setLoading(true);
 
       const token = localStorage.getItem("token");
       if (!token) {

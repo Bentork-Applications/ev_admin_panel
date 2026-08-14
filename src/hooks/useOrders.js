@@ -3,8 +3,9 @@ import { orderService } from "../services/orderService";
 import { extractRoleFromToken } from "../utils/jwtUtils";
 
 export const useOrders = (userRoleFromProp) => {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialCached = orderService.getCachedOrders();
+  const [orders, setOrders] = useState(initialCached);
+  const [loading, setLoading] = useState(initialCached.length === 0);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
@@ -40,7 +41,7 @@ export const useOrders = (userRoleFromProp) => {
   }, []);
 
   const fetchOrders = useCallback(async () => {
-    setLoading(true);
+    if (orders.length === 0) setLoading(true);
     setError(null);
     try {
       let data = [];
@@ -57,11 +58,10 @@ export const useOrders = (userRoleFromProp) => {
     } catch (err) {
       console.error("Failed to fetch orders:", err);
       setError(err.message || "Failed to load orders list");
-      setOrders([]);
     } finally {
       setLoading(false);
     }
-  }, [isSalesAdmin, isProductionAdmin, isScmAdmin]);
+  }, [isSalesAdmin, isProductionAdmin, isScmAdmin, orders.length]);
 
   useEffect(() => {
     fetchOrders();

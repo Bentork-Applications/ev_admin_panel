@@ -242,7 +242,7 @@ function Charger({ baseUrl, userRole }) {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchData = useCallback(async (isSilent = false) => {
-    if (!isSilent) setLoading(true);
+    if (!isSilent && chargerRecoards.length === 0) setLoading(true);
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/');

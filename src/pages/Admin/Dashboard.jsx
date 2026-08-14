@@ -304,7 +304,9 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      setLoading(true);
+      if (!dashboardCards || dashboardCards.length === 0 || dashboardCards[0]?.value === "...") {
+        setLoading(true);
+      }
 
       const token = localStorage.getItem("token");
       if (!token) {
@@ -429,7 +431,7 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
         const endpoints = {
           users: "/user/total",
           revenue: "/revenue/total",
-          sessions: "/sessions/all/records",
+          sessions: "/sessions/total",
           stations: "/stations/total",
           energy: "/sessions/energy",
         };

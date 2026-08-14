@@ -51,7 +51,7 @@ function Sessions({ baseUrl, userRole }) {
 
   // Extracted outside useEffect so it can be re-called after stopping a session
   const fetchSessionData = async (showLoadingSpinner = true) => {
-    if (showLoadingSpinner) setLoading(true);
+    if (showLoadingSpinner && (!sessions || sessions.length === 0)) setLoading(true);
     const token = localStorage.getItem("token");
     if (!token) { navigate("/"); return; }
 

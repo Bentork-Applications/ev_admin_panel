@@ -77,6 +77,8 @@ const parseResponse = async (response) => {
   return data;
 };
 
+import { pageCache } from "../utils/pageCache";
+
 export const apiClient = {
   get: async (endpoint, customHeaders = {}) => {
     try {
@@ -93,6 +95,7 @@ export const apiClient = {
 
   post: async (endpoint, body = {}, customHeaders = {}) => {
     try {
+      pageCache.invalidate(endpoint.split("/")[1] || "");
       const response = await fetch(formatUrl(endpoint), {
         method: "POST",
         headers: getAuthHeaders(customHeaders),
@@ -107,6 +110,7 @@ export const apiClient = {
 
   put: async (endpoint, body = {}, customHeaders = {}) => {
     try {
+      pageCache.invalidate(endpoint.split("/")[1] || "");
       const response = await fetch(formatUrl(endpoint), {
         method: "PUT",
         headers: getAuthHeaders(customHeaders),
@@ -121,6 +125,7 @@ export const apiClient = {
 
   delete: async (endpoint, customHeaders = {}) => {
     try {
+      pageCache.invalidate(endpoint.split("/")[1] || "");
       const response = await fetch(formatUrl(endpoint), {
         method: "DELETE",
         headers: getAuthHeaders(customHeaders)

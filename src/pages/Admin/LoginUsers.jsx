@@ -57,7 +57,7 @@ function LoginUsers({ baseUrl }) {
 
   // Fetch Data
   const fetchUsers = useCallback(async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
+    if (!isBackground && users.length === 0) setLoading(true);
     const token = localStorage.getItem("token");
     if (!token) {
       navigate("/");

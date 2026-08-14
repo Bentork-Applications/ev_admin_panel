@@ -122,7 +122,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
   }, [baseUrl]);
 
   const fetchContacts = useCallback(async () => {
-    setLoading(true);
+    if (!contacts || contacts.length === 0) setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
     try {

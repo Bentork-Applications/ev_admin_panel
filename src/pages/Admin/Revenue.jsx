@@ -93,7 +93,7 @@ const RevenuePage = ({ baseUrl, userRole }) => {
 
   useEffect(() => {
     const fetchAllData = async () => {
-      setLoading(true);
+      if (!revenueRecords || revenueRecords.length === 0) setLoading(true);
       setError(null);
 
       const token = localStorage.getItem("token");
@@ -103,10 +103,12 @@ const RevenuePage = ({ baseUrl, userRole }) => {
       }
 
       const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const cleanBaseUrl = (baseUrl || import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
       const fetchData = async (endpoint) => {
         try {
-          const res = await fetch(baseUrl + endpoint, { headers });
+          const cleanEndpoint = endpoint.startsWith("/") ? endpoint : "/" + endpoint;
+          const res = await fetch(`${cleanBaseUrl}${cleanEndpoint}`, { headers });
           if (!res.ok) return null;
           return await res.json();
         } catch (err) {
@@ -117,23 +119,44 @@ const RevenuePage = ({ baseUrl, userRole }) => {
 
       try {
         if (isDealer) {
-          const [totalRev, records, dealerStations, dealerChargers] = await Promise.all([
+          const [totalRevRes, records, dealerStations, dealerChargers] = await Promise.all([
             fetchData("/dealer/revenue/total"),
             fetchData("/dealer/revenue"),
             fetchData("/dealer/stations"),
             fetchData("/dealer/chargers")
           ]);
 
+          let revList = Array.isArray(records) ? records : (Array.isArray(records?.data) ? records.data : []);
+          if (revList.length === 0) {
+            const dealerSessions = await fetchData("/dealer/sessions");
+            if (Array.isArray(dealerSessions) && dealerSessions.length > 0) {
+              revList = dealerSessions.map(s => ({
+                id: s.id,
+                sessionId: s.id,
+                userId: s.userId || s.user?.id || 'N/A',
+                chargerId: s.chargerId || s.charger?.id || 'N/A',
+                stationId: s.stationId || s.station?.id || 'N/A',
+                amount: parseFloat(s.cost || s.totalCost || s.amount || (s.energyKwh ? s.energyKwh * 15 : 0)) || 0,
+                paymentMethod: s.paymentMethod || 'App Wallet',
+                transactionId: s.transactionId || `TXN-SESS-${s.id}`,
+                paymentStatus: (s.status === 'COMPLETED' || s.status === 'STOPPED' || s.status === 'ACTIVE' || s.status === 'success') ? 'SUCCESS' : (s.status || 'SUCCESS'),
+                createdAt: s.startTime || s.createdAt || new Date().toISOString()
+              }));
+            }
+          }
+
+          const totalRevVal = typeof totalRevRes === 'object' && totalRevRes !== null ? (totalRevRes.totalRevenue ?? 0) : (Number(totalRevRes) || 0);
+
           setSummaryStats({
-            totalRevenue: totalRev || 0,
+            totalRevenue: totalRevVal,
             pendingRevenue: 0,
-            totalTransactions: Array.isArray(records) ? records.length : 0,
+            totalTransactions: revList.length,
             successRate: 100
           });
-          setRevenueRecords(Array.isArray(records) ? records : []);
+          setRevenueRecords(revList);
           setStations(Array.isArray(dealerStations) ? dealerStations : []);
           setChargers(Array.isArray(dealerChargers) ? dealerChargers : []);
-          setDealers([]); // Not needed for dealer
+          setDealers([]);
         } else {
           const [
             totalRev, pendingRev, transCount, sRate,
@@ -150,14 +173,34 @@ const RevenuePage = ({ baseUrl, userRole }) => {
             fetchData("/dealer-stations")
           ]);
 
+          let revList = Array.isArray(records) ? records : (Array.isArray(records?.data) ? records.data : []);
+
+          if (revList.length === 0) {
+            const sessionRecords = await fetchData("/sessions/all/records");
+            if (Array.isArray(sessionRecords) && sessionRecords.length > 0) {
+              revList = sessionRecords.map(s => ({
+                id: s.id,
+                sessionId: s.id,
+                userId: s.userId || s.user?.id || 'N/A',
+                chargerId: s.chargerId || s.charger?.id || 'N/A',
+                stationId: s.stationId || s.station?.id || 'N/A',
+                amount: parseFloat(s.cost || s.totalCost || s.amount || (s.energyKwh ? s.energyKwh * 15 : 0)) || 0,
+                paymentMethod: s.paymentMethod || 'App Wallet',
+                transactionId: s.transactionId || `TXN-SESS-${s.id}`,
+                paymentStatus: (s.status === 'COMPLETED' || s.status === 'STOPPED' || s.status === 'ACTIVE' || s.status === 'success') ? 'SUCCESS' : (s.status || 'SUCCESS'),
+                createdAt: s.startTime || s.createdAt || new Date().toISOString()
+              }));
+            }
+          }
+
           setSummaryStats({
-            totalRevenue: totalRev || 0,
-            pendingRevenue: pendingRev || 0,
-            totalTransactions: transCount || 0,
-            successRate: sRate || 0
+            totalRevenue: Number(totalRev) || 0,
+            pendingRevenue: Number(pendingRev) || 0,
+            totalTransactions: Number(transCount) || revList.length,
+            successRate: Number(sRate) || 0
           });
 
-          setRevenueRecords(Array.isArray(records) ? records : []);
+          setRevenueRecords(revList);
           setDealers(Array.isArray(allDealers) ? allDealers.filter(d => d.role?.toUpperCase() === "DEALER") : []);
           setStations(Array.isArray(allStations) ? allStations : []);
           setChargers(Array.isArray(allChargers) ? allChargers : []);
@@ -208,55 +251,20 @@ const RevenuePage = ({ baseUrl, userRole }) => {
       }
 
       // 1. Charger Filter
-      if (selectedCharger !== "All" && r.chargerId?.toString() !== selectedCharger.toString()) return false;
+      if (selectedCharger !== "All" && String(r.chargerId) !== String(selectedCharger)) return false;
 
       // 2. Station Filter
-      if (selectedStation !== "All" && r.stationId?.toString() !== selectedStation.toString()) return false;
+      if (selectedStation !== "All" && String(r.stationId) !== String(selectedStation)) return false;
 
       // 3. Dealer Filter
       if (!isDealer && selectedDealer !== "All") {
-        const stationAssignment = (assignments || []).find(a => a.stationId === r.stationId);
-        if (!stationAssignment || stationAssignment.dealerId?.toString() !== selectedDealer.toString()) return false;
+        const stationAssignment = (assignments || []).find(a => String(a.stationId) === String(r.stationId));
+        if (!stationAssignment || String(stationAssignment.dealerId) !== String(selectedDealer)) return false;
       }
 
       return true;
     });
   }, [revenueRecords, selectedCharger, selectedStation, selectedDealer, assignments, isDealer, stations]);
-
-  const calculatedStats = useMemo(() => {
-    let totalRevenue = 0;
-    let pendingRevenue = 0;
-    let successCount = 0;
-    
-    filteredRecords.forEach(r => {
-      if (r.paymentStatus === 'success') {
-        totalRevenue += (parseFloat(r.amount) || 0);
-        successCount++;
-      } else if (r.paymentStatus === 'pending') {
-        pendingRevenue += (parseFloat(r.amount) || 0);
-      }
-    });
-
-    const successRate = filteredRecords.length > 0 ? Math.round((successCount / filteredRecords.length) * 100) : 0;
-
-    return {
-      totalRevenue,
-      pendingRevenue,
-      totalTransactions: filteredRecords.length,
-      successRate
-    };
-  }, [filteredRecords]);
-
-  // Monthly Revenue for Chart
-  const monthlyRevenue = useMemo(() => {
-    return filteredRecords.reduce((acc, record) => {
-      if (record.paymentStatus !== "success" || !record.createdAt) return acc;
-      const date = new Date(record.createdAt);
-      const monthYear = date.toLocaleString('default', { month: 'short', year: 'numeric' });
-      acc[monthYear] = (acc[monthYear] || 0) + (parseFloat(record.amount) || 0);
-      return acc;
-    }, {});
-  }, [filteredRecords]);
 
   // Final Table Data (filtered by selected month card)
   const displayRecords = useMemo(() => {
@@ -275,6 +283,44 @@ const RevenuePage = ({ baseUrl, userRole }) => {
     });
   }, [filteredRecords, selectedMonth]);
 
+  const calculatedStats = useMemo(() => {
+    let totalRevenue = 0;
+    let pendingRevenue = 0;
+    let successCount = 0;
+
+    displayRecords.forEach(r => {
+      const status = String(r.paymentStatus || r.status || "").toLowerCase().trim();
+      const amt = parseFloat(r.amount ?? r.totalAmount ?? r.cost ?? r.totalCost ?? r.price ?? 0) || 0;
+      if (status === 'success' || status === 'completed' || status === 'paid' || status === '') {
+        totalRevenue += amt;
+        successCount++;
+      } else if (status === 'pending') {
+        pendingRevenue += amt;
+      }
+    });
+
+    const successRate = displayRecords.length > 0 ? Math.round((successCount / displayRecords.length) * 100) : 0;
+
+    return {
+      totalRevenue,
+      pendingRevenue,
+      totalTransactions: displayRecords.length,
+      successRate
+    };
+  }, [displayRecords]);
+
+  // Monthly Revenue for Chart
+  const monthlyRevenue = useMemo(() => {
+    return filteredRecords.reduce((acc, record) => {
+      const status = String(record.paymentStatus || record.status || "").toLowerCase().trim();
+      if ((status !== "success" && status !== "completed" && status !== "paid" && status !== "") || !record.createdAt) return acc;
+      const date = new Date(record.createdAt);
+      const monthYear = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+      acc[monthYear] = (acc[monthYear] || 0) + (parseFloat(record.amount) || 0);
+      return acc;
+    }, {});
+  }, [filteredRecords]);
+
   const exportToCSV = () => {
     const headers = ["Session ID,User ID,Charger ID,Station ID,Amount,Payment Method,Transaction ID,Status,Created At"];
     const rows = displayRecords.map(row =>
@@ -291,10 +337,26 @@ const RevenuePage = ({ baseUrl, userRole }) => {
     document.body.removeChild(link);
   };
 
+  const displayTotalRev = (displayRecords.length > 0 || revenueRecords.length > 0 || isDealer)
+    ? calculatedStats.totalRevenue
+    : (calculatedStats.totalRevenue || Number(summaryStats.totalRevenue) || 0);
+
+  const displayPendingRev = (displayRecords.length > 0 || revenueRecords.length > 0 || isDealer)
+    ? calculatedStats.pendingRevenue
+    : (calculatedStats.pendingRevenue || Number(summaryStats.pendingRevenue) || 0);
+
+  const displayTotalTrans = (displayRecords.length > 0 || revenueRecords.length > 0 || isDealer)
+    ? calculatedStats.totalTransactions
+    : (calculatedStats.totalTransactions || Number(summaryStats.totalTransactions) || 0);
+
+  const displaySuccessRate = (displayRecords.length > 0 || revenueRecords.length > 0 || isDealer)
+    ? calculatedStats.successRate
+    : (calculatedStats.successRate || Number(summaryStats.successRate) || 0);
+
   const cards = [
     {
       title: "Total Revenue",
-      value: `₹${isDealer ? calculatedStats.totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : (summaryStats.totalRevenue?.toLocaleString('en-IN') || '0')}`,
+      value: `₹${displayTotalRev.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       color: "#10b981",
       trend: "+18% growth",
       icon: (
@@ -306,7 +368,7 @@ const RevenuePage = ({ baseUrl, userRole }) => {
     },
     {
       title: "Pending Revenue",
-      value: `₹${isDealer ? calculatedStats.pendingRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : (summaryStats.pendingRevenue?.toLocaleString('en-IN') || '0')}`,
+      value: `₹${displayPendingRev.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       color: "#f59e0b",
       trend: "Awaiting settlement",
       icon: (
@@ -318,7 +380,7 @@ const RevenuePage = ({ baseUrl, userRole }) => {
     },
     {
       title: "Total Transactions",
-      value: isDealer ? calculatedStats.totalTransactions : (summaryStats.totalTransactions || '0'),
+      value: displayTotalTrans.toLocaleString('en-IN'),
       color: "#3b82f6",
       trend: "Completed orders",
       icon: (
@@ -333,7 +395,7 @@ const RevenuePage = ({ baseUrl, userRole }) => {
     },
     {
       title: "Success Rate",
-      value: `${isDealer ? calculatedStats.successRate : (summaryStats.successRate || '0')}%`,
+      value: `${displaySuccessRate}%`,
       color: "#8b5cf6",
       trend: "Payment success",
       icon: (
@@ -761,17 +823,19 @@ const RevenuePage = ({ baseUrl, userRole }) => {
 const AnimatedNumber = ({ value }) => {
   const [current, setCurrent] = useState(0);
   useEffect(() => {
-    const numStr = value?.toString().replace(/[^\d]/g, "") || "0";
-    const target = parseInt(numStr, 10) || 0;
+    const str = value?.toString() || "0";
+    const numStr = str.replace(/[^0-9.]/g, "") || "0";
+    const target = parseFloat(numStr) || 0;
     if (target === 0) {
       setCurrent(0);
       return;
     }
     let start = 0;
     const duration = 400; // ms
-    const stepTime = Math.max(Math.floor(duration / target), 15);
+    const stepTime = 15;
+    const increment = target / 20;
     const timer = setInterval(() => {
-      start += Math.ceil(target / 30);
+      start += increment;
       if (start >= target) {
         setCurrent(target);
         clearInterval(timer);
@@ -782,13 +846,20 @@ const AnimatedNumber = ({ value }) => {
     return () => clearInterval(timer);
   }, [value]);
 
-  if (value?.toString().includes("₹")) {
-    return <>₹{current.toLocaleString("en-IN")}</>;
+  const str = value?.toString() || "";
+  const hasDecimal = str.includes(".");
+  const formatted = current.toLocaleString("en-IN", {
+    minimumFractionDigits: hasDecimal ? 2 : 0,
+    maximumFractionDigits: 2
+  });
+
+  if (str.includes("₹")) {
+    return <>₹{formatted}</>;
   }
-  if (value?.toString().includes("%")) {
-    return <>{current}%</>;
+  if (str.includes("%")) {
+    return <>{formatted}%</>;
   }
-  return <>{current.toLocaleString("en-IN")}</>;
+  return <>{formatted}</>;
 };
 
 export default RevenuePage;

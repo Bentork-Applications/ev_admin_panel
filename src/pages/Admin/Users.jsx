@@ -451,7 +451,7 @@ function Users({ baseUrl }) {
   const fetchCards = useCallback(async () => {
     const token = localStorage.getItem("token");
     if (!token) { navigate("/"); return; }
-    setLoading(true);
+    if (!cards || cards.length === 0) setLoading(true);
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     try {
       const res = await fetch(`${baseUrl}/rfid-card`, { headers });

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { batteryService } from "../../services/batteryService";
+import { pageCache } from "../../utils/pageCache";
 
 export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
@@ -83,8 +84,9 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     };
   };
 
-  const [batteries, setBatteries] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialCachedBatteries = useMemo(() => pageCache.get("batteries") || [], []);
+  const [batteries, setBatteries] = useState(initialCachedBatteries);
+  const [loading, setLoading] = useState(initialCachedBatteries.length === 0);
   const [error, setError] = useState(null);
 
   // --- Excel Bulk Upload state ---
@@ -220,7 +222,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   };
 
   const fetchBatteries = useCallback(async () => {
-    setLoading(true);
+    if (batteries.length === 0) setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
     if (!token) {
@@ -234,8 +236,6 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       const scmBatteries = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");
       const existingKeys = new Set(normalized.map(b => String(b.barcode || b.startBarcode || b.id)));
 
-
-
       const additionalScmBatteries = [];
       scmBatteries.forEach(scmb => {
         const key = String(scmb.barcode || scmb.startBarcode || scmb.id);
@@ -245,7 +245,9 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         }
       });
 
-      setBatteries([...normalized, ...additionalScmBatteries]);
+      const combined = [...normalized, ...additionalScmBatteries];
+      setBatteries(combined);
+      pageCache.set("batteries", combined);
     } catch (err) {
       console.error("[BATTERY PIPELINE] ERROR in fetchBatteries:", err);
       const scmBatteries = JSON.parse(localStorage.getItem("battery_inventory_scm_sync") || "[]");

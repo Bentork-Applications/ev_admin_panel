@@ -122,7 +122,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
 
   const fetchClaims = useCallback(async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
+    if (!isBackground && claims.length === 0) setLoading(true);
     else setRefreshing(true);
     setError(null);
     const token = localStorage.getItem("token");

@@ -5,23 +5,24 @@ export const useDashboardData = (fetchFn) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (isSilent = false) => {
+    if (!isSilent && orders.length === 0) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const data = await fetchFn();
       setOrders(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message || "Failed to load dashboard metrics");
-      setOrders([]);
     } finally {
       setLoading(false);
     }
-  }, [fetchFn]);
+  }, [fetchFn, orders.length]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  return { orders, loading, error, refresh: loadData };
+  return { orders, loading, error, refresh: () => loadData(true) };
 };

@@ -54,9 +54,10 @@ export default function Orders({ userRole: propUserRole }) {
   const isProductionAdmin = role === "PRODUCTION_ADMIN";
   const isScmAdmin = role === "SCM_ADMIN";
 
-  // State
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // State (initialized from cache for instant 0ms render)
+  const initialCached = useMemo(() => orderService.getCachedOrders(), []);
+  const [orders, setOrders] = useState(initialCached);
+  const [loading, setLoading] = useState(initialCached.length === 0);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -166,7 +167,7 @@ export default function Orders({ userRole: propUserRole }) {
 
   // Fetch Orders based on role (100% READ-ONLY GET - NEVER triggers POST or order creation)
   const fetchOrders = useCallback(async () => {
-    setLoading(true);
+    if (orders.length === 0) setLoading(true);
     setError(null);
     try {
       const fetchedMap = new Map();
@@ -1295,6 +1296,7 @@ export default function Orders({ userRole: propUserRole }) {
           statusHistory: updatedHistory
         };
         generateOrderPdfReport(enriched);
+        orderService.saveCachedOrders([enriched]);
       }
 
       showToast("Order marked as Delivered & overview PDF generated!", "success");

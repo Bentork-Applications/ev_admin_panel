@@ -269,7 +269,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
   }, [dateFilter]);
 
   const fetchRequests = useCallback(async () => {
-    setLoading(true);
+    if (!requests || requests.length === 0) setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
 

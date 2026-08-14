@@ -133,19 +133,21 @@ export default function SlotBookings({ baseUrl }) {
   // ── Parallel Fetching Logic (unchanged) ───────────────────────────────────
   useEffect(() => {
     const fetchGlobalData = async () => {
-      setLoading(true);
+      if (!allBookings || allBookings.length === 0) setLoading(true);
       const token = localStorage.getItem("token");
       if (!token) { navigate("/"); return; }
 
       try {
-        const stRes = await fetch(`${baseUrl}/stations/all`, { headers: { Authorization: `Bearer ${token}` } });
-        const stData = await stRes.json();
-        const validStations = Array.isArray(stData) ? stData : [];
-        setStations(validStations);
+        const [stRes, chRes] = await Promise.all([
+          fetch(`${baseUrl}/stations/all`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${baseUrl}/chargers/all`, { headers: { Authorization: `Bearer ${token}` } })
+        ]);
 
-        const chRes = await fetch(`${baseUrl}/chargers/all`, { headers: { Authorization: `Bearer ${token}` } });
-        const chData = await chRes.json();
+        const stData = await stRes.json().catch(() => []);
+        const chData = await chRes.json().catch(() => []);
+        const validStations = Array.isArray(stData) ? stData : [];
         const validChargers = Array.isArray(chData) ? chData : [];
+        setStations(validStations);
         setChargers(validChargers);
 
         if (validStations.length > 0) {
@@ -160,6 +162,8 @@ export default function SlotBookings({ baseUrl }) {
           bookingsResults.forEach(res => { combinedBookings = combinedBookings.concat(res); });
           combinedBookings.sort((a, b) => (b.id || b._id) - (a.id || a._id));
           setAllBookings(combinedBookings);
+        } else {
+          setAllBookings([]);
         }
 
         if (validChargers.length > 0) {
@@ -172,6 +176,8 @@ export default function SlotBookings({ baseUrl }) {
           const slotsResults = await Promise.all(slotsPromises);
           const totalAvail = slotsResults.reduce((sum, count) => sum + count, 0);
           setAvailableSlotsCount(totalAvail);
+        } else {
+          setAvailableSlotsCount(0);
         }
       } catch (err) {
         console.error("Error fetching global slot data:", err);

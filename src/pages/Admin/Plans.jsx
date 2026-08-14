@@ -29,8 +29,8 @@ export default function PlansPage({ baseUrl }) {
   // ✅ Fetch all chargers and plans
   useEffect(() => {
     const token = localStorage.getItem("token");
-    setLoading(true);
-    setChargersLoading(true);
+    if (!plans || plans.length === 0) setLoading(true);
+    if (!chargers || chargers.length === 0) setChargersLoading(true);
 
     // Fetch Chargers
     fetch(`${baseUrl}/chargers/all`, {

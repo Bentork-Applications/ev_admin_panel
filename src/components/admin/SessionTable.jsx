@@ -46,9 +46,9 @@ export default function SessionTable({ records = [] }) {
         </thead>
         <tbody>
             {records.map((row) => {
-            // NEW: Dynamic styling for the status badge
-            const isCompleted = row.paymentStatus === "success";
-            const isError = row.paymentStatus === "failed";
+            const statusLower = String(row.paymentStatus || "").toLowerCase();
+            const isCompleted = statusLower === "success" || statusLower === "completed" || statusLower === "paid";
+            const isError = statusLower === "failed" || statusLower === "error";
             // const statusStyle = {
             //   display: "inline-block",
             //   padding: "4px 12px",

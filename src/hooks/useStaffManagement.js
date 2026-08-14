@@ -2,10 +2,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { staffService } from "../services/staffService";
 
+import { pageCache } from "../utils/pageCache";
+
 export const useStaffManagement = (roleKey) => {
   const navigate = useNavigate();
-  const [staffData, setStaffData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `staff_${roleKey || "ALL"}`;
+  const initialCached = useMemo(() => pageCache.get(cacheKey) || [], [cacheKey]);
+  const [staffData, setStaffData] = useState(initialCached);
+  const [loading, setLoading] = useState(initialCached.length === 0);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -30,7 +34,7 @@ export const useStaffManagement = (roleKey) => {
   }, []);
 
   const fetchStaffData = useCallback(async () => {
-    setLoading(true);
+    if (staffData.length === 0) setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
     if (!token) {
@@ -48,14 +52,14 @@ export const useStaffManagement = (roleKey) => {
         : list;
 
       setStaffData(filtered);
+      pageCache.set(cacheKey, filtered);
     } catch (err) {
       console.error("Error fetching staff:", err);
       setError(err.message || "Failed to connect to backend server.");
-      setStaffData([]);
     } finally {
       setLoading(false);
     }
-  }, [roleKey, navigate]);
+  }, [roleKey, navigate, cacheKey, staffData.length]);
 
   useEffect(() => {
     fetchStaffData();

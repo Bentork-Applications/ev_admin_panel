@@ -174,19 +174,23 @@ export default function Sidebar({ onLogout, isMobileOpen, setIsMobileOpen, userR
     }
   ];
 
-  const filteredGroups = allGroups.map(group => {
-    const visibleItems = group.items.filter(item => {
-      if (currentRole === "ADMIN_STAFF") {
-        if (item.path === "/dashboard" || item.path === null) return true;
-        const pageKey = item.path.replace("/dashboard/", "");
-        return allowedPages.includes(pageKey);
-      }
-      return item.roles.includes(currentRole);
-    });
-    return { ...group, items: visibleItems };
-  }).filter(group => group.items.length > 0);
+  const filteredGroups = React.useMemo(() => {
+    return allGroups.map(group => {
+      const visibleItems = group.items.filter(item => {
+        if (currentRole === "ADMIN_STAFF") {
+          if (item.path === "/dashboard" || item.path === null) return true;
+          const pageKey = item.path.replace("/dashboard/", "");
+          return allowedPages.includes(pageKey);
+        }
+        return item.roles.includes(currentRole);
+      });
+      return { ...group, items: visibleItems };
+    }).filter(group => group.items.length > 0);
+  }, [currentRole, allowedPages]);
 
-  const menuItems = filteredGroups.reduce((acc, g) => [...acc, ...g.items], []);
+  const menuItems = React.useMemo(() => {
+    return filteredGroups.reduce((acc, g) => [...acc, ...g.items], []);
+  }, [filteredGroups]);
 
   const [pendingCounts, setPendingCounts] = useState({});
 
@@ -220,7 +224,7 @@ export default function Sidebar({ onLogout, isMobileOpen, setIsMobileOpen, userR
 
     window.addEventListener("refresh-pending-counts", handleRefreshEvent);
 
-    const interval = setInterval(fetchPendingCounts, 10000); // 10s auto-refresh
+    const interval = setInterval(fetchPendingCounts, 30000); // 30s auto-refresh
 
     return () => {
       window.removeEventListener("refresh-pending-counts", handleRefreshEvent);
