@@ -57,8 +57,25 @@ export const OrderDetailsDrawer = React.memo(({
   if (!showDrawer || !selectedOrder) return null;
 
   const getProductWarrantyInfo = (item) => {
-    const startDate = item.warrantyStartDate || selectedOrder.warrantyStartDate || "";
-    const endDate = item.warrantyEndDate || selectedOrder.warrantyEndDate || "";
+    const localStart = selectedOrder?.id ? localStorage.getItem(`order_warranty_start_${selectedOrder.id}`) : null;
+    const localEnd = selectedOrder?.id ? localStorage.getItem(`order_warranty_end_${selectedOrder.id}`) : null;
+
+    const startDate =
+      item?.warrantyStartDate ||
+      item?.warranty_start_date ||
+      selectedOrder?.warrantyStartDate ||
+      selectedOrder?.warranty_start_date ||
+      localStart ||
+      (selectedOrder?.createdAt ? String(selectedOrder.createdAt).split("T")[0] : (selectedOrder?.createdDate ? String(selectedOrder.createdDate).split("T")[0] : "")) ||
+      "";
+
+    const endDate =
+      item?.warrantyEndDate ||
+      item?.warranty_end_date ||
+      selectedOrder?.warrantyEndDate ||
+      selectedOrder?.warranty_end_date ||
+      localEnd ||
+      "";
 
     let fullY = item.fullWarrantyYears;
     let fullM = item.fullWarrantyMonths;

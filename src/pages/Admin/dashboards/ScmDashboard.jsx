@@ -278,17 +278,17 @@ export default function ScmDashboard() {
         ) : orders.length === 0 ? (
           <div style={{ textAlign: "center", padding: "30px", color: "#6B7280" }}>No SCM orders found.</div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+          <div style={{ overflowX: "auto", width: "100%", WebkitOverflowScrolling: "touch" }}>
+            <table style={{ width: "100%", minWidth: "850px", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
               <thead>
                 <tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E5E7EB" }}>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Order Number</th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Quantity</th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Invoice Number</th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Barcode / Range</th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Tracking ID</th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>SCM Status</th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151" }}>Actions</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Order Number</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Quantity</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Invoice Number</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Barcode / Range</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Tracking ID</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>SCM Status</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -299,20 +299,20 @@ export default function ScmDashboard() {
 
                   return (
                     <tr key={order.id || order.orderNumber} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                      <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827" }}>{order.orderNumber}</td>
-                      <td style={{ padding: "12px 16px", color: "#4B5563" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>{order.orderNumber}</td>
+                      <td style={{ padding: "12px 16px", color: "#4B5563", whiteSpace: "nowrap" }}>
                         {Array.isArray(order.orderItems) && order.orderItems.length > 0
                           ? `${order.orderItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)} units`
                           : `${order.quantity || 1} units`}
                       </td>
-                      <td style={{ padding: "12px 16px", fontWeight: 500, color: "#111827" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 500, color: "#111827", whiteSpace: "nowrap" }}>
                         {order.invoiceNumber || "—"}
                       </td>
-                      <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#1D4ED8", fontSize: "12px" }}>
+                      <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#1D4ED8", fontSize: "12px", whiteSpace: "nowrap" }}>
                         {barcodeDisplay}
                       </td>
-                      <td style={{ padding: "12px 16px", color: "#4B5563" }}>{order.trackingId || "—"}</td>
-                      <td style={{ padding: "12px 16px" }}>
+                      <td style={{ padding: "12px 16px", color: "#4B5563", whiteSpace: "nowrap" }}>{order.trackingId || "—"}</td>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
                         <span
                           style={{
                             padding: "4px 10px",
@@ -336,7 +336,7 @@ export default function ScmDashboard() {
                           {(order.orderStatus || "production_complete").replace("_", " ").toUpperCase()}
                         </span>
                       </td>
-                      <td style={{ padding: "12px 16px" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
                         <button
                           onClick={() => navigate("/dashboard/orders")}
                           style={{

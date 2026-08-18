@@ -135,10 +135,13 @@ export const orderService = {
   // ==================== SCM ADMIN ====================
   scmGetOrders: async () => {
     try {
-      const [scmRes, adminRes] = await Promise.all([
-        apiClient.get("/orders/scm/orders").catch(() => []),
-        apiClient.get("/orders/admin/all").catch(() => [])
-      ]);
+      const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
+      const isSuperAdmin = ["ADMIN", "SUPER_ADMIN"].includes(userRole);
+
+      const scmPromise = apiClient.get("/orders/scm/orders").catch(() => []);
+      const adminPromise = isSuperAdmin ? apiClient.get("/orders/admin/all").catch(() => []) : Promise.resolve([]);
+
+      const [scmRes, adminRes] = await Promise.all([scmPromise, adminPromise]);
 
       const scmArr = Array.isArray(scmRes) ? scmRes : Array.isArray(scmRes?.orders) ? scmRes.orders : [];
       const adminArr = Array.isArray(adminRes) ? adminRes : Array.isArray(adminRes?.orders) ? adminRes.orders : [];
@@ -199,10 +202,18 @@ export const orderService = {
 
   // ==================== SUPER ADMIN ====================
   adminGetAllOrders: async () => {
-    const res = await apiClient.get("/orders/admin/all");
-    const arr = Array.isArray(res) ? res : Array.isArray(res?.orders) ? res.orders : [];
-    orderService.saveCachedOrders(arr);
-    return res;
+    try {
+      const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
+      if (!["ADMIN", "SUPER_ADMIN"].includes(userRole)) {
+        return orderService.getCachedOrders();
+      }
+      const res = await apiClient.get("/orders/admin/all");
+      const arr = Array.isArray(res) ? res : Array.isArray(res?.orders) ? res.orders : [];
+      orderService.saveCachedOrders(arr);
+      return res;
+    } catch {
+      return orderService.getCachedOrders();
+    }
   },
 
   adminGetOrderDetail: async (id) => {

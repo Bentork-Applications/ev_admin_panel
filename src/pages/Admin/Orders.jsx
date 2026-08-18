@@ -221,6 +221,8 @@ export default function Orders({ userRole: propUserRole }) {
         const localDelivered = localStorage.getItem(`order_delivered_date_${id}`);
         const localHistory = JSON.parse(localStorage.getItem(`order_history_${id}`) || "[]");
         const localCreatedBy = localStorage.getItem(`order_created_by_${id}`);
+        const localWarrantyStart = localStorage.getItem(`order_warranty_start_${id}`);
+        const localWarrantyEnd = localStorage.getItem(`order_warranty_end_${id}`);
         const createdBy = ord.createdByAdminEmail || ord.createdBy || ord.createdByName || ord.salesAdminEmail || ord.assignedUserEmail || localCreatedBy || "N/A";
 
         let statusHistory = ord.statusHistory || [];
@@ -299,8 +301,15 @@ export default function Orders({ userRole: propUserRole }) {
           } catch { }
         }
 
+        const resolvedWarrantyStart = ord.warrantyStartDate || ord.warranty_start_date || localWarrantyStart || (ord.createdAt ? String(ord.createdAt).split("T")[0] : (ord.createdDate ? String(ord.createdDate).split("T")[0] : null));
+        const resolvedWarrantyEnd = ord.warrantyEndDate || ord.warranty_end_date || localWarrantyEnd;
+
         return {
           ...ord,
+          warrantyStartDate: resolvedWarrantyStart || ord.warrantyStartDate,
+          warranty_start_date: resolvedWarrantyStart || ord.warranty_start_date,
+          warrantyEndDate: resolvedWarrantyEnd || ord.warrantyEndDate,
+          warranty_end_date: resolvedWarrantyEnd || ord.warranty_end_date,
           createdBy,
           createdByAdminEmail: createdBy !== "N/A" ? createdBy : ord.createdByAdminEmail,
           orderStatus: localStatus || ord.orderStatus || "sales_registered",
@@ -874,6 +883,29 @@ export default function Orders({ userRole: propUserRole }) {
     return result;
   };
 
+  const extractWarrantyStartDate = useCallback((it, ord) => {
+    const id = ord?.id || ord?.orderNumber;
+    const localStart = id ? localStorage.getItem(`order_warranty_start_${id}`) : null;
+
+    const rawDate =
+      it?.warrantyStartDate ||
+      it?.warranty_start_date ||
+      it?.warrantyStart ||
+      ord?.warrantyStartDate ||
+      ord?.warranty_start_date ||
+      ord?.warrantyStart ||
+      localStart ||
+      "";
+
+    if (rawDate && typeof rawDate === "string") {
+      const cleanDate = rawDate.split("T")[0].trim();
+      if (cleanDate && !isNaN(new Date(cleanDate).getTime())) {
+        return cleanDate;
+      }
+    }
+    return "";
+  }, []);
+
   const openScmModal = useCallback((order) => {
     setOrderForScm(order);
     setScmFormData({
@@ -882,10 +914,10 @@ export default function Orders({ userRole: propUserRole }) {
       trackingId: order.trackingId || "",
     });
 
-    const todayStr = new Date().toISOString().split("T")[0];
-
     const parseItemWarranty = (it) => {
-      const startDate = it.warrantyStartDate || order.warrantyStartDate || todayStr;
+      const startDate = extractWarrantyStartDate(it, order);
+      const id = order?.id || order?.orderNumber;
+      const localEnd = id ? localStorage.getItem(`order_warranty_end_${id}`) : null;
       let fullY = "1", fullM = "0", servY = "0", servM = "0";
 
       // 1. Check explicit item-level full & service warranty fields FIRST
@@ -915,17 +947,18 @@ export default function Orders({ userRole: propUserRole }) {
         servM = (sM % 12).toString();
       }
       // 3. Fallback to parseWarrantyPeriod ONLY if dates exist without explicit warranty breakdown
-      else if (it.warrantyStartDate && it.warrantyEndDate) {
-        const parsed = parseWarrantyPeriod(it.warrantyStartDate, it.warrantyEndDate);
+      else if ((it.warrantyStartDate || it.warranty_start_date) && (it.warrantyEndDate || it.warranty_end_date)) {
+        const parsed = parseWarrantyPeriod(it.warrantyStartDate || it.warranty_start_date, it.warrantyEndDate || it.warranty_end_date);
         fullY = parsed.years.toString();
         fullM = parsed.months.toString();
-      } else if (order.warrantyStartDate && order.warrantyEndDate) {
-        const parsed = parseWarrantyPeriod(order.warrantyStartDate, order.warrantyEndDate);
+      } else if ((order.warrantyStartDate || order.warranty_start_date) && (order.warrantyEndDate || order.warranty_end_date)) {
+        const parsed = parseWarrantyPeriod(order.warrantyStartDate || order.warranty_start_date, order.warrantyEndDate || order.warranty_end_date);
         fullY = parsed.years.toString();
         fullM = parsed.months.toString();
       }
 
       const { totalWarrantyLabel, expiryDateStr } = calculateExpiryAndTotal(startDate, fullY, fullM, servY, servM);
+      const existingEndDate = it.warrantyEndDate || it.warranty_end_date || order.warrantyEndDate || order.warranty_end_date || localEnd;
 
       return {
         warrantyStartDate: startDate,
@@ -933,7 +966,7 @@ export default function Orders({ userRole: propUserRole }) {
         fullWarrantyMonths: fullM,
         serviceWarrantyYears: servY,
         serviceWarrantyMonths: servM,
-        warrantyEndDate: it.warrantyEndDate || expiryDateStr,
+        warrantyEndDate: (existingEndDate && !isNaN(new Date(existingEndDate).getTime())) ? String(existingEndDate).split("T")[0] : expiryDateStr,
         totalWarrantyLabel: it.totalWarrantyLabel || totalWarrantyLabel
       };
     };
@@ -1008,7 +1041,7 @@ export default function Orders({ userRole: propUserRole }) {
     setScmItemDetails(itemDetailsList);
     setScmFormErrors({});
     setShowScmModal(true);
-  }, []);
+  }, [extractWarrantyStartDate]);
 
   const openWarrantyModal = useCallback((order) => {
     setWarrantyModalData(order);
@@ -1032,7 +1065,8 @@ export default function Orders({ userRole: propUserRole }) {
       const itemQty = Math.max(1, Number(item.quantity) || 1);
       let startStr = item.startBarcode?.trim() || "";
       let endStr = item.endBarcode?.trim() || "";
-      const startDate = item.warrantyStartDate || new Date().toISOString().split("T")[0];
+
+      const startDate = extractWarrantyStartDate(item, orderForScm);
 
       let itemBarcodes = [];
       if (itemQty === 1) {
@@ -1059,6 +1093,10 @@ export default function Orders({ userRole: propUserRole }) {
         item.serviceWarrantyMonths ?? "0"
       );
 
+      const calculatedEndDate = (item.warrantyEndDate && !isNaN(new Date(item.warrantyEndDate).getTime()))
+        ? String(item.warrantyEndDate).split("T")[0]
+        : expiryDateStr;
+
       const itemPayload = {
         productDetails: item.productDetails?.trim() || orderForScm?.productDetails || "EV Battery Unit",
         quantity: itemQty,
@@ -1067,7 +1105,9 @@ export default function Orders({ userRole: propUserRole }) {
         barcodes: itemBarcodes,
         barcode: itemQty === 1 ? startStr : `${startStr} - ${endStr}`,
         warrantyStartDate: startDate,
-        warrantyEndDate: expiryDateStr,
+        warranty_start_date: startDate,
+        warrantyEndDate: calculatedEndDate,
+        warranty_end_date: calculatedEndDate,
         fullWarrantyYears: Number(item.fullWarrantyYears ?? Math.floor(fullWarrantyMonths / 12)),
         fullWarrantyMonths: Number(item.fullWarrantyMonths ?? (fullWarrantyMonths % 12)),
         fullWarrantyMonthsTotal: fullWarrantyMonths,
@@ -1096,7 +1136,16 @@ export default function Orders({ userRole: propUserRole }) {
       const startBc = firstItem.startBarcode || (allBarcodes[0] || "BAR001");
       const endBc = lastItem.endBarcode || (allBarcodes[allBarcodes.length - 1] || startBc);
       const barcodeStr = allBarcodes.length <= 1 ? startBc : `${startBc} - ${endBc}`;
-      const todayStr = new Date().toISOString().split("T")[0];
+
+      const finalStartDate = firstItem.warrantyStartDate || extractWarrantyStartDate({}, orderForScm);
+      const finalEndDate = firstItem.warrantyEndDate || orderForScm?.warrantyEndDate || orderForScm?.warranty_end_date || finalStartDate;
+
+      // Save to localStorage for persistent local overrides
+      const idKey = orderForScm?.id || orderForScm?.orderNumber;
+      if (idKey) {
+        localStorage.setItem(`order_warranty_start_${idKey}`, finalStartDate);
+        localStorage.setItem(`order_warranty_end_${idKey}`, finalEndDate);
+      }
 
       const formattedItemsForScm = [];
       updatedItems.forEach((item, idx) => {
@@ -1140,8 +1189,10 @@ export default function Orders({ userRole: propUserRole }) {
         endBarcode: endBc,
         barcode: barcodeStr,
         barcodes: allBarcodes.length > 0 ? allBarcodes : [startBc],
-        warrantyStartDate: firstItem.warrantyStartDate || todayStr,
-        warrantyEndDate: firstItem.warrantyEndDate || todayStr
+        warrantyStartDate: finalStartDate,
+        warranty_start_date: finalStartDate,
+        warrantyEndDate: finalEndDate,
+        warranty_end_date: finalEndDate
       };
 
       if (formattedItemsForScm.length > 0) {
@@ -1159,8 +1210,8 @@ export default function Orders({ userRole: propUserRole }) {
             customerName: orderForScm.customerName || "Customer",
             productDetails: item.productDetails || orderForScm.productDetails || "EV Battery Unit",
             invoiceNumber: scmFormData.invoiceNumber.trim(),
-            warrantyStartDate: item.warrantyStartDate || todayStr,
-            warrantyEndDate: item.warrantyEndDate || todayStr,
+            warrantyStartDate: item.warrantyStartDate || finalStartDate,
+            warrantyEndDate: item.warrantyEndDate || finalEndDate,
             fullWarrantyYears: String(item.fullWarrantyYears ?? 1),
             fullWarrantyMonths: String(item.fullWarrantyMonths ?? 0),
             serviceWarrantyYears: String(item.serviceWarrantyYears ?? 0),
@@ -1174,23 +1225,26 @@ export default function Orders({ userRole: propUserRole }) {
           };
           scmBatteriesToSync.push(batteryRecord);
 
-          try {
-            const apiBatteryPayload = {
-              customerName: orderForScm.customerName || "Customer",
-              productDetails: item.productDetails || orderForScm.productDetails || "EV Battery Unit",
-              invoiceNumber: scmFormData.invoiceNumber.trim(),
-              warrantyStartDate: item.warrantyStartDate || null,
-              warrantyEndDate: item.warrantyEndDate || null
-            };
-            if (item.quantity === 1) {
-              apiBatteryPayload.barcode = item.startBarcode;
-            } else {
-              apiBatteryPayload.startBarcode = item.startBarcode;
-              apiBatteryPayload.endBarcode = item.endBarcode;
+          const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
+          if (["ADMIN", "SUPER_ADMIN"].includes(userRole)) {
+            try {
+              const apiBatteryPayload = {
+                customerName: orderForScm.customerName || "Customer",
+                productDetails: item.productDetails || orderForScm.productDetails || "EV Battery Unit",
+                invoiceNumber: scmFormData.invoiceNumber.trim(),
+                warrantyStartDate: item.warrantyStartDate || finalStartDate,
+                warrantyEndDate: item.warrantyEndDate || finalEndDate
+              };
+              if (item.quantity === 1) {
+                apiBatteryPayload.barcode = item.startBarcode;
+              } else {
+                apiBatteryPayload.startBarcode = item.startBarcode;
+                apiBatteryPayload.endBarcode = item.endBarcode;
+              }
+              await batteryService.registerBattery(apiBatteryPayload);
+            } catch (regErr) {
+              console.warn("Battery API sync note:", regErr);
             }
-            await batteryService.registerBattery(apiBatteryPayload);
-          } catch (regErr) {
-            console.warn("Battery API sync note:", regErr);
           }
         }
 
@@ -1222,13 +1276,17 @@ export default function Orders({ userRole: propUserRole }) {
         id: orderForScm.id,
         orderStatus: "scm_complete",
         scmCompletedAt: new Date().toISOString(),
+        warrantyStartDate: finalStartDate,
+        warranty_start_date: finalStartDate,
+        warrantyEndDate: finalEndDate,
+        warranty_end_date: finalEndDate,
         ...payload,
         orderItems: updatedItems,
         statusHistory: updatedHistory
       };
 
       if (selectedOrder && selectedOrder.id === orderForScm.id) {
-        setSelectedOrder((prev) => ({ ...prev, ...(updated || {}), orderStatus: "scm_complete" }));
+        setSelectedOrder((prev) => ({ ...prev, ...(updated || {}), orderStatus: "scm_complete", warrantyStartDate: finalStartDate, warranty_start_date: finalStartDate, warrantyEndDate: finalEndDate, warranty_end_date: finalEndDate }));
       }
       fetchOrders();
     } catch (err) {
@@ -1236,7 +1294,7 @@ export default function Orders({ userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
     }
-  }, [orderForScm, scmFormData, scmItemDetails, selectedOrder, showToast, fetchOrders]);
+  }, [orderForScm, scmFormData, scmItemDetails, selectedOrder, showToast, fetchOrders, extractWarrantyStartDate]);
 
   const handleDispatchOrder = useCallback(async (orderId) => {
     setSubmitting(true);
@@ -1808,12 +1866,16 @@ export default function Orders({ userRole: propUserRole }) {
           background: #FFFFFF;
           border: 1px solid #E2E8F0;
           border-radius: 12px;
-          overflow: hidden;
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
+          width: 100%;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
         }
 
         .orders-table {
           width: 100%;
+          min-width: 1100px;
           border-collapse: collapse;
           text-align: left;
         }
@@ -1827,6 +1889,7 @@ export default function Orders({ userRole: propUserRole }) {
           text-transform: uppercase;
           letter-spacing: 0.05em;
           border-bottom: 1px solid #E2E8F0;
+          white-space: nowrap;
         }
 
         .orders-table td {
@@ -1836,13 +1899,24 @@ export default function Orders({ userRole: propUserRole }) {
           vertical-align: middle;
         }
 
+        .orders-table th:nth-child(1), .orders-table td:nth-child(1) { min-width: 130px; }
+        .orders-table th:nth-child(2), .orders-table td:nth-child(2) { min-width: 140px; }
+        .orders-table th:nth-child(3), .orders-table td:nth-child(3) { min-width: 160px; }
+        .orders-table th:nth-child(4), .orders-table td:nth-child(4) { min-width: 130px; }
+        .orders-table th:nth-child(5), .orders-table td:nth-child(5) { min-width: 120px; white-space: nowrap; }
+        .orders-table th:nth-child(6), .orders-table td:nth-child(6) { min-width: 110px; white-space: nowrap; }
+        .orders-table th:nth-child(7), .orders-table td:nth-child(7) { min-width: 140px; }
+        .orders-table th:nth-child(8), .orders-table td:nth-child(8) { min-width: 130px; }
+        .orders-table th:nth-child(9), .orders-table td:nth-child(9) { min-width: 110px; white-space: nowrap; }
+        .orders-table th:nth-child(10), .orders-table td:nth-child(10) { min-width: 140px; white-space: nowrap; }
+
         .orders-table tbody tr {
           cursor: pointer;
           transition: background 0.15s ease;
         }
         .orders-table tbody tr:hover { background: #F8FAFC; }
 
-        .order-num-text { font-weight: 600; color: #0F172A; }
+        .order-num-text { font-weight: 600; color: #0F172A; white-space: nowrap; }
         .sub-text { font-size: 11px; color: #64748B; margin-top: 2px; }
         .customer-name { font-weight: 500; color: #1E293B; }
 
@@ -1880,6 +1954,8 @@ export default function Orders({ userRole: propUserRole }) {
           display: flex;
           align-items: center;
           gap: 6px;
+          flex-wrap: nowrap;
+          white-space: nowrap;
         }
 
         .icon-action-btn {
@@ -2170,11 +2246,15 @@ export default function Orders({ userRole: propUserRole }) {
           align-items: center;
           justify-content: center;
           backdrop-filter: blur(2px);
+          padding: 16px;
+          box-sizing: border-box;
+          overflow-y: auto;
         }
 
         .modal-content {
-          width: 540px;
-          max-width: 90%;
+          width: 100%;
+          max-width: 540px;
+          max-height: 90vh;
           background: #FFFFFF;
           border-radius: 12px;
           box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
@@ -2215,6 +2295,8 @@ export default function Orders({ userRole: propUserRole }) {
           font-size: 13px;
           color: #0F172A;
           outline: none;
+          box-sizing: border-box;
+          width: 100%;
         }
         .form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: #0F172A; }
         .field-error { font-size: 11px; color: #DC2626; margin-top: 2px; }
@@ -2223,6 +2305,16 @@ export default function Orders({ userRole: propUserRole }) {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 12px;
+        }
+
+        @media (max-width: 640px) {
+          .form-row {
+            grid-template-columns: 1fr;
+          }
+          .modal-content {
+            max-width: 100%;
+            margin: 0 8px;
+          }
         }
 
         .modal-footer {
