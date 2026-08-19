@@ -49,8 +49,7 @@ export const WarrantyRegistrationModal = React.memo(({
     warrantyModalData?.warrantyStartDate ||
     warrantyModalData?.warranty_start_date ||
     (warrantyModalData?.id ? localStorage.getItem(`order_warranty_start_${warrantyModalData.id}`) : null) ||
-    (warrantyModalData?.createdAt ? String(warrantyModalData.createdAt).split("T")[0] : (warrantyModalData?.createdDate ? String(warrantyModalData.createdDate).split("T")[0] : null)) ||
-    new Date().toISOString().split("T")[0];
+    "";
 
   const { totalWarrantyLabel, expiryDateStr } = useMemo(() => {
     return calculateExpiryAndTotal(startDate, fullY, fullM, servY, servM);

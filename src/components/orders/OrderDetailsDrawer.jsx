@@ -66,7 +66,6 @@ export const OrderDetailsDrawer = React.memo(({
       selectedOrder?.warrantyStartDate ||
       selectedOrder?.warranty_start_date ||
       localStart ||
-      (selectedOrder?.createdAt ? String(selectedOrder.createdAt).split("T")[0] : (selectedOrder?.createdDate ? String(selectedOrder.createdDate).split("T")[0] : "")) ||
       "";
 
     const endDate =

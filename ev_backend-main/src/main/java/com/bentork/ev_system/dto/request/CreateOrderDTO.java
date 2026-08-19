@@ -20,7 +20,8 @@ public class CreateOrderDTO {
     @NotBlank(message = "P.I. Number is required")
     private String piNumber;
 
-    // ==================== PRODUCT ITEMS (replaces flat productDetails/quantity) ====================
+    // ==================== PRODUCT ITEMS (replaces flat productDetails/quantity)
+    // ====================
 
     @NotEmpty(message = "At least one product item is required")
     @Valid

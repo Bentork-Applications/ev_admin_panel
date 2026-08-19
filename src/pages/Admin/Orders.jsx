@@ -101,6 +101,7 @@ export default function Orders({ userRole: propUserRole }) {
     piNumber: "",
     orderItems: [createDefaultOrderItem()],
     expectedDeliveryDate: "",
+    warrantyStartDate: "",
     totalInvoiceAmount: "",
     receivedAmount: "",
     priority: "medium",
@@ -301,15 +302,19 @@ export default function Orders({ userRole: propUserRole }) {
           } catch { }
         }
 
-        const resolvedWarrantyStart = ord.warrantyStartDate || ord.warranty_start_date || localWarrantyStart || (ord.createdAt ? String(ord.createdAt).split("T")[0] : (ord.createdDate ? String(ord.createdDate).split("T")[0] : null));
-        const resolvedWarrantyEnd = ord.warrantyEndDate || ord.warranty_end_date || localWarrantyEnd;
+        const resolvedWarrantyStart = ord.warrantyStartDate || ord.warranty_start_date || localWarrantyStart || null;
+        let resolvedWarrantyEnd = ord.warrantyEndDate || ord.warranty_end_date || localWarrantyEnd || null;
+        if (resolvedWarrantyStart && !resolvedWarrantyEnd) {
+          const expiryObj = calculateExpiryAndTotal(resolvedWarrantyStart, "1", "0", "0", "0");
+          resolvedWarrantyEnd = expiryObj.expiryDateStr || null;
+        }
 
         return {
           ...ord,
-          warrantyStartDate: resolvedWarrantyStart || ord.warrantyStartDate,
-          warranty_start_date: resolvedWarrantyStart || ord.warranty_start_date,
-          warrantyEndDate: resolvedWarrantyEnd || ord.warrantyEndDate,
-          warranty_end_date: resolvedWarrantyEnd || ord.warranty_end_date,
+          warrantyStartDate: resolvedWarrantyStart,
+          warranty_start_date: resolvedWarrantyStart,
+          warrantyEndDate: resolvedWarrantyEnd,
+          warranty_end_date: resolvedWarrantyEnd,
           createdBy,
           createdByAdminEmail: createdBy !== "N/A" ? createdBy : ord.createdByAdminEmail,
           orderStatus: localStatus || ord.orderStatus || "sales_registered",
@@ -521,6 +526,12 @@ export default function Orders({ userRole: propUserRole }) {
       const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
 
       const deliveryDate = salesFormData.expectedDeliveryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const userWarrantyStart = salesFormData.warrantyStartDate?.trim() || "";
+      let calculatedWarrantyEnd = "";
+      if (userWarrantyStart && !isNaN(new Date(userWarrantyStart).getTime())) {
+        const expiryObj = calculateExpiryAndTotal(userWarrantyStart, "1", "0", "0", "0");
+        calculatedWarrantyEnd = expiryObj.expiryDateStr || "";
+      }
 
       const cleanEmail = salesFormData.customerEmail?.trim();
 
@@ -530,12 +541,20 @@ export default function Orders({ userRole: propUserRole }) {
         customerEmail: cleanEmail ? cleanEmail : null,
         piNumber: salesFormData.piNumber.trim(),
         project: firstProject,
+        warrantyStartDate: userWarrantyStart || null,
+        warranty_start_date: userWarrantyStart || null,
+        warrantyEndDate: calculatedWarrantyEnd || null,
+        warranty_end_date: calculatedWarrantyEnd || null,
         orderItems: salesFormData.orderItems.map((item) => {
           const itemProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
           return {
             project: itemProject,
             productDetails: formatProductDetails({ ...item, project: itemProject }).trim(),
-            quantity: Math.max(1, Number(item.quantity) || 1)
+            quantity: Math.max(1, Number(item.quantity) || 1),
+            warrantyStartDate: userWarrantyStart || null,
+            warranty_start_date: userWarrantyStart || null,
+            warrantyEndDate: calculatedWarrantyEnd || null,
+            warranty_end_date: calculatedWarrantyEnd || null,
           };
         }),
         mobileNumber: salesFormData.mobileNumber.trim(),
@@ -556,6 +575,7 @@ export default function Orders({ userRole: propUserRole }) {
         piNumber: "",
         orderItems: [createDefaultOrderItem()],
         expectedDeliveryDate: "",
+        warrantyStartDate: "",
         totalInvoiceAmount: "",
         receivedAmount: "",
         priority: "medium",
@@ -566,6 +586,13 @@ export default function Orders({ userRole: propUserRole }) {
 
       const created = await orderService.salesCreateOrder(payload);
       const createdOrderId = created?.id || created?.orderNumber;
+
+      if (createdOrderId && userWarrantyStart) {
+        localStorage.setItem(`order_warranty_start_${createdOrderId}`, userWarrantyStart);
+        if (calculatedWarrantyEnd) {
+          localStorage.setItem(`order_warranty_end_${createdOrderId}`, calculatedWarrantyEnd);
+        }
+      }
 
       let creatorEmail = localStorage.getItem("userEmail") || localStorage.getItem("adminEmail") || "";
       if (token) {
@@ -601,6 +628,7 @@ export default function Orders({ userRole: propUserRole }) {
         piNumber: "",
         orderItems: [createDefaultOrderItem()],
         expectedDeliveryDate: "",
+        warrantyStartDate: "",
         totalInvoiceAmount: "",
         receivedAmount: "",
         priority: "medium",
@@ -647,6 +675,9 @@ export default function Orders({ userRole: propUserRole }) {
       }];
     }
 
+    const localStart = order.id ? localStorage.getItem(`order_warranty_start_${order.id}`) : null;
+    const localEnd = order.id ? localStorage.getItem(`order_warranty_end_${order.id}`) : null;
+
     setEditOrderData({
       id: order.id,
       assignedUserId: order.assignedUserId || order.assignedUser?.id || order.userId || order.user?.id || 1,
@@ -657,6 +688,8 @@ export default function Orders({ userRole: propUserRole }) {
       orderItems: items,
       mobileNumber: order.mobileNumber || "",
       expectedDeliveryDate: order.expectedDeliveryDate || "",
+      warrantyStartDate: order.warrantyStartDate || order.warranty_start_date || localStart || "",
+      warrantyEndDate: order.warrantyEndDate || order.warranty_end_date || localEnd || "",
       totalInvoiceAmount: order.totalInvoiceAmount || "",
       receivedAmount: order.receivedAmount || "",
       priority: order.priority || "medium",
@@ -763,17 +796,37 @@ export default function Orders({ userRole: propUserRole }) {
       const firstProject = firstItem.project === "Other" ? (firstItem.customProject || "Other") : (firstItem.project || "EV Battery");
 
       const targetUserId = editOrderData.assignedUserId || selectedOrder?.assignedUserId || 1;
+      const userWarrantyStart = editOrderData.warrantyStartDate?.trim() || "";
+      let calculatedWarrantyEnd = editOrderData.warrantyEndDate || "";
+      if (userWarrantyStart && !isNaN(new Date(userWarrantyStart).getTime())) {
+        const expiryObj = calculateExpiryAndTotal(userWarrantyStart, "1", "0", "0", "0");
+        calculatedWarrantyEnd = expiryObj.expiryDateStr || calculatedWarrantyEnd;
+      }
+      if (editOrderData.id && userWarrantyStart) {
+        localStorage.setItem(`order_warranty_start_${editOrderData.id}`, userWarrantyStart);
+        if (calculatedWarrantyEnd) {
+          localStorage.setItem(`order_warranty_end_${editOrderData.id}`, calculatedWarrantyEnd);
+        }
+      }
 
       const payload = {
         ...editOrderData,
         assignedUserId: Number(targetUserId) > 0 ? Number(targetUserId) : 1,
         project: firstProject,
+        warrantyStartDate: userWarrantyStart || null,
+        warranty_start_date: userWarrantyStart || null,
+        warrantyEndDate: calculatedWarrantyEnd || null,
+        warranty_end_date: calculatedWarrantyEnd || null,
         orderItems: editOrderData.orderItems.map((item) => {
           const itemProject = item.project === "Other" ? (item.customProject || "Other") : (item.project || "EV Battery");
           return {
             project: itemProject,
             productDetails: formatProductDetails({ ...item, project: itemProject }).trim(),
-            quantity: Math.max(1, Number(item.quantity) || 1)
+            quantity: Math.max(1, Number(item.quantity) || 1),
+            warrantyStartDate: userWarrantyStart || null,
+            warranty_start_date: userWarrantyStart || null,
+            warrantyEndDate: calculatedWarrantyEnd || null,
+            warranty_end_date: calculatedWarrantyEnd || null,
           };
         }),
         totalInvoiceAmount: Number(editOrderData.totalInvoiceAmount) || 0,
@@ -1137,14 +1190,16 @@ export default function Orders({ userRole: propUserRole }) {
       const endBc = lastItem.endBarcode || (allBarcodes[allBarcodes.length - 1] || startBc);
       const barcodeStr = allBarcodes.length <= 1 ? startBc : `${startBc} - ${endBc}`;
 
-      const finalStartDate = firstItem.warrantyStartDate || extractWarrantyStartDate({}, orderForScm);
-      const finalEndDate = firstItem.warrantyEndDate || orderForScm?.warrantyEndDate || orderForScm?.warranty_end_date || finalStartDate;
+      const finalStartDate = firstItem.warrantyStartDate || extractWarrantyStartDate({}, orderForScm) || orderForScm?.warrantyStartDate || orderForScm?.warranty_start_date || "";
+      const finalEndDate = firstItem.warrantyEndDate || orderForScm?.warrantyEndDate || orderForScm?.warranty_end_date || (finalStartDate ? calculateExpiryAndTotal(finalStartDate, "1", "0", "0", "0").expiryDateStr : "");
 
       // Save to localStorage for persistent local overrides
       const idKey = orderForScm?.id || orderForScm?.orderNumber;
-      if (idKey) {
+      if (idKey && finalStartDate) {
         localStorage.setItem(`order_warranty_start_${idKey}`, finalStartDate);
-        localStorage.setItem(`order_warranty_end_${idKey}`, finalEndDate);
+        if (finalEndDate) {
+          localStorage.setItem(`order_warranty_end_${idKey}`, finalEndDate);
+        }
       }
 
       const formattedItemsForScm = [];
@@ -1173,7 +1228,9 @@ export default function Orders({ userRole: propUserRole }) {
             orderItemId: numericItemId,
             barcodes: itemBarcodes,
             serviceWarrantyMonths: serviceMonths,
-            fullWarrantyMonths: fullMonths
+            fullWarrantyMonths: fullMonths,
+            warrantyStartDate: item.warrantyStartDate || finalStartDate,
+            warrantyEndDate: item.warrantyEndDate || finalEndDate
           });
         }
       });

@@ -101,15 +101,17 @@ export const ScmDetailsModal = React.memo(({
                 const updateItemState = (updates) => {
                   const newItems = [...scmItemDetails];
                   const currentItem = { ...newItems[idx], ...updates };
+                  const effectiveStartDate = currentItem.warrantyStartDate || currentItem.warranty_start_date || orderForScm?.warrantyStartDate || orderForScm?.warranty_start_date || "";
 
                   const { totalWarrantyLabel, expiryDateStr } = calculateExpiryAndTotal(
-                    currentItem.warrantyStartDate || "",
+                    effectiveStartDate,
                     currentItem.fullWarrantyYears ?? "1",
                     currentItem.fullWarrantyMonths ?? "0",
                     currentItem.serviceWarrantyYears ?? "0",
                     currentItem.serviceWarrantyMonths ?? "0"
                   );
 
+                  currentItem.warrantyStartDate = effectiveStartDate;
                   currentItem.warrantyEndDate = expiryDateStr;
                   currentItem.totalWarrantyLabel = totalWarrantyLabel;
                   newItems[idx] = currentItem;
@@ -187,7 +189,7 @@ export const ScmDetailsModal = React.memo(({
                         <label>Warranty Start Date *</label>
                         <input
                           type="date"
-                          value={item.warrantyStartDate || item.warranty_start_date || orderForScm?.warrantyStartDate || orderForScm?.warranty_start_date || (orderForScm?.createdAt ? String(orderForScm.createdAt).split("T")[0] : (orderForScm?.createdDate ? String(orderForScm.createdDate).split("T")[0] : "")) || ""}
+                          value={item.warrantyStartDate || item.warranty_start_date || orderForScm?.warrantyStartDate || orderForScm?.warranty_start_date || ""}
                           onChange={(e) => updateItemState({ warrantyStartDate: e.target.value })}
                         />
                         {scmFormErrors[`warrantyStartDate_${idx}`] && (
