@@ -2,18 +2,13 @@ import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import { Country, State, City } from "country-state-city";
 
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
-
-const LOCATION_API = {
-    countries: 'https://restcountries.com/v3.1/all?fields=name,cca2',
-    states: 'https://countriesnow.space/api/v0.1/countries/states',
-    cities: 'https://countriesnow.space/api/v0.1/countries/state/cities',
-};
 
 function MapController({ position, onMapClick }) {
     const map = useMap();
@@ -113,16 +108,9 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // Fetch countries
-                const countryRes = await fetch(LOCATION_API.countries);
-                const countryData = await countryRes.json();
-                const sortedCountries = countryData.map(c => ({
-                    name: c.name.common,
-                    isoCode: c.cca2
-                })).sort((a, b) => a.name.localeCompare(b.name));
-                setCountries(sortedCountries);
+                const allCountries = Country.getAllCountries().sort((a, b) => a.name.localeCompare(b.name));
+                setCountries(allCountries);
 
-                // Fetch location details if locationId exists
                 if (station?.locationId) {
                     const token = localStorage.getItem("token");
                     const locRes = await fetch(`${baseUrl}/location/get/${station.locationId}`, {
@@ -130,15 +118,68 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
                     });
                     if (locRes.ok) {
                         const locData = await locRes.json();
+                        const rawAddress = locData.address || "";
+                        const rawCity = locData.city || "";
+                        const rawState = locData.state || "";
+                        const rawCountry = locData.country || "";
+
+                        let matchedCountry = allCountries.find(c => 
+                            c.isoCode === rawCountry || 
+                            c.name.toLowerCase() === rawCountry.toLowerCase()
+                        );
+
+                        if (!matchedCountry && rawState) {
+                            for (const c of allCountries) {
+                                const stList = State.getStatesOfCountry(c.isoCode);
+                                if (stList.some(s => s.name.toLowerCase() === rawState.toLowerCase() || s.isoCode === rawState)) {
+                                    matchedCountry = c;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!matchedCountry) {
+                            matchedCountry = allCountries.find(c => c.isoCode === "IN") || allCountries[0];
+                        }
+
+                        const cCode = matchedCountry?.isoCode || "";
+                        const cName = matchedCountry?.name || "";
+
+                        let loadedStates = [];
+                        let sCode = "";
+                        let sName = rawState;
+                        if (cCode) {
+                            loadedStates = State.getStatesOfCountry(cCode).sort((a, b) => a.name.localeCompare(b.name));
+                            const matchedState = loadedStates.find(s => 
+                                s.isoCode === rawState || 
+                                s.name.toLowerCase() === rawState.toLowerCase()
+                            );
+                            if (matchedState) {
+                                sCode = matchedState.isoCode;
+                                sName = matchedState.name;
+                            }
+                        }
+
+                        let loadedCities = [];
+                        if (cCode && sCode) {
+                            loadedCities = City.getCitiesOfState(cCode, sCode).sort((a, b) => a.name.localeCompare(b.name));
+                        }
+
+                        setStates(loadedStates);
+                        setCities(loadedCities);
+
                         setFormData(prev => ({
                             ...prev,
-                            address: locData.address || "",
-                            city: locData.city || "",
-                            state: locData.state || "",
-                            stateName: locData.state || "",
+                            address: rawAddress,
+                            country: cCode,
+                            countryName: cName,
+                            state: sCode || rawState,
+                            stateName: sName || rawState,
+                            city: rawCity,
                             latitude: locData.latitude || prev.latitude,
                             longitude: locData.longitude || prev.longitude,
                         }));
+
                         setMapPosition([locData.latitude || 20.5937, locData.longitude || 78.9629]);
                     }
                 }
@@ -151,89 +192,43 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
         fetchData();
     }, [station, baseUrl]);
 
-    // Fetch states when country changes
-    useEffect(() => {
-        if (!formData.countryName) {
-            return;
-        }
-
-        const fetchStates = async () => {
-            setIsLoading(prev => ({ ...prev, states: true }))
-            try {
-                const response = await fetch(LOCATION_API.states, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ country: formData.countryName })
-                })
-                const data = await response.json();
-
-                if (data.data && data.data.states) {
-                    setStates(data.data.states.map(s => ({
-                        name: s.name,
-                        isoCode: s.state_code || s.name
-                    })));
-                } else {
-                    setStates([]);
-                }
-            } catch {
-                console.error('Failed to fetch states')
-                setStates([]);
-            } finally {
-                setIsLoading(prev => ({ ...prev, states: false }));
-            }
-        }
-
-        fetchStates();
-    }, [formData.countryName]);
-
-    // Fetch cities when state changes
-    useEffect(() => {
-        if (!formData.countryName || !formData.state) {
-            return;
-        }
-
-        const fetchCities = async () => {
-            setIsLoading(prev => ({ ...prev, cities: true }));
-            try {
-                const response = await fetch(LOCATION_API.cities, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        country: formData.countryName,
-                        state: formData.stateName
-                    })
-                });
-                const data = await response.json();
-
-                if (data.data) {
-                    setCities(data.data.map(city => ({ name: city })));
-                } else {
-                    setCities([]);
-                }
-            } catch (err) {
-                console.error('Failed to fetch cities: ', err)
-                setCities([])
-            } finally {
-                setIsLoading(prev => ({ ...prev, cities: false }))
-            }
-        }
-
-        fetchCities();
-    }, [formData.countryName, formData.state, formData.stateName]);
-
-
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === "country") {
-            const selectedCountry = countries.find(c => c.isoCode === value);
-            setFormData({ ...formData, country: value, countryName: selectedCountry?.name || '', state: "", stateName: "", city: "" });
-            setStates([]);
+            const selectedCountry = countries.find(c => c.isoCode === value || c.name === value);
+            const cCode = selectedCountry?.isoCode || value;
+            const cName = selectedCountry?.name || value;
+
+            const loadedStates = cCode ? State.getStatesOfCountry(cCode).sort((a, b) => a.name.localeCompare(b.name)) : [];
+            setStates(loadedStates);
             setCities([]);
+
+            setFormData(prev => ({ 
+                ...prev, 
+                country: cCode, 
+                countryName: cName, 
+                state: "", 
+                stateName: "", 
+                city: "" 
+            }));
         } else if (name === "state") {
-            setFormData({ ...formData, state: value, stateName: value, city: "" });
-            setCities([]);
+            const selectedState = states.find(s => s.isoCode === value || s.name === value);
+            const sCode = selectedState?.isoCode || value;
+            const sName = selectedState?.name || value;
+
+            const loadedCities = (formData.country && sCode) 
+                ? City.getCitiesOfState(formData.country, sCode).sort((a, b) => a.name.localeCompare(b.name)) 
+                : [];
+            setCities(loadedCities);
+
+            setFormData(prev => ({ 
+                ...prev, 
+                state: sCode, 
+                stateName: sName, 
+                city: "" 
+            }));
         } else {
-            setFormData({ ...formData, [name]: value });
+            setFormData(prev => ({ ...prev, [name]: value }));
         }
     };
 
@@ -252,19 +247,60 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
             const data = await response.json();
             if (data && data.address) {
                 const { address } = data;
+                const geoCountryCode = address.country_code?.toUpperCase() || "";
+                const geoCountryName = address.country || "";
+                const geoStateStr = address.state || "";
+                const geoCityStr = address.city || address.town || address.village || address.suburb || "";
+
+                let foundCountryCode = geoCountryCode;
+                let foundCountryName = geoCountryName;
+                const countryObj = countries.find(c => c.isoCode === geoCountryCode || c.name.toLowerCase() === geoCountryName.toLowerCase());
+                if (countryObj) {
+                    foundCountryCode = countryObj.isoCode;
+                    foundCountryName = countryObj.name;
+                }
+
+                let newStates = [];
+                let foundStateCode = "";
+                let foundStateName = geoStateStr;
+
+                if (foundCountryCode) {
+                    newStates = State.getStatesOfCountry(foundCountryCode).sort((a, b) => a.name.localeCompare(b.name));
+                    const stateObj = newStates.find(s => 
+                        s.name.toLowerCase() === geoStateStr.toLowerCase() || 
+                        s.isoCode === geoStateStr
+                    );
+                    if (stateObj) {
+                        foundStateCode = stateObj.isoCode;
+                        foundStateName = stateObj.name;
+                    }
+                }
+
+                let newCities = [];
+                if (foundCountryCode && foundStateCode) {
+                    newCities = City.getCitiesOfState(foundCountryCode, foundStateCode).sort((a, b) => a.name.localeCompare(b.name));
+                }
+
+                setStates(newStates);
+                setCities(newCities);
+
                 setFormData(prev => ({
                     ...prev,
-                    address: data.display_name.split(',').slice(0, 2).join(', '),
-                    city: address.city || address.town || address.village || "",
-                    state: address.state || "",
-                    country: address.country || ""
+                    address: data.display_name ? data.display_name.split(',').slice(0, 2).join(', ') : prev.address,
+                    country: foundCountryCode,
+                    countryName: foundCountryName,
+                    state: foundStateCode || geoStateStr,
+                    stateName: foundStateName || geoStateStr,
+                    city: geoCityStr
                 }));
             }
-        } catch (error) { console.error("Reverse geocoding failed:", error); }
+        } catch (error) { 
+            console.error("Reverse geocoding failed:", error); 
+        }
     };
 
     const findOnMap = async () => {
-        const query = [formData.city, formData.state, formData.country].filter(Boolean).join(", ");
+        const query = [formData.city, formData.stateName || formData.state, formData.countryName || formData.country].filter(Boolean).join(", ");
         if (!query) {
             alert("Please select a country, state, or city to find on the map.");
             return;
@@ -307,7 +343,7 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
                 latitude: formData.latitude,
                 longitude: formData.longitude,
                 city: formData.city,
-                state: formData.stateName,
+                state: formData.stateName || formData.state,
             };
 
             const locationResponse = await fetch(`${baseUrl}/location/update/${station.locationId}`, {
@@ -407,19 +443,19 @@ function EditStation({ station, onClose, onStationUpdated, baseUrl }) {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.2fr 1fr', gap: '20px' }}>
                             <FloatingInput label="Country" as="select" name="country" value={formData.country} onChange={handleChange}>
-                                <option value="" disabled></option>
-                                {countries.map(c => <option key={c.isoCode} value={c.isoCode}>{c.name}
-                                </option>)}
+                                <option value="" disabled>Select Country</option>
+                                {countries.map(c => <option key={c.isoCode} value={c.isoCode}>{c.name}</option>)}
                             </FloatingInput>
-                            <FloatingInput label={isLoading.states ? "Loading..." : "State"} as="select" name="state" value={formData.state} onChange={handleChange} disabled={!formData.country}>
-                                <option value="" disabled>{isLoading.states ? "Loading..." : "Select State"}</option>
-                                {states.map(s => <option key={s.name} value={s.name}>{s.name}
-                                </option>)}
+                            <FloatingInput label="State" as="select" name="state" value={formData.state} onChange={handleChange} disabled={!formData.country}>
+                                <option value="" disabled>Select State</option>
+                                {states.map(s => <option key={s.isoCode} value={s.isoCode}>{s.name}</option>)}
                             </FloatingInput>
-                            <FloatingInput label={isLoading.cities ? "Loading..." : "City"} as="select" name="city" value={formData.city} onChange={handleChange} disabled={!formData.state}>
-                                <option value="" disabled></option>
-                                {cities.map(c => <option key={c.name} value={c.name}>{c.name}
-                                </option>)}
+                            <FloatingInput label="City" as="select" name="city" value={formData.city} onChange={handleChange} disabled={!formData.state}>
+                                <option value="" disabled>Select City</option>
+                                {cities.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                {formData.city && !cities.some(c => c.name === formData.city) && (
+                                    <option key={formData.city} value={formData.city}>{formData.city}</option>
+                                )}
                             </FloatingInput>
                         </div>
 
