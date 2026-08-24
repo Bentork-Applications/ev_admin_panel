@@ -78,29 +78,121 @@ const Model = ({ children }) => (
   </div>
 );
 
-// Mappers for charger status: Available (Online), Charging (Busy), Reserved (Busy/Reserved), Faulted (Faulted), Offline (Offline)
-const getChargerStatus = (charger) => {
-  if (!charger) return "";
-  const s = String(charger.status || "").toUpperCase().trim();
-  const isOccupied = charger.occupied === true || charger.occupied === "true" || charger.occupied === 1 || charger.occupied === "1" ||
-    charger.isOccupied === true || charger.isOccupied === "true" || charger.isOccupied === 1 || charger.isOccupied === "1";
+// Helper to check if a charger currently has an active charging session / busy state
+const checkHasActiveSession = (charger, sessionsList = []) => {
+  if (!charger) return false;
 
-  if ((s === "BUSY" || s === "CHARGING") && !isOccupied) {
-    return "Online";
+  // 1. Direct charger object properties / flags from API & live debug
+  const isOccupied = charger.occupied === true || charger.occupied === "true" || charger.occupied === 1 || charger.occupied === "1" ||
+    charger.isOccupied === true || charger.isOccupied === "true" || charger.isOccupied === 1 || charger.isOccupied === "1" ||
+    charger.hasActiveSession === true || charger.hasActiveSession === "true";
+
+  if (isOccupied) return true;
+
+  const rawStatus = String(charger.status || "").toUpperCase().trim();
+  const busyStatuses = ["BUSY", "CHARGING", "OCCUPIED", "IN_PROGRESS", "RUNNING", "PREPARING", "FINISHING", "SUSPENDED_EVSE", "SUSPENDED_EV", "RESERVED"];
+  if (busyStatuses.includes(rawStatus)) return true;
+
+  if (charger.activeSession || charger.currentSession || charger.session) {
+    const sObj = charger.activeSession || charger.currentSession || charger.session;
+    const sStatus = String(sObj?.status || "").toUpperCase().trim();
+    const inactiveStatuses = ["COMPLETED", "STOPPED", "CANCELLED", "ENDED", "FAILED", "ERROR", "EXPIRED", "SUCCESS"];
+    if (!inactiveStatuses.includes(sStatus) && !sObj?.endTime) {
+      return true;
+    }
   }
 
-  if (s === "AVAILABLE" || s === "ONLINE") return "Online";
-  if (s === "OFFLINE") return "Offline";
-  if (s === "BUSY" || s === "CHARGING") return "Busy";
-  if (s === "FAULTED") return "Faulted";
-  return s ? (s.charAt(0) + s.slice(1).toLowerCase()) : "";
+  // 2. Cross-reference with active sessions list from API
+  if (Array.isArray(sessionsList) && sessionsList.length > 0) {
+    const activeSessionMatch = sessionsList.find(s => {
+      if (!s) return false;
+      const status = String(s.status || "").toUpperCase().trim();
+      const inactiveStatuses = ["COMPLETED", "STOPPED", "CANCELLED", "ENDED", "FAILED", "ERROR", "EXPIRED", "SUCCESS"];
+      if (inactiveStatuses.includes(status)) return false;
+
+      const activeStatuses = ["ACTIVE", "CHARGING", "RUNNING", "IN_PROGRESS", "STARTED", "INITIATED", "OCCUPIED"];
+      const isActive = activeStatuses.includes(status) || (!s.endTime && status !== "COMPLETED" && status !== "STOPPED");
+      if (!isActive) return false;
+
+      // Match by chargerId or ocppId
+      const sChargerId = s.chargerId ?? s.charger_id ?? s.charger?.id;
+      if (sChargerId !== undefined && sChargerId !== null && charger.id !== undefined && charger.id !== null) {
+        if (String(sChargerId) === String(charger.id)) return true;
+      }
+
+      const sOcppId = s.ocppId ?? s.chargerOcppId ?? s.charger?.ocppId;
+      if (sOcppId && charger.ocppId) {
+        if (String(sOcppId).trim().toLowerCase() === String(charger.ocppId).trim().toLowerCase()) return true;
+      }
+
+      return false;
+    });
+
+    if (activeSessionMatch) return true;
+  }
+
+  return false;
+};
+
+// Source-of-truth Charger Status mapper reading backend responses & live debug state
+const getChargerStatus = (charger, sessionsList = []) => {
+  if (!charger) return "Offline";
+
+  const hasActiveSession = checkHasActiveSession(charger, sessionsList);
+
+  // ROOT CAUSE FIX:
+  // If charger is occupied or running an active session, return "Busy" immediately!
+  // Prevents a charger with an active session from wrongly defaulting to "Offline" due to a stale DB string.
+  if (hasActiveSession) {
+    return "Busy";
+  }
+
+  const rawStatus = String(charger.status || "").toUpperCase().trim();
+
+  // Explicit Faulted / Error status from backend
+  if (rawStatus === "FAULTED" || rawStatus === "ERROR") {
+    return "Faulted";
+  }
+
+  // Explicit WebSocket disconnect from live debug status
+  if (charger.wsConnected === false || charger.wsConnected === "false" || charger.wsConnected === 0) {
+    return "Offline";
+  }
+
+  const isAvailableFlag = charger.availability === true || charger.availability === "true" || charger.availability === 1 ||
+    charger.available === true || charger.available === "true" || charger.available === 1 ||
+    charger.isAvailability === true || charger.isAvailability === "true" || charger.isAvailability === 1;
+
+  const isUnavailableFlag = charger.availability === false || charger.availability === "false" || charger.availability === 0 ||
+    charger.available === false || charger.available === "false" || charger.available === 0 ||
+    charger.isAvailability === false || charger.isAvailability === "false" || charger.isAvailability === 0;
+
+  const offlineStatuses = ["OFFLINE", "UNAVAILABLE", "DISCONNECTED", "INACTIVE", "OUT_OF_SERVICE", "DOWN"];
+
+  // Explicit Offline/Unavailable from backend status field without availability flag override
+  if (offlineStatuses.includes(rawStatus) && !isAvailableFlag) {
+    return "Offline";
+  }
+
+  if (isUnavailableFlag && !isAvailableFlag) {
+    return "Offline";
+  }
+
+  if (charger.active === false || charger.active === "false" || charger.active === 0) {
+    if (!isAvailableFlag) {
+      return "Offline";
+    }
+  }
+
+  // Backend Online / Available status or availability flag set to true
+  return "Online";
 };
 
 const getStatusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase().trim();
   if (s === "online" || s === "available") return "status-active";
   if (s === "busy" || s === "charging" || s === "completed") return "status-completed";
-  if (s === "faulted") return "status-error";
+  if (s === "faulted" || s === "error") return "status-error";
   return "status-inactive";
 };
 
@@ -180,6 +272,7 @@ function Charger({ baseUrl, userRole }) {
     dcChargerData: ""
   });
   const [chargerRecoards, setChargerRecoards] = useState([]);
+  const [sessions, setSessions] = useState([]);
   const [isModelOpen, setIsModelOpen] = useState(false);
   const [editingCharger, setEditingCharger] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -256,44 +349,62 @@ function Charger({ baseUrl, userRole }) {
 
     try {
       const listEndpoint = isDealer ? '/dealer/chargers' : '/chargers/all';
-      const res = await fetch(`${baseUrl}${listEndpoint}`, { headers });
-      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-      const data = await res.json();
-      let list = Array.isArray(data) ? data : [];
+      const sessionsEndpoint = isDealer ? '/dealer/sessions' : '/sessions/all/records';
 
-      try {
-        const debugRes = await fetch(`${baseUrl}/debug/status`, { headers });
-        if (debugRes.ok) {
-          const debugData = await debugRes.json();
+      const [chargersRes, debugRes, sessionsRes] = await Promise.allSettled([
+        fetch(`${baseUrl}${listEndpoint}`, { headers }),
+        fetch(`${baseUrl}/debug/status`, { headers }),
+        fetch(`${baseUrl}${sessionsEndpoint}`, { headers })
+      ]);
+
+      let list = [];
+      if (chargersRes.status === 'fulfilled' && chargersRes.value.ok) {
+        const data = await chargersRes.value.json();
+        list = Array.isArray(data) ? data : [];
+      }
+
+      if (debugRes.status === 'fulfilled' && debugRes.value.ok) {
+        try {
+          const debugData = await debugRes.value.json();
           if (debugData && Array.isArray(debugData.chargers)) {
             list = list.map(c => {
               const live = debugData.chargers.find(dc => dc.id === c.id || dc.ocppId === c.ocppId);
               if (live) {
                 return {
                   ...c,
-                  availability: live.available,
-                  isAvailability: live.available,
-                  occupied: live.occupied,
-                  isOccupied: live.occupied,
-                  wsConnected: live.wsConnected,
-                  wsStatus: live.wsStatus
+                  status: live.status || (live.occupied ? "BUSY" : (live.available ? "ONLINE" : c.status)),
+                  availability: live.available ?? c.availability,
+                  isAvailability: live.available ?? c.isAvailability,
+                  available: live.available ?? c.available,
+                  occupied: live.occupied ?? c.occupied,
+                  isOccupied: live.occupied ?? c.isOccupied,
+                  wsConnected: live.wsConnected ?? c.wsConnected,
+                  wsStatus: live.wsStatus ?? c.wsStatus
                 };
               }
               return c;
             });
           }
+        } catch (debugErr) {
+          console.warn("Failed to parse live debug status:", debugErr);
         }
-      } catch (debugErr) {
-        console.warn("Failed to fetch live debug status:", debugErr);
       }
 
+      let sessionsList = [];
+      if (sessionsRes.status === 'fulfilled' && sessionsRes.value.ok) {
+        try {
+          const ssData = await sessionsRes.value.json();
+          sessionsList = Array.isArray(ssData) ? ssData : [];
+        } catch (ssErr) {
+          console.warn("Failed to parse sessions list:", ssErr);
+        }
+      }
+
+      setSessions(sessionsList);
       setChargerRecoards(list);
 
       const total = list.length;
-      const available = list.filter(c => {
-        const s = String(c.status || "").toLowerCase().trim();
-        return s === "available" || s === "online" || s === "active";
-      }).length;
+      const available = list.filter(c => getChargerStatus(c, sessionsList).toLowerCase() === "online").length;
       const acCount = list.filter(c => c.chargerType === 'AC').length;
       const dcCount = list.filter(c => c.chargerType === 'DC').length;
 
@@ -316,7 +427,7 @@ function Charger({ baseUrl, userRole }) {
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [baseUrl, navigate, isDealer]);
+  }, [baseUrl, navigate, isDealer, chargerRecoards.length]);
 
   useEffect(() => {
     fetchData(false);
@@ -326,7 +437,19 @@ function Charger({ baseUrl, userRole }) {
     const interval = setInterval(() => {
       fetchData(true);
     }, 15000);
-    return () => clearInterval(interval);
+
+    const handleFocus = () => {
+      fetchData(true);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("visibilitychange", handleFocus);
+    };
   }, [fetchData]);
 
   const handleChargerAdded = () => {
@@ -393,28 +516,25 @@ function Charger({ baseUrl, userRole }) {
 
   // Aggregate Status Counts for Donut Chart & Status Summary Cards
   const statusCounts = useMemo(() => {
-    let available = 0;
-    let charging = 0;
-    let reserved = 0;
+    let online = 0;
+    let busy = 0;
     let faulted = 0;
     let offline = 0;
 
     chargerRecoards.forEach(c => {
-      const s = String(c.status || "").toLowerCase().trim();
-      if (s === "available" || s === "online" || s === "active") available++;
-      else if (s === "charging" || s === "busy" || s === "preparing" || s === "finishing" || s === "completed") charging++;
-      else if (s === "reserved") reserved++;
-      else if (s === "faulted" || s === "error") faulted++;
+      const st = getChargerStatus(c, sessions).toLowerCase();
+      if (st === "online" || st === "available") online++;
+      else if (st === "busy" || st === "charging") busy++;
+      else if (st === "faulted" || st === "error") faulted++;
       else offline++;
     });
 
-    return { available, charging, reserved, faulted, offline };
-  }, [chargerRecoards]);
+    return { online, busy, faulted, offline };
+  }, [chargerRecoards, sessions]);
 
   const pieData = useMemo(() => [
-    { name: "Available", value: statusCounts.available || 0, color: "#10B981" },
-    { name: "Charging", value: statusCounts.charging || 0, color: "#3B82F6" },
-    { name: "Reserved", value: statusCounts.reserved || 0, color: "#F59E0B" },
+    { name: "Online", value: statusCounts.online || 0, color: "#10B981" },
+    { name: "Busy", value: statusCounts.busy || 0, color: "#3B82F6" },
     { name: "Faulted", value: statusCounts.faulted || 0, color: "#EF4444" },
     { name: "Offline", value: statusCounts.offline || 0, color: "#6B7280" },
   ], [statusCounts]);
@@ -431,6 +551,8 @@ function Charger({ baseUrl, userRole }) {
   // Sorting & Filtering logic
   const filteredRecords = useMemo(() => {
     return chargerRecoards.filter(charger => {
+      const currentStatus = getChargerStatus(charger, sessions);
+
       // 1. Search Bar Term
       const searchLow = searchTerm.toLowerCase().trim();
       const matchesSearch = !searchLow ? true : (
@@ -438,18 +560,19 @@ function Charger({ baseUrl, userRole }) {
         (charger.stationId && charger.stationId.toString().toLowerCase().includes(searchLow)) ||
         (charger.chargerType && charger.chargerType.toLowerCase().includes(searchLow)) ||
         (charger.connectorType && charger.connectorType.toLowerCase().includes(searchLow)) ||
-        String(charger.status || "").toLowerCase().includes(searchLow)
+        currentStatus.toLowerCase().includes(searchLow)
       );
 
       // 2. Status Drawer Filter
       let matchesStatus = true;
       if (statusFilter !== "All") {
-        const s = String(charger.status || "").toLowerCase().trim();
-        if (statusFilter === "Online") matchesStatus = s === "available" || s === "online" || s === "active";
-        else if (statusFilter === "Charging") matchesStatus = s === "charging" || s === "busy" || s === "preparing" || s === "finishing" || s === "completed";
-        else if (statusFilter === "Reserved") matchesStatus = s === "reserved";
-        else if (statusFilter === "Faulted") matchesStatus = s === "faulted" || s === "error";
-        else if (statusFilter === "Offline") matchesStatus = s === "offline" || s === "unavailable";
+        const sfLower = statusFilter.toLowerCase();
+        const curLower = currentStatus.toLowerCase();
+        if (sfLower === "online") matchesStatus = curLower === "online" || curLower === "available";
+        else if (sfLower === "busy" || sfLower === "charging") matchesStatus = curLower === "busy" || curLower === "charging";
+        else if (sfLower === "faulted") matchesStatus = curLower === "faulted" || curLower === "error";
+        else if (sfLower === "offline") matchesStatus = curLower === "offline" || curLower === "unavailable";
+        else matchesStatus = curLower === sfLower;
       }
 
       // 3. Station Drawer Filter
@@ -1254,10 +1377,9 @@ function Charger({ baseUrl, userRole }) {
                     >
                       <option value="All">All Statuses</option>
                       <option value="Online">Online / Available</option>
-                      <option value="Charging">Charging / Occupied</option>
-                      <option value="Reserved">Reserved</option>
+                      <option value="Busy">Busy (Active Session)</option>
                       <option value="Faulted">Faulted / Error</option>
-                      <option value="Offline">Offline / Inactive</option>
+                      <option value="Offline">Offline / Unavailable</option>
                     </select>
                   </div>
 
@@ -1441,9 +1563,8 @@ function Charger({ baseUrl, userRole }) {
 
           <div className="status-cards-subgrid">
             {[
-              { label: "Available", count: statusCounts.available, color: "#10B981" },
-              { label: "Charging", count: statusCounts.charging, color: "#3B82F6" },
-              { label: "Reserved", count: statusCounts.reserved, color: "#F59E0B" },
+              { label: "Online", count: statusCounts.online, color: "#10B981" },
+              { label: "Busy", count: statusCounts.busy, color: "#3B82F6" },
               { label: "Faulted", count: statusCounts.faulted, color: "#EF4444" },
               { label: "Offline", count: statusCounts.offline, color: "#6B7280" },
             ].map((stat, i) => (
@@ -1683,8 +1804,8 @@ function Charger({ baseUrl, userRole }) {
                         {visibleColumns.status && (
                           <td className="table-td">
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <span className={`status-badge ${getStatusBadgeClass(getChargerStatus(charger))}`}>
-                                {getChargerStatus(charger)}
+                              <span className={`status-badge ${getStatusBadgeClass(getChargerStatus(charger, sessions))}`}>
+                                {getChargerStatus(charger, sessions)}
                               </span>
                             </div>
                           </td>

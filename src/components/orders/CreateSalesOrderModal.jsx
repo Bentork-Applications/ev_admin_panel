@@ -162,25 +162,14 @@ export const CreateSalesOrderModal = React.memo(({
               <OrderItemsEditor data={salesFormData} onChange={setSalesFormData} errors={salesFormErrors} />
             </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label>Expected Delivery Date *</label>
-                <input
-                  type="date"
-                  value={salesFormData.expectedDeliveryDate}
-                  onChange={(e) => setSalesFormData({ ...salesFormData, expectedDeliveryDate: e.target.value })}
-                />
-                {salesFormErrors.expectedDeliveryDate && <span className="field-error">{salesFormErrors.expectedDeliveryDate}</span>}
-              </div>
-
-              <div className="form-group">
-                <label>Warranty Start Date (Optional)</label>
-                <input
-                  type="date"
-                  value={salesFormData.warrantyStartDate || ""}
-                  onChange={(e) => setSalesFormData({ ...salesFormData, warrantyStartDate: e.target.value })}
-                />
-              </div>
+            <div className="form-group">
+              <label>Expected Delivery Date *</label>
+              <input
+                type="date"
+                value={salesFormData.expectedDeliveryDate}
+                onChange={(e) => setSalesFormData({ ...salesFormData, expectedDeliveryDate: e.target.value })}
+              />
+              {salesFormErrors.expectedDeliveryDate && <span className="field-error">{salesFormErrors.expectedDeliveryDate}</span>}
             </div>
 
             <div className="form-row">

@@ -5,6 +5,7 @@ import VectorIcon from "../../assets/icons/stafficon/Vector-3.svg";
 import SessionTable from "../../components/admin/SessionTable";
 import SearchBar from "../../components/admin/SearchBar";
 import RevenueChart from "../../components/admin/RevenueChart";
+import { getExportMetadataHeader } from "../../utils/watermark";
 
 const RevenueSkeleton = () => (
   <div className="revenue-container">
@@ -322,11 +323,12 @@ const RevenuePage = ({ baseUrl, userRole }) => {
   }, [filteredRecords]);
 
   const exportToCSV = () => {
+    const metaHeader = getExportMetadataHeader();
     const headers = ["Session ID,User ID,Charger ID,Station ID,Amount,Payment Method,Transaction ID,Status,Created At"];
     const rows = displayRecords.map(row =>
       `${row.sessionId},${row.userId},${row.chargerId},${row.stationId},${row.amount},${row.paymentMethod},${row.transactionId},${row.paymentStatus},${row.createdAt}`
     );
-    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
+    const csvContent = "data:text/csv;charset=utf-8," + [metaHeader, headers, ...rows].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);

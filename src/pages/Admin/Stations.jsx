@@ -10,6 +10,7 @@ import errorIcon from "../../assets/icons/stationicon/red.svg";
 import editIcon from "../../assets/icons/stationicon/edit.svg";
 import deleteIcon from "../../assets/icons/stationicon/delete.svg";
 import StationOverviewChart from "../../components/admin/StationOverviewChart";
+import { getExportMetadataHeader } from "../../utils/watermark";
 
 const AddStation = lazy(() => import('./form/AddStation'));
 const EditStation = lazy(() => import('./form/EditStation'));
@@ -379,6 +380,7 @@ function Stations({ baseUrl, userRole }) {
   const triggerExport = () => {
     setActionsLoading(prev => ({ ...prev, export: true }));
     setTimeout(() => {
+      const metaHeader = getExportMetadataHeader();
       const headers = ["Station ID", "Name", "City", "State", "Status", "Direction Link"];
       const rows = stations.map(s => [
         s.id,
@@ -389,7 +391,7 @@ function Stations({ baseUrl, userRole }) {
         s.directionLink || ""
       ]);
       const csvContent = "data:text/csv;charset=utf-8," 
-        + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+        + [metaHeader, headers.join(","), ...rows.map(e => e.join(","))].join("\n");
       
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
