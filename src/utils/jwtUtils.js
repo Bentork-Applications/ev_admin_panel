@@ -20,17 +20,23 @@ export const safeDecodeJwt = (token) => {
         .join("")
     );
     return JSON.parse(jsonPayload);
-  } catch (e) {
+  } catch {
     try {
       const parts = token.split(".");
       if (parts.length >= 2) {
         return JSON.parse(atob(parts[1]));
       }
-    } catch {}
+    } catch {
+      // Fallback decoding failed; return null
+    }
     return null;
   }
 };
 
+/**
+ * Extracts normalized user role solely from JWT claims/authorities.
+ * Unsafe email-substring matching has been removed per security specifications.
+ */
 export const extractRoleFromToken = (token) => {
   const payload = safeDecodeJwt(token);
   if (!payload) return "";
@@ -42,7 +48,9 @@ export const extractRoleFromToken = (token) => {
     authorities.push(payload.authorities.toUpperCase());
   }
 
-  if (payload.role) authorities.push(String(payload.role).toUpperCase());
+  if (payload.role) {
+    authorities.push(String(payload.role).toUpperCase());
+  }
   if (payload.roles) {
     if (Array.isArray(payload.roles)) {
       authorities.push(...payload.roles.map((r) => String(r).toUpperCase()));
@@ -52,14 +60,13 @@ export const extractRoleFromToken = (token) => {
   }
 
   const authStr = authorities.join(",");
-  const subStr = String(payload.sub || "").toLowerCase();
 
-  if (authStr.includes("SALES") || subStr.includes("sales")) return "SALES_ADMIN";
-  if (authStr.includes("PRODUCTION") || subStr.includes("production")) return "PRODUCTION_ADMIN";
-  if (authStr.includes("SCM") || subStr.includes("scm")) return "SCM_ADMIN";
+  if (authStr.includes("SALES")) return "SALES_ADMIN";
+  if (authStr.includes("PRODUCTION")) return "PRODUCTION_ADMIN";
+  if (authStr.includes("SCM")) return "SCM_ADMIN";
   if (authStr.includes("DEALER")) return "DEALER";
-  if (authStr.includes("ADMIN_STAFF")) return "ADMIN_STAFF";
-  if (authStr.includes("ADMIN")) return "ADMIN";
+  if (authStr.includes("ADMIN_STAFF") || authStr.includes("STAFF")) return "ADMIN_STAFF";
+  if (authStr.includes("ADMIN") || authStr.includes("ROLE_ADMIN") || authStr.includes("ADMINISTRATOR")) return "ADMIN";
 
   return "";
 };

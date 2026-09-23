@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { stationService } from "../../../services/stationService";
+import { apiClient } from "../../../services/apiClient";
 
 export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initialData }) {   // ✅ accept onClose prop
   const getInitialFormState = () => {
@@ -17,10 +19,10 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
         availability: true
       };
     }
-    
+
     const isOccupiedVal = initialData.isOccupied === true || initialData.isOccupied === "true" || initialData.occupied === true || initialData.occupied === "true";
     const availabilityVal = initialData.availability === true || initialData.availability === "true";
-    
+
     return {
       ...initialData,
       isOccupied: isOccupiedVal,
@@ -39,32 +41,11 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
   useEffect(() => {
     const fetchStations = async () => {
       setIsLoadingStation(true);
-
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.error('Authentication error')
-        setError('Authentication Failed, please login again');
-        setIsLoadingStation(false);
-        return;
-      }
-
       try {
-        const response = await fetch(`${baseUrl}/stations/all`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        })
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch station data')
-        }
-
-        const data = await response.json();
-        setStations(data);
-
+        const data = await stationService.getAllStations();
+        setStations(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Failed to load station', error)
+        console.error('Failed to load station', error);
         setError('Failed to load Station Data');
       } finally {
         setIsLoadingStation(false);
@@ -75,17 +56,17 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
   }, [baseUrl]);
 
   const handleChange = (e) => {
-    const { name, value, type } = e.target;
+    const { name, value, type, checked } = e.target;
     if (name === 'stationId') {
       const selectedStation = stations.find(s => s.id.toString() === value);
       setForm({
         ...form,
         stationId: value,
         stationName: selectedStation?.name || ''
-      })
+      });
     }
-    else if (type === 'checkBox') {
-      setForm({ ...form, [name]: e.target.checked });
+    else if (type === 'checkbox' || type === 'checkBox') {
+      setForm({ ...form, [name]: checked });
     }
     else {
       setForm({ ...form, [name]: value });
@@ -97,29 +78,21 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
     setError(null);
 
     if (!form.stationId) {
-      setError('Select a station')
+      setError('Select a station');
       return;
     }
     if (!form.ocppId) {
-      setError('enter ocppid')
+      setError('Enter OCPP ID');
       return;
     }
     if (!form.connectorType) {
-      setError('select a Connector Type')
+      setError('Select a Connector Type');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem('token')
-      if (!token) {
-        console.error('Authentication error')
-        setError('Authentication Failed, please login again');
-        setIsLoadingStation(false);
-        return;
-      }
-
       const payload = {
         stationId: form.stationId,
         ocppId: form.ocppId,
@@ -129,40 +102,27 @@ export default function AddChargerForm({ onClose, onChargerAdded, baseUrl, initi
         rate: form.rate !== "" ? parseFloat(form.rate) : 0,
         platformFeePerKwh: form.platformFeePerKwh !== "" ? parseFloat(form.platformFeePerKwh) : 0,
         pstPercent: form.pstPercent !== "" ? parseFloat(form.pstPercent) : 0,
-        isOccupied: form.isOccupied,
-        availability: form.availability
-      }
+        isOccupied: Boolean(form.isOccupied),
+        availability: Boolean(form.availability)
+      };
 
       const isEdit = !!initialData;
-      const url = isEdit ? `${baseUrl}/chargers/update/${initialData.id}` : `${baseUrl}/chargers/add`;
-      const method = isEdit ? 'PUT' : 'POST';
+      const endpoint = isEdit ? `/chargers/update/${initialData.id}` : `/chargers/add`;
 
-      console.log(`${isEdit ? 'Updating' : 'Adding'} charger: `, payload);
-
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        console.error(`Failed to ${isEdit ? 'update' : 'add'} charger`);
-        const errText = await response.text();
-        setError(`Failed to ${isEdit ? 'Update' : 'Add'} Charger: ${errText || 'try again'}`);
-        alert(`Failed to ${isEdit ? 'update' : 'add'} the charger`);
-        return;
+      if (isEdit) {
+        await apiClient.put(endpoint, payload);
+      } else {
+        await apiClient.post(endpoint, payload);
       }
 
-      alert(`Charger ${isEdit ? 'Updated' : 'Added'} Successfully`);
-      onChargerAdded();
-    } catch (error) {
-      console.error(`Failed to ${initialData ? 'update' : 'add'} charger`, error)
-      setError(`Failed to ${initialData ? 'update' : 'add'} Charger`);
+      if (typeof onChargerAdded === "function") {
+        onChargerAdded();
+      }
+    } catch (err) {
+      console.error(`Failed to ${initialData ? 'update' : 'add'} charger`, err);
+      setError(err.message || `Failed to ${initialData ? 'update' : 'add'} Charger`);
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
   };
 

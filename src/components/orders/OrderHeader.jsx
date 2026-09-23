@@ -6,6 +6,7 @@ export const OrderHeader = React.memo(({
   isProductionAdmin,
   isScmAdmin,
   isSuperAdmin,
+  isAdministrator,
   loading,
   onRefresh,
   onCreateOrderClick
@@ -17,13 +18,13 @@ export const OrderHeader = React.memo(({
           {isSalesAdmin && "Sales Admin — Complete Order History"}
           {isProductionAdmin && "Production Admin — Complete Order History"}
           {isScmAdmin && "SCM Admin — Complete Order History"}
-          {isSuperAdmin && "Order Management (Complete Order History)"}
+          {(isAdministrator || isSuperAdmin) && "Order Management (Complete Order History)"}
         </h1>
         <p className="page-subheading">
           {isSalesAdmin && "View complete order history. Create new orders and edit orders currently in Sales stage."}
           {isProductionAdmin && "View complete order history. Monitor manufacturing pipeline and transition Production status."}
           {isScmAdmin && "View complete order history. Fill barcode/warranty details and dispatch completed orders."}
-          {isSuperAdmin && "Full view and management of system order history across all pipeline stages."}
+          {(isAdministrator || isSuperAdmin) && "Full view and management of system order history across all pipeline stages."}
         </p>
       </div>
 
@@ -33,7 +34,7 @@ export const OrderHeader = React.memo(({
           <span>Refresh</span>
         </button>
 
-        {isSalesAdmin && (
+        {(isSalesAdmin || isAdministrator) && (
           <button className="primary-action-btn" onClick={onCreateOrderClick}>
             <Plus size={18} />
             <span>Create Order</span>

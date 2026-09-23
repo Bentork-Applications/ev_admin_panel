@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../../services/authService";
-import { staffService } from "../../services/staffService";
 import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
+import { isValidEmail, isValidMobile, isValidPassword } from "../../utils/validators";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -11,12 +11,24 @@ export default function AdminLogin() {
     emailOrMobile: "",
     password: "",
   });
+  const [errorMessage, setErrorMessage] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("login-theme") || "dark");
   const [rememberMe, setRememberMe] = useState(false);
 
+  useEffect(() => {
+    const remembered = localStorage.getItem("remembered_login_identifier");
+    if (remembered) {
+      setFormData((prev) => ({ ...prev, emailOrMobile: remembered }));
+      setRememberMe(true);
+    }
+  }, []);
+
   const handleChange = (e) => {
+    setErrorMessage("");
+    setInfoMessage("");
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -28,50 +40,58 @@ export default function AdminLogin() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setErrorMessage("");
+    setInfoMessage("");
 
-    if (!formData.emailOrMobile || !formData.password) {
-      return alert("Please enter email and password");
+    const identifier = formData.emailOrMobile.trim();
+    const password = formData.password;
+
+    if (!identifier) {
+      setErrorMessage("Please enter your registered email or mobile number.");
+      return;
+    }
+
+    if (!isValidEmail(identifier) && !isValidMobile(identifier)) {
+      setErrorMessage("Please enter a valid email address or 10-digit mobile number.");
+      return;
+    }
+
+    if (!isValidPassword(password, 4)) {
+      setErrorMessage("Please enter your password (minimum 4 characters).");
+      return;
     }
 
     setIsLoading(true);
 
     try {
-      const data = await authService.login(formData);
+      const data = await authService.login({
+        emailOrMobile: identifier,
+        password: password
+      });
 
-      // Decode JWT safely to extract role and email in production
-      let email = "";
-      const payload = safeDecodeJwt(data.token);
-      if (payload) {
-        email = payload.sub || payload.email || "";
+      // Handle Remember Me persistence
+      if (rememberMe) {
+        localStorage.setItem("remembered_login_identifier", identifier);
+      } else {
+        localStorage.removeItem("remembered_login_identifier");
       }
+
+      // Decode JWT safely to extract role and claims
+      const payload = safeDecodeJwt(data.token);
       const role = extractRoleFromToken(data.token) || "ADMIN";
       localStorage.setItem("userRole", role);
 
-      // Check if the user is suspended/deactivated (SUPER ADMIN ONLY)
-      if (email && role === "ADMIN") {
-        try {
-          const adminsList = await staffService.getAllStaff();
-          if (Array.isArray(adminsList)) {
-            const currentAdmin = adminsList.find(admin => admin.email === email);
-            if (currentAdmin) {
-              const overrides = JSON.parse(localStorage.getItem("admin_staff_status") || "{}");
-              const status = overrides[currentAdmin.id] || currentAdmin.status || "Active";
-              if (status === "Suspended") {
-                authService.logout();
-                alert("Your account is suspended. Please contact the administrator.");
-                setIsLoading(false);
-                return;
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Failed to fetch admin list for status check:", err);
-        }
+      // Check if backend payload explicitly indicates suspension/deactivation
+      if (payload && (payload.status === "Suspended" || payload.status === "INACTIVE" || payload.active === false)) {
+        authService.logout();
+        setErrorMessage("Your account has been deactivated. Please contact your system administrator.");
+        setIsLoading(false);
+        return;
       }
 
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      alert(err.message || "Invalid login credentials");
+      setErrorMessage(err.message || "Invalid login credentials. Please check and try again.");
     } finally {
       setIsLoading(false);
     }
@@ -904,6 +924,34 @@ export default function AdminLogin() {
             </p>
           </div>
 
+          {errorMessage && (
+            <div style={{
+              backgroundColor: "rgba(239, 68, 68, 0.15)",
+              border: "1px solid rgba(239, 68, 68, 0.5)",
+              color: "#fca5a5",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              fontSize: "14px",
+              lineHeight: "1.4"
+            }}>
+              {errorMessage}
+            </div>
+          )}
+
+          {infoMessage && (
+            <div style={{
+              backgroundColor: "rgba(53, 245, 163, 0.12)",
+              border: "1px solid rgba(53, 245, 163, 0.4)",
+              color: "#35F5A3",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              fontSize: "14px",
+              lineHeight: "1.4"
+            }}>
+              {infoMessage}
+            </div>
+          )}
+
           <form onSubmit={handleLogin} className="login-form">
             <div className="form-field-group">
               <label className="field-label">Email ID </label>
@@ -911,7 +959,7 @@ export default function AdminLogin() {
                 <input
                   type="text"
                   name="emailOrMobile"
-                  placeholder="Enter your email"
+                  placeholder="Enter your email or 10-digit mobile"
                   className="field-input"
                   value={formData.emailOrMobile}
                   onChange={handleChange}
@@ -979,7 +1027,14 @@ export default function AdminLogin() {
                 />
                 <span>Remember me</span>
               </label>
-              <a href="#forgot" onClick={(e) => { e.preventDefault(); alert("Please contact system admin to reset credentials."); }} className="forgot-password-link">
+              <a
+                href="#forgot"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setInfoMessage("Please contact your system administrator to reset credentials.");
+                }}
+                className="forgot-password-link"
+              >
                 Forgot Password?
               </a>
             </div>

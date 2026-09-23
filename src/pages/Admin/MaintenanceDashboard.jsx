@@ -7,8 +7,12 @@ import {
   Cell,
   Tooltip
 } from "recharts";
+import { stationService } from "../../services/stationService";
+import { maintenanceService } from "../../services/maintenanceService";
+import { chargerService } from "../../services/chargerService";
+import { apiClient } from "../../services/apiClient";
 
-export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
+export default function MaintenanceDashboard() {
   const navigate = useNavigate();
   const [stations, setStations] = useState([]);
   const [activeSchedules, setActiveSchedules] = useState([]);
@@ -32,55 +36,33 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
-  const token = localStorage.getItem("token");
-
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) {
       setLoading(true);
       setError(null);
     }
     try {
-      const [stationsRes, activeRes, chargersRes] = await Promise.all([
-        fetch(`${baseUrl}/stations/all`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${baseUrl}/maintenance/active`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${baseUrl}/chargers/all`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+      const [stationsData, activeData, chargersData] = await Promise.all([
+        stationService.getAllStations().catch(() => []),
+        maintenanceService.getActiveSchedules().catch(() => []),
+        chargerService.getAllChargers().catch(() => []),
       ]);
 
-      let loadedStations = [];
-      if (stationsRes.ok) {
-        const data = await stationsRes.json();
-        setStations(data);
-        loadedStations = data;
-      }
-      if (activeRes.ok) {
-        const data = await activeRes.json();
-        setActiveSchedules(data);
-      }
-      if (chargersRes.ok) {
-        const data = await chargersRes.json();
-        setAllChargers(data);
-      }
+      const loadedStations = Array.isArray(stationsData) ? stationsData : [];
+      setStations(loadedStations);
+      setActiveSchedules(Array.isArray(activeData) ? activeData : []);
+      setAllChargers(Array.isArray(chargersData) ? chargersData : []);
 
       setLastUpdated(new Date());
 
-      const currentStations = loadedStations.length > 0 ? loadedStations : stations;
-      if (currentStations.length > 0) {
-        const promises = currentStations.map(st =>
-          fetch(`${baseUrl}/maintenance/station/${st.id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).then(res => res.ok ? res.json() : []).then(data => {
+      if (loadedStations.length > 0) {
+        const promises = loadedStations.map(st =>
+          maintenanceService.getStationMaintenance(st.id).then(data => {
             if (Array.isArray(data)) {
               return data.map(item => ({ ...item, stationName: st.name, stationId: st.id }));
             }
             return [];
-          })
+          }).catch(() => [])
         );
         const results = await Promise.all(promises);
         let allData = [];
@@ -90,13 +72,13 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
         allData.sort((a, b) => new Date(b.createdAt || b.scheduledStart) - new Date(a.createdAt || a.scheduledStart));
         setHistory(allData);
       }
-    } catch (error) {
-      console.error("Error fetching data:", error);
+    } catch (err) {
+      console.error("Error fetching data:", err);
       setError("Failed to load maintenance history. Please try again later.");
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [baseUrl, token, stations]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -152,73 +134,46 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl } = {}) {
     try {
       if (modalType === "ENABLE") {
         const promises = selectedChargerIds.map(id =>
-          fetch(`${baseUrl}/maintenance/charger/${id}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              reason: reason,
-              scheduledStart: new Date().toISOString(),
-              scheduledEnd: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Default 24h
-            }),
+          apiClient.post(`/maintenance/charger/${id}`, {
+            reason: reason,
+            scheduledStart: new Date().toISOString(),
+            scheduledEnd: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           })
         );
-        const results = await Promise.all(promises);
-        const allOk = results.every(res => res.ok);
-
-        if (allOk) {
-          alert("Maintenance mode enabled successfully for selected chargers!");
-          setReason("");
-          fetchData();
-        } else {
-          alert("Failed to enable maintenance for one or more chargers.");
-        }
+        await Promise.all(promises);
+        alert("Maintenance mode enabled successfully for selected chargers!");
+        setReason("");
+        fetchData();
       } else {
         const promises = activeSelectedSchedules.map(schedule =>
-          fetch(`${baseUrl}/maintenance/${schedule.id}/cancel`, {
-            method: "PUT",
-            headers: { Authorization: `Bearer ${token}` },
-          })
+          maintenanceService.cancelMaintenanceRecord(schedule.id)
         );
-        const results = await Promise.all(promises);
+        await Promise.all(promises);
 
-        if (results.every(res => res.ok)) {
-          // Restore Specific Charger Status
-          try {
-            const restorePromises = activeSelectedSchedules.map(schedule => {
-              const chargerToRestore = chargers.find(c => c.id === schedule.targetId);
-              if (chargerToRestore) {
-                return fetch(`${baseUrl}/chargers/update/${chargerToRestore.id}`, {
-                  method: "PUT",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                  },
-                  body: JSON.stringify({
-                    ...chargerToRestore,
-                    availability: true,
-                    status: "available"
-                  }),
-                });
-              }
-              return Promise.resolve();
-            });
-            await Promise.all(restorePromises);
-          } catch (restoreErr) {
-            console.error("Error during automated restoration:", restoreErr);
-          }
-
-          alert("Maintenance mode disabled. Selected chargers have been restored to active status.");
-          fetchData();
-        } else {
-          alert("Failed to disable maintenance.");
+        // Restore Specific Charger Status
+        try {
+          const restorePromises = activeSelectedSchedules.map(schedule => {
+            const chargerToRestore = chargers.find(c => c.id === schedule.targetId);
+            if (chargerToRestore) {
+              return chargerService.updateCharger(chargerToRestore.id, {
+                ...chargerToRestore,
+                availability: true,
+                status: "available"
+              });
+            }
+            return Promise.resolve();
+          });
+          await Promise.all(restorePromises);
+        } catch (restoreErr) {
+          console.error("Error during automated restoration:", restoreErr);
         }
+
+        alert("Maintenance mode disabled. Selected chargers have been restored to active status.");
+        fetchData();
       }
     } catch (error) {
       console.error("Action error:", error);
-      alert("An error occurred. Please try again.");
+      alert(error.message || "An error occurred. Please try again.");
     } finally {
       setActionLoading(false);
     }

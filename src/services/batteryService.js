@@ -9,20 +9,20 @@ export const batteryService = {
     return await apiClient.post("/battery-data/admin/register", batteryData);
   },
 
+  updateBattery: async (id, batteryData) => {
+    return await apiClient.put(`/battery-data/admin/update/${id}`, batteryData);
+  },
+
+  deleteBattery: async (id) => {
+    return await apiClient.delete(`/battery-data/admin/delete/${id}`);
+  },
+
+  updateWarrantyStatus: async (id, statusData) => {
+    return await apiClient.put(`/battery-data/admin/update-warranty-status/${id}`, statusData);
+  },
+
   uploadBatteriesCsv: async (formData) => {
-    const token = localStorage.getItem("token");
-    const baseUrl = import.meta.env.VITE_API_URL || "";
-    const response = await fetch(`${baseUrl}/battery-data/admin/register/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
-      body: formData
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Server error (${response.status})`);
-    }
-    return await response.json();
+    return await apiClient.upload("/battery-data/admin/register/upload", formData);
   }
 };
+

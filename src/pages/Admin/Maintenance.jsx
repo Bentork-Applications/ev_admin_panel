@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { stationService } from "../../services/stationService";
+import { maintenanceService } from "../../services/maintenanceService";
 import {
   LineChart,
   Line,
@@ -26,7 +28,7 @@ const SearchableDropdown = ({ options, value, onChange, placeholder, labelKey, v
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredOptions = options.filter(opt => 
+  const filteredOptions = options.filter(opt =>
     String(opt[labelKey] || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     String(opt[valueKey] || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -42,7 +44,7 @@ const SearchableDropdown = ({ options, value, onChange, placeholder, labelKey, v
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
-      <div 
+      <div
         onClick={() => setIsOpen(!isOpen)}
         style={{
           width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px',
@@ -59,7 +61,7 @@ const SearchableDropdown = ({ options, value, onChange, placeholder, labelKey, v
           maxHeight: '220px', display: 'flex', flexDirection: 'column'
         }}>
           <div style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
-            <input 
+            <input
               type="text" placeholder="Search..." value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '14px' }}
@@ -68,7 +70,7 @@ const SearchableDropdown = ({ options, value, onChange, placeholder, labelKey, v
           </div>
           <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0' }}>
             {filteredOptions.length > 0 ? filteredOptions.map(opt => (
-              <div 
+              <div
                 key={opt.id}
                 style={{ padding: '10px 12px', cursor: 'pointer', fontSize: '14px', color: '#333' }}
                 onClick={() => handleSelect(opt)}
@@ -104,46 +106,31 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
   });
 
   const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL;
+  void baseUrl;
   const isDealer = userRole === "DEALER" || localStorage.getItem("userRole") === "DEALER";
 
   const fetchStations = useCallback(async () => {
-    const token = localStorage.getItem("token");
     try {
-      const response = await fetch(`${baseUrl}/stations/all`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const result = await response.json();
-        setStations(result);
-      }
+      const result = await stationService.getAllStations();
+      setStations(Array.isArray(result) ? result : []);
     } catch (error) {
       console.error("Error fetching stations:", error);
     }
-  }, [baseUrl]);
+  }, []);
 
   const fetchContacts = useCallback(async () => {
-    if (!contacts || contacts.length === 0) setLoading(true);
+    setLoading(true);
     setError(null);
-    const token = localStorage.getItem("token");
     try {
-      const response = await fetch(`${baseUrl}/emergency-contacts/all`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (response.ok) {
-        const result = await response.json();
-        setContacts(result);
-      } else {
-        throw new Error("Failed to fetch emergency contacts");
-      }
+      const result = await maintenanceService.getAllEmergencyContacts();
+      setContacts(Array.isArray(result) ? result : []);
     } catch (error) {
       console.error("Error fetching contacts:", error);
       setError("Failed to load emergency contacts. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [baseUrl]);
+  }, []);
 
   useEffect(() => {
     fetchContacts();
@@ -174,17 +161,9 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
 
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this contact?")) return;
-    const token = localStorage.getItem("token");
     try {
-      const response = await fetch(`${baseUrl}/emergency-contacts/delete/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (response.ok) {
-        fetchContacts();
-      }
+      await maintenanceService.deleteEmergencyContact(id);
+      fetchContacts();
     } catch (error) {
       console.error("Error deleting contact:", error);
     }
@@ -194,11 +173,6 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError(null);
-    const token = localStorage.getItem("token");
-    const url = editingContact
-      ? `${baseUrl}/emergency-contacts/update/${editingContact.id}`
-      : `${baseUrl}/emergency-contacts/add`;
-    const method = editingContact ? "PUT" : "POST";
 
     const payload = {
       stationId: formData.stationId ? parseInt(formData.stationId, 10) : null,
@@ -208,19 +182,15 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
     };
 
     try {
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      if (response.ok) {
-        setShowModal(false);
-        fetchContacts();
-      } else if (response.status === 409) {
-        // A contact already exists for this station — offer to edit it instead
+      if (editingContact) {
+        await maintenanceService.updateEmergencyContact(editingContact.id, payload);
+      } else {
+        await maintenanceService.createEmergencyContact(payload);
+      }
+      setShowModal(false);
+      fetchContacts();
+    } catch (err) {
+      if (err.status === 409) {
         const existingContact = contacts.find(
           (c) => c.stationId === payload.stationId || c.stationName === payload.stationName
         );
@@ -237,13 +207,11 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
           });
         }
       } else {
-        const errorText = await response.text();
-        console.error("Failed API details:", response.status, errorText);
-        setFormError({ type: "error", message: `Failed to save contact (${response.status}): ${errorText}` });
+        setFormError({
+          type: "error",
+          message: err.message || "Failed to save emergency contact.",
+        });
       }
-    } catch (error) {
-      console.error("Error saving contact:", error);
-      setFormError({ type: "error", message: `Network error: ${error.message}` });
     }
   };
 
@@ -752,7 +720,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
             </div>
           ) : error ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 16 }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginBottom: 8 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginBottom: 8 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
               <div>{error}</div>
               <button onClick={() => fetchContacts()} style={{ marginTop: 12, padding: '6px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Retry</button>
             </div>
@@ -787,7 +755,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
                   )) : (
                     <tr>
                       <td colSpan={isDealer ? 4 : 5} style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginBottom: 12, opacity: 0.5, display: 'inline-block' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginBottom: 12, opacity: 0.5, display: 'inline-block' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
                         <br />
                         No emergency contacts found.
                       </td>
@@ -845,7 +813,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
 
                 <div className="form-group">
                   <label>Station Name</label>
-                  <SearchableDropdown 
+                  <SearchableDropdown
                     options={stations}
                     value={formData.stationName}
                     onChange={(opt) => setFormData({ ...formData, stationName: opt.name, stationId: opt.id })}
@@ -856,7 +824,7 @@ export default function MaintenanceDashboard({ baseUrl: propBaseUrl, userRole })
                 </div>
                 <div className="form-group">
                   <label>Station ID</label>
-                  <SearchableDropdown 
+                  <SearchableDropdown
                     options={stations}
                     value={formData.stationId}
                     onChange={(opt) => setFormData({ ...formData, stationId: opt.id, stationName: opt.name })}

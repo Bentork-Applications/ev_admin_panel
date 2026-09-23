@@ -1,12 +1,12 @@
 import { apiClient } from "./apiClient";
 
 export const orderService = {
-  // ==================== LOCAL ORDER CACHE HELPERS ====================
+  // ==================== ORDER CACHE HELPERS (Non-authoritative temporary cache) ====================
   saveCachedOrders: (ordersToCache) => {
     try {
       if (!ordersToCache) return;
       const list = Array.isArray(ordersToCache) ? ordersToCache : [ordersToCache];
-      const existing = JSON.parse(localStorage.getItem("app_all_cached_orders") || "[]");
+      const existing = JSON.parse(sessionStorage.getItem("app_all_cached_orders") || "[]");
       const map = new Map();
       existing.forEach((o) => {
         if (o && (o.id || o.orderNumber || o.piNumber)) {
@@ -18,13 +18,10 @@ export const orderService = {
         if (o && (o.id || o.orderNumber || o.piNumber)) {
           const key = String(o.id || o.orderNumber || o.piNumber);
           const existingItem = map.get(key) || {};
-          const localStatus = localStorage.getItem(`order_status_${o.id || o.orderNumber}`);
-          const merged = { ...existingItem, ...o };
-          if (localStatus) merged.orderStatus = localStatus;
-          map.set(key, merged);
+          map.set(key, { ...existingItem, ...o });
         }
       });
-      localStorage.setItem("app_all_cached_orders", JSON.stringify(Array.from(map.values())));
+      sessionStorage.setItem("app_all_cached_orders", JSON.stringify(Array.from(map.values())));
     } catch (err) {
       console.warn("Failed to cache orders:", err);
     }
@@ -32,7 +29,7 @@ export const orderService = {
 
   getCachedOrders: () => {
     try {
-      const cached = JSON.parse(localStorage.getItem("app_all_cached_orders") || "[]");
+      const cached = JSON.parse(sessionStorage.getItem("app_all_cached_orders") || "[]");
       return Array.isArray(cached) ? cached : [];
     } catch {
       return [];
@@ -41,32 +38,37 @@ export const orderService = {
 
   // ==================== SALES ADMIN ====================
   salesCreateOrder: async (orderData) => {
-    const res = await apiClient.post("/orders/sales/create", orderData);
-    if (res) orderService.saveCachedOrders([res]);
-    return res;
+    try {
+      const res = await apiClient.post("/orders/sales/create", orderData);
+      if (res) orderService.saveCachedOrders([res]);
+      return res;
+    } catch (err) {
+      if (err.status === 403 || err.status === 404) {
+        try {
+          const adminRes = await apiClient.post("/orders/admin/create", orderData);
+          if (adminRes) orderService.saveCachedOrders([adminRes]);
+          return adminRes;
+        } catch {
+          try {
+            const rootRes = await apiClient.post("/orders/create", orderData);
+            if (rootRes) orderService.saveCachedOrders([rootRes]);
+            return rootRes;
+          } catch {
+            throw err;
+          }
+        }
+      }
+      throw err;
+    }
   },
+
 
   salesGetMyOrders: async () => {
     try {
       const res = await apiClient.get("/orders/sales/my-orders");
       const arr = Array.isArray(res) ? res : Array.isArray(res?.orders) ? res.orders : [];
       orderService.saveCachedOrders(arr);
-
-      const cached = orderService.getCachedOrders();
-      const map = new Map();
-      cached.forEach((item) => {
-        if (item && (item.id || item.orderNumber || item.piNumber)) {
-          map.set(String(item.id || item.orderNumber || item.piNumber), item);
-        }
-      });
-      arr.forEach((item) => {
-        if (item && (item.id || item.orderNumber || item.piNumber)) {
-          const key = String(item.id || item.orderNumber || item.piNumber);
-          const existing = map.get(key) || {};
-          map.set(key, { ...existing, ...item });
-        }
-      });
-      return Array.from(map.values());
+      return arr;
     } catch {
       return orderService.getCachedOrders();
     }
@@ -98,25 +100,10 @@ export const orderService = {
 
       const activeArr = Array.isArray(activeRes) ? activeRes : Array.isArray(activeRes?.orders) ? activeRes.orders : [];
       const completedArr = Array.isArray(completedRes) ? completedRes : Array.isArray(completedRes?.orders) ? completedRes.orders : [];
+      const combined = [...activeArr, ...completedArr];
 
-      orderService.saveCachedOrders([...activeArr, ...completedArr]);
-
-      const cached = orderService.getCachedOrders();
-      const map = new Map();
-      cached.forEach((item) => {
-        if (item && (item.id || item.orderNumber || item.piNumber)) {
-          map.set(String(item.id || item.orderNumber || item.piNumber), item);
-        }
-      });
-
-      [...activeArr, ...completedArr].forEach((item) => {
-        if (item && (item.id || item.orderNumber || item.piNumber)) {
-          const key = String(item.id || item.orderNumber || item.piNumber);
-          const existing = map.get(key) || {};
-          map.set(key, { ...existing, ...item });
-        }
-      });
-      return Array.from(map.values());
+      orderService.saveCachedOrders(combined);
+      return combined;
     } catch {
       return orderService.getCachedOrders();
     }
@@ -136,7 +123,7 @@ export const orderService = {
   scmGetOrders: async () => {
     try {
       const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
-      const isSuperAdmin = ["ADMIN", "SUPER_ADMIN"].includes(userRole);
+      const isSuperAdmin = ["ADMIN", "SUPER_ADMIN", "ADMINISTRATOR"].includes(userRole);
 
       const scmPromise = apiClient.get("/orders/scm/orders").catch(() => []);
       const adminPromise = isSuperAdmin ? apiClient.get("/orders/admin/all").catch(() => []) : Promise.resolve([]);
@@ -145,40 +132,10 @@ export const orderService = {
 
       const scmArr = Array.isArray(scmRes) ? scmRes : Array.isArray(scmRes?.orders) ? scmRes.orders : [];
       const adminArr = Array.isArray(adminRes) ? adminRes : Array.isArray(adminRes?.orders) ? adminRes.orders : [];
+      const combined = [...scmArr, ...adminArr];
 
-      orderService.saveCachedOrders([...scmArr, ...adminArr]);
-
-      const cached = orderService.getCachedOrders();
-      const map = new Map();
-
-      // Include cached orders that belong to SCM stage or finished stages
-      cached.forEach((item) => {
-        if (item && (item.id || item.orderNumber || item.piNumber)) {
-          const status = (item.orderStatus || "").toLowerCase();
-          const prodStatus = (item.productionStatus || "").toLowerCase();
-          const localStatus = (localStorage.getItem(`order_status_${item.id || item.orderNumber}`) || "").toLowerCase();
-          const effectiveStatus = localStatus || status;
-
-          if (
-            ["production_complete", "scm_complete", "dispatched", "delivered", "completed"].includes(effectiveStatus) ||
-            prodStatus === "completed"
-          ) {
-            const key = String(item.id || item.orderNumber || item.piNumber);
-            map.set(key, item);
-          }
-        }
-      });
-
-      // Merge live responses
-      [...scmArr, ...adminArr].forEach((item) => {
-        if (item && (item.id || item.orderNumber || item.piNumber)) {
-          const key = String(item.id || item.orderNumber || item.piNumber);
-          const existing = map.get(key) || {};
-          map.set(key, { ...existing, ...item });
-        }
-      });
-
-      return Array.from(map.values());
+      orderService.saveCachedOrders(combined);
+      return combined;
     } catch {
       return orderService.getCachedOrders();
     }
@@ -200,17 +157,27 @@ export const orderService = {
     return res;
   },
 
+  scmDeliverOrder: async (id, deliveryData = {}) => {
+    const payload = {};
+    if (deliveryData && typeof deliveryData === "object" && deliveryData.adminNotes) {
+      payload.adminNotes = deliveryData.adminNotes.trim();
+    }
+    const res = await apiClient.put(`/orders/scm/${id}/deliver`, payload);
+    if (res) orderService.saveCachedOrders([res]);
+    return res;
+  },
+
   // ==================== SUPER ADMIN ====================
   adminGetAllOrders: async () => {
     try {
       const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
-      if (!["ADMIN", "SUPER_ADMIN"].includes(userRole)) {
+      if (!["ADMIN", "SUPER_ADMIN", "ADMINISTRATOR"].includes(userRole)) {
         return orderService.getCachedOrders();
       }
       const res = await apiClient.get("/orders/admin/all");
       const arr = Array.isArray(res) ? res : Array.isArray(res?.orders) ? res.orders : [];
       orderService.saveCachedOrders(arr);
-      return res;
+      return arr;
     } catch {
       return orderService.getCachedOrders();
     }
@@ -220,12 +187,34 @@ export const orderService = {
     return await apiClient.get(`/orders/admin/${id}`);
   },
 
+  // ==================== ORDER TRACKING (FULL ADMIN CRUD) ====================
+  getOrderTracking: async (orderId) => {
+    return await apiClient.get(`/orders/${orderId}/tracking`);
+  },
+
+  addOrderTracking: async (orderId, trackingData) => {
+    return await apiClient.post(`/orders/${orderId}/tracking`, trackingData);
+  },
+
+  updateOrderTracking: async (trackingId, trackingData) => {
+    return await apiClient.put(`/orders/tracking/${trackingId}`, trackingData);
+  },
+
+  deleteOrderTracking: async (trackingId) => {
+    return await apiClient.delete(`/orders/tracking/${trackingId}`);
+  },
+
+  getUserOrderTracking: async (orderId) => {
+    return await apiClient.get(`/orders/user/${orderId}/tracking`);
+  },
+
   getPendingCount: async (role) => {
     try {
+      const normalizedRole = (role || "").toUpperCase();
       let data = [];
-      if (role === "SCM_ADMIN") data = await orderService.scmGetOrders();
-      else if (role === "PRODUCTION_ADMIN") data = await orderService.productionGetOrders();
-      else if (role === "SALES_ADMIN") data = await orderService.salesGetMyOrders();
+      if (normalizedRole === "SCM_ADMIN" || normalizedRole === "SCM") data = await orderService.scmGetOrders();
+      else if (normalizedRole === "PRODUCTION_ADMIN" || normalizedRole === "PRODUCTION") data = await orderService.productionGetOrders();
+      else if (normalizedRole === "SALES_ADMIN" || normalizedRole === "SALES") data = await orderService.salesGetMyOrders();
       else data = await orderService.adminGetAllOrders();
 
       return Array.isArray(data)
@@ -236,3 +225,4 @@ export const orderService = {
     }
   }
 };
+

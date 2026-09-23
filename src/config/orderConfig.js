@@ -70,8 +70,9 @@ export const PRIORITY_CONFIG = {
 };
 
 export const getStatusBadgeConfig = (status) => {
-  return ORDER_STATUS_CONFIG[status] || {
-    label: status ? status.replace("_", " ") : "Unknown",
+  const key = (status || "").toLowerCase().trim();
+  return ORDER_STATUS_CONFIG[key] || ORDER_STATUS_CONFIG[status] || {
+    label: key === "delivered" || key === "completed" ? "Completed" : status ? status.replace(/_/g, " ") : "Unknown",
     bg: "bg-gray-50",
     text: "text-gray-700",
     border: "#E5E7EB",

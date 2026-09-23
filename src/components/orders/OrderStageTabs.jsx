@@ -8,10 +8,13 @@ export const OrderStageTabs = React.memo(({ adminStageTab, setAdminStageTab, ord
       production_complete: 0,
       scm_complete: 0,
       dispatched: 0,
+      delivered: 0,
     };
     for (let i = 0; i < orders.length; i++) {
-      const st = orders[i]?.orderStatus;
-      if (st && res[st] !== undefined) {
+      const st = (orders[i]?.orderStatus || "").toLowerCase();
+      if (st === "delivered" || st === "completed") {
+        res.delivered++;
+      } else if (res[st] !== undefined) {
         res[st]++;
       }
     }
@@ -55,6 +58,12 @@ export const OrderStageTabs = React.memo(({ adminStageTab, setAdminStageTab, ord
         onClick={() => { setAdminStageTab("DISPATCHED"); setCurrentPage(1); }}
       >
         Dispatched ({counts.dispatched})
+      </button>
+      <button
+        className={`tab-btn ${adminStageTab === "COMPLETED" ? "active" : ""}`}
+        onClick={() => { setAdminStageTab("COMPLETED"); setCurrentPage(1); }}
+      >
+        Completed ({counts.delivered})
       </button>
     </div>
   );

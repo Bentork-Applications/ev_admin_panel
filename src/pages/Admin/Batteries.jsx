@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { batteryService } from "../../services/batteryService";
+import { productService } from "../../services/productService";
 import { pageCache } from "../../utils/pageCache";
 import { getExportWatermark, getPdfWatermarkHtml, getExportMetadataHeader } from "../../utils/watermark";
+import { Toast } from "../../components/common/Toast";
+import { extractRoleFromToken } from "../../utils/jwtUtils";
 
 export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const navigate = useNavigate();
@@ -85,10 +88,51 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     };
   };
 
+  const userRole = useMemo(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      const roleFromToken = extractRoleFromToken(token);
+      if (roleFromToken) return roleFromToken;
+    }
+    return (localStorage.getItem("userRole") || "").toUpperCase().trim();
+  }, []);
+
+  const isAuthorizedAdmin = useMemo(() => {
+    const r = userRole.toUpperCase();
+    return ["ADMIN", "SUPER_ADMIN", "ADMINISTRATOR", "SCM_ADMIN", "ROLE_ADMIN", "ROLE_SUPER_ADMIN"].some(role => r.includes(role)) || r.includes("ADMIN");
+  }, [userRole]);
+
+  const [toast, setToast] = useState(null);
+
   const initialCachedBatteries = useMemo(() => pageCache.get("batteries") || [], []);
   const [batteries, setBatteries] = useState(initialCachedBatteries);
   const [loading, setLoading] = useState(initialCachedBatteries.length === 0);
   const [error, setError] = useState(null);
+
+  // Warranty Status Activation / Deactivation Modal State
+  const [warrantyStatusModal, setWarrantyStatusModal] = useState({
+    isOpen: false,
+    battery: null,
+    warrantyType: "full", // "full" or "service"
+    actionType: "deactivate", // "activate" or "deactivate"
+    reason: "",
+    submitting: false,
+    error: null
+  });
+
+  const openWarrantyStatusModal = useCallback((battery, warrantyType, actionType) => {
+    const normalizedWarrantyType = String(warrantyType || "full").toLowerCase();
+    const normalizedActionType = String(actionType || "deactivate").toLowerCase();
+    setWarrantyStatusModal({
+      isOpen: true,
+      battery,
+      warrantyType: normalizedWarrantyType,
+      actionType: normalizedActionType,
+      reason: "",
+      submitting: false,
+      error: null
+    });
+  }, []);
 
   // --- Excel Bulk Upload state ---
   const excelFileInputRef = useRef(null);
@@ -98,33 +142,49 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [warrantyYearFilter, setWarrantyYearFilter] = useState("All");
   const [productCategoryFilter, setProductCategoryFilter] = useState("All");
+  const [selectedYear, setSelectedYear] = useState("All");
+  const [selectedMonth, setSelectedMonth] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortField, setSortField] = useState("createdAt");
   const [sortDirection, setSortDirection] = useState("desc");
   const [showModal, setShowModal] = useState(false);
-  const [registerMode, setRegisterMode] = useState("single"); // "single" or "series"
   const [registerLoading, setRegisterLoading] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  const createDefaultProductItem = useCallback((defaultStartDate = "") => {
+    const today = defaultStartDate || new Date().toISOString().split("T")[0];
+    const { expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(today, "1", "0", "0", "0");
+    return {
+      id: `prod_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      catalogProductId: "",
+      selectedMadeProduct: "EV Battery",
+      customMadeProduct: "",
+      voltage: "",
+      capacity: "",
+      chemistry: "NMC",
+      quantity: 1,
+      mode: "single", // "single" or "series"
+      barcode: "",
+      startBarcode: "",
+      endBarcode: "",
+      warrantyStartDate: today,
+      fullWarrantyYears: "1",
+      fullWarrantyMonths: "0",
+      serviceWarrantyYears: "0",
+      serviceWarrantyMonths: "0",
+      warrantyEndDate: expiryDateStr,
+      warrantyYears: totalYearsDecimal.toString(),
+      isExpanded: true
+    };
+  }, []);
+
   const [formData, setFormData] = useState({
     customerName: "",
-    productDetails: "",
-    voltage: "",
-    capacity: "",
-    chemistry: "NMC",
     invoiceNumber: "",
-    barcode: "",
-    startBarcode: "",
-    endBarcode: "",
-    warrantyStartDate: "",
-    warrantyEndDate: "",
-    warrantyYears: "1",
-    selectedMadeProduct: "",
-    customMadeProduct: "",
-    fullWarrantyYears: "1",
-    fullWarrantyMonths: "0",
-    serviceWarrantyYears: "0",
-    serviceWarrantyMonths: "0",
+    products: []
   });
 
   const [deletedIds, setDeletedIds] = useState(() => {
@@ -274,54 +334,194 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     };
   }, [fetchBatteries]);
 
+  const fetchCatalogProducts = useCallback(async () => {
+    try {
+      setLoadingCatalog(true);
+      const data = await productService.getActiveProducts();
+      setCatalogProducts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("Could not fetch active products:", err);
+    } finally {
+      setLoadingCatalog(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCatalogProducts();
+  }, [fetchCatalogProducts]);
+
   const handleOpenModal = () => {
     setFormError(null);
     setFormData({
       customerName: "",
-      productDetails: "",
-      voltage: "",
-      capacity: "",
-      chemistry: "NMC",
       invoiceNumber: "",
-      barcode: "",
-      startBarcode: "",
-      endBarcode: "",
-      warrantyStartDate: "",
-      warrantyEndDate: "",
-      warrantyYears: "1",
-      selectedMadeProduct: "",
-      customMadeProduct: "",
-      fullWarrantyYears: "1",
-      fullWarrantyMonths: "0",
-      serviceWarrantyYears: "0",
-      serviceWarrantyMonths: "0",
+      products: [createDefaultProductItem()]
     });
-    setRegisterMode("single");
     setShowModal(true);
+    fetchCatalogProducts();
   };
 
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
+  const handleCustomerInfoChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleAddProduct = () => {
     setFormData(prev => {
-      const updated = { ...prev, [name]: value };
+      const lastItem = prev.products[prev.products.length - 1];
+      const defaultStartDate = lastItem?.warrantyStartDate || "";
+      return {
+        ...prev,
+        products: [...prev.products, createDefaultProductItem(defaultStartDate)]
+      };
+    });
+  };
+
+  const handleRemoveProduct = (index) => {
+    setFormData(prev => {
+      if (prev.products.length <= 1) return prev;
+      return {
+        ...prev,
+        products: prev.products.filter((_, idx) => idx !== index)
+      };
+    });
+  };
+
+  const handleToggleExpandProduct = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      products: prev.products.map((p, idx) =>
+        idx === index ? { ...p, isExpanded: !p.isExpanded } : p
+      )
+    }));
+  };
+
+  const handleCatalogProductSelect = (index, catalogProductId) => {
+    setFormData(prev => {
+      const newProducts = [...prev.products];
+      const item = { ...newProducts[index] };
+
+      if (!catalogProductId) {
+        item.catalogProductId = "";
+        newProducts[index] = item;
+        return { ...prev, products: newProducts };
+      }
+
+      const found = catalogProducts.find(p => String(p.id) === String(catalogProductId));
+      if (found) {
+        item.catalogProductId = String(found.id);
+
+        const prodName = found.name || found.productName || found.title || "";
+        const prodCat = found.category || found.type || "";
+        const standardCats = [
+          "Solar Battery", "EV Battery", "Inverter Battery", 
+          "Robotics Battery", "Defence Battery", "Medical Battery", 
+          "Spray Pump Battery", "Strip Pump Battery"
+        ];
+        const matchedCat = standardCats.find(c =>
+          prodCat.toLowerCase().includes(c.toLowerCase()) ||
+          prodName.toLowerCase().includes(c.toLowerCase())
+        );
+
+        if (matchedCat) {
+          item.selectedMadeProduct = matchedCat === "Strip Pump Battery" ? "Strip Pump Battery" : matchedCat;
+          item.customMadeProduct = "";
+        } else if (prodName) {
+          item.selectedMadeProduct = "Other";
+          item.customMadeProduct = prodName;
+        }
+
+        let v = found.voltage !== undefined && found.voltage !== null ? String(found.voltage) : "";
+        if (!v && prodName) {
+          const vMatch = prodName.match(/(\d+(?:\.\d+)?)\s*V/i) || (found.description || "").match(/(\d+(?:\.\d+)?)\s*V/i);
+          if (vMatch) v = vMatch[1];
+        }
+        if (v) item.voltage = v;
+
+        let cap = found.capacity || found.capacityAh || found.ah || "";
+        if (!cap && prodName) {
+          const ahMatch = prodName.match(/(\d+(?:\.\d+)?)\s*Ah/i) || (found.description || "").match(/(\d+(?:\.\d+)?)\s*Ah/i);
+          if (ahMatch) cap = ahMatch[1];
+        }
+        if (cap) item.capacity = String(cap);
+
+        let chem = found.chemistry || found.chem || "";
+        if (!chem && (prodName || found.description)) {
+          const text = `${prodName} ${found.description || ""}`;
+          if (/LiFePO4/i.test(text)) chem = "LiFePO4";
+          else if (/NMC/i.test(text)) chem = "NMC";
+        }
+        if (chem) item.chemistry = chem === "LiFePO4" ? "LiFePO4" : "NMC";
+
+        if (found.fullWarrantyYears !== undefined && found.fullWarrantyYears !== null) {
+          item.fullWarrantyYears = String(found.fullWarrantyYears);
+        } else if (found.warrantyYears !== undefined && found.warrantyYears !== null) {
+          item.fullWarrantyYears = String(found.warrantyYears);
+        }
+
+        if (found.fullWarrantyMonths !== undefined && found.fullWarrantyMonths !== null) {
+          item.fullWarrantyMonths = String(found.fullWarrantyMonths);
+        }
+
+        if (found.serviceWarrantyYears !== undefined && found.serviceWarrantyYears !== null) {
+          item.serviceWarrantyYears = String(found.serviceWarrantyYears);
+        }
+
+        if (found.serviceWarrantyMonths !== undefined && found.serviceWarrantyMonths !== null) {
+          item.serviceWarrantyMonths = String(found.serviceWarrantyMonths);
+        }
+
+        const { expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
+          item.warrantyStartDate,
+          item.fullWarrantyYears,
+          item.fullWarrantyMonths,
+          item.serviceWarrantyYears,
+          item.serviceWarrantyMonths
+        );
+        item.warrantyEndDate = expiryDateStr;
+        item.warrantyYears = totalYearsDecimal.toString();
+      }
+
+      newProducts[index] = item;
+      return { ...prev, products: newProducts };
+    });
+  };
+
+  const handleProductItemChange = (index, field, value) => {
+    setFormData(prev => {
+      const newProducts = [...prev.products];
+      const item = { ...newProducts[index], [field]: value };
+
+      if (field === "quantity") {
+        const q = parseInt(value, 10) || 1;
+        item.quantity = Math.max(1, q);
+        if (item.quantity > 1 && item.mode === "single" && !item.barcode) {
+          item.mode = "series";
+        }
+      }
+
       if (
-        name === "warrantyStartDate" ||
-        name === "fullWarrantyYears" ||
-        name === "fullWarrantyMonths" ||
-        name === "serviceWarrantyYears" ||
-        name === "serviceWarrantyMonths"
+        field === "warrantyStartDate" ||
+        field === "fullWarrantyYears" ||
+        field === "fullWarrantyMonths" ||
+        field === "serviceWarrantyYears" ||
+        field === "serviceWarrantyMonths"
       ) {
         const { expiryDateStr, totalYearsDecimal } = calculateExpiryAndTotal(
-          updated.warrantyStartDate,
-          updated.fullWarrantyYears,
-          updated.fullWarrantyMonths,
-          updated.serviceWarrantyYears,
-          updated.serviceWarrantyMonths
+          item.warrantyStartDate,
+          item.fullWarrantyYears,
+          item.fullWarrantyMonths,
+          item.serviceWarrantyYears,
+          item.serviceWarrantyMonths
         );
-        updated.warrantyEndDate = expiryDateStr;
-        updated.warrantyYears = totalYearsDecimal.toString();
+        item.warrantyEndDate = expiryDateStr;
+        item.warrantyYears = totalYearsDecimal.toString();
       }
-      return updated;
+
+      newProducts[index] = item;
+      return { ...prev, products: newProducts };
     });
   };
 
@@ -438,24 +638,13 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     setFormError(null);
 
     const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/");
+      return;
+    }
 
     const customerName = (formData.customerName || "").trim();
     const invoiceNumber = (formData.invoiceNumber || "").trim();
-    const warrantyStartDate = (formData.warrantyStartDate || "").trim();
-    const warrantyEndDate = (formData.warrantyEndDate || "").trim();
-    const barcode = (formData.barcode || "").trim();
-    const startBarcode = (formData.startBarcode || "").trim();
-    const endBarcode = (formData.endBarcode || "").trim();
-
-    const madeProductVal = formData.selectedMadeProduct === "Other"
-      ? (formData.customMadeProduct || "").trim()
-      : (formData.selectedMadeProduct || "").trim();
-    const productDetailsRaw = formData.voltage || formData.capacity
-      ? `${(formData.voltage || "").trim()}V ${(formData.capacity || "").trim()}Ah Chemistry = ${formData.chemistry || "NMC"}`
-      : (formData.productDetails || "").trim();
-    const combinedDetails = madeProductVal
-      ? `${madeProductVal} - ${productDetailsRaw}`
-      : productDetailsRaw;
 
     if (!customerName) {
       setFormError("Customer name is required.");
@@ -467,66 +656,90 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       setRegisterLoading(false);
       return;
     }
-    if (!warrantyStartDate || !warrantyEndDate) {
-      setFormError("Both Warranty Start Date and Warranty End Date are required.");
-      setRegisterLoading(false);
-      return;
-    }
-    if (registerMode === "single" && !barcode) {
-      setFormError("Barcode / Serial Number is required for single registration.");
-      setRegisterLoading(false);
-      return;
-    }
-    if (registerMode === "series" && (!startBarcode || !endBarcode)) {
-      setFormError("Start Barcode and End Barcode are required for series registration.");
+    if (!formData.products || formData.products.length === 0) {
+      setFormError("At least one product item is required.");
       setRegisterLoading(false);
       return;
     }
 
-    const payload = {
-      customerName,
-      productDetails: combinedDetails,
-      invoiceNumber,
-      warrantyStartDate: warrantyStartDate || null,
-      warrantyEndDate: warrantyEndDate || null,
-    };
+    // Validate all product items
+    for (let i = 0; i < formData.products.length; i++) {
+      const item = formData.products[i];
+      const itemNum = i + 1;
 
-    if (registerMode === "single") {
-      payload.barcode = barcode;
-    } else {
-      payload.startBarcode = startBarcode;
-      payload.endBarcode = endBarcode;
-    }
-
-    try {
-      const response = await fetch(`${baseUrl}/battery-data/admin/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const rawBody = await response.text();
-
-      if (response.ok) {
-        alert("Battery data registered successfully!");
-        setShowModal(false);
-        fetchBatteries();
-      } else {
-        let errorMsg = rawBody || "Registration failed";
-        try {
-          const errJson = JSON.parse(rawBody);
-          errorMsg = errJson.message || errJson.error || errJson.detail || rawBody || "Registration failed";
-        } catch {
-        }
-        throw new Error(errorMsg);
+      if (!item.warrantyStartDate || !item.warrantyEndDate) {
+        setFormError(`Product #${itemNum}: Both Warranty Start Date and Warranty End Date are required.`);
+        setRegisterLoading(false);
+        return;
       }
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setRegisterLoading(false);
+
+      if (item.mode === "single" || item.quantity === 1) {
+        if (!item.barcode || !item.barcode.trim()) {
+          setFormError(`Product #${itemNum}: Barcode / Serial Number is required.`);
+          setRegisterLoading(false);
+          return;
+        }
+      } else {
+        if (!item.startBarcode?.trim() || !item.endBarcode?.trim()) {
+          setFormError(`Product #${itemNum}: Start Barcode and End Barcode are required for bulk/series registration.`);
+          setRegisterLoading(false);
+          return;
+        }
+      }
+    }
+
+    const failedItems = [];
+    let successCount = 0;
+
+    for (let i = 0; i < formData.products.length; i++) {
+      const item = formData.products[i];
+      const itemNum = i + 1;
+
+      const madeProductVal = item.selectedMadeProduct === "Other"
+        ? (item.customMadeProduct || "").trim()
+        : (item.selectedMadeProduct || "").trim();
+      const productDetailsRaw = item.voltage || item.capacity
+        ? `${(item.voltage || "").trim()}V ${(item.capacity || "").trim()}Ah Chemistry = ${item.chemistry || "NMC"}`
+        : (item.productDetails || "").trim();
+      const combinedDetails = madeProductVal
+        ? (productDetailsRaw ? `${madeProductVal} - ${productDetailsRaw}` : madeProductVal)
+        : (productDetailsRaw || "EV Battery Unit");
+
+      const payload = {
+        customerName,
+        invoiceNumber,
+        productDetails: combinedDetails,
+        warrantyStartDate: item.warrantyStartDate || null,
+        warrantyEndDate: item.warrantyEndDate || null,
+      };
+
+      if (item.mode === "single" || item.quantity === 1) {
+        payload.barcode = item.barcode.trim();
+      } else {
+        payload.startBarcode = item.startBarcode.trim();
+        payload.endBarcode = item.endBarcode.trim();
+      }
+
+      try {
+        await batteryService.registerBattery(payload);
+        successCount++;
+      } catch (err) {
+        console.error(`Error registering product #${itemNum}:`, err);
+        failedItems.push(`Product #${itemNum} (${combinedDetails}): ${err.message || "Registration failed"}`);
+      }
+    }
+
+    setRegisterLoading(false);
+
+    if (failedItems.length === 0) {
+      alert(`Successfully registered ${successCount} product${successCount > 1 ? "s" : ""} under Invoice ${invoiceNumber}!`);
+      setShowModal(false);
+      fetchBatteries();
+    } else {
+      fetchBatteries();
+      setFormError(
+        `Registered ${successCount} product${successCount > 1 ? "s" : ""}, but ${failedItems.length} failed:\n${failedItems.join("\n")}`
+      );
     }
   };
 
@@ -551,7 +764,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, warrantyYearFilter, productCategoryFilter]);
+  }, [searchQuery, warrantyYearFilter, productCategoryFilter, selectedYear, selectedMonth]);
 
   useEffect(() => {
     const liveIds = new Set(batteries.map(b => b.id));
@@ -581,6 +794,83 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     }
   }, [batteries, deletedIds, editedRecords]);
 
+  const handleWarrantyStatusSubmit = useCallback(async (e) => {
+    if (e) e.preventDefault();
+    if (!warrantyStatusModal.battery || warrantyStatusModal.submitting) return;
+
+    const { battery, warrantyType, actionType, reason } = warrantyStatusModal;
+    const isDeactivating = actionType === "deactivate";
+
+    if (isDeactivating && !reason.trim()) {
+      setWarrantyStatusModal(prev => ({ ...prev, error: "Reason is required for deactivating warranty." }));
+      return;
+    }
+
+    setWarrantyStatusModal(prev => ({ ...prev, submitting: true, error: null }));
+
+    const targetActive = actionType === "activate";
+    const payload = {};
+    if (warrantyType === "full") {
+      payload.fullWarrantyActive = targetActive;
+      payload.fullWarrantyStatusReason = reason.trim() || null;
+    } else {
+      payload.serviceWarrantyActive = targetActive;
+      payload.serviceWarrantyStatusReason = reason.trim() || null;
+    }
+
+    try {
+      const targetIds = (battery.originalBatteries && battery.originalBatteries.length > 0)
+        ? battery.originalBatteries.map(b => b.id).filter(Boolean)
+        : [battery.id].filter(Boolean);
+
+      if (targetIds.length === 0) {
+        throw new Error("Invalid battery identifier");
+      }
+
+      await Promise.all(targetIds.map(id => batteryService.updateWarrantyStatus(id, payload)));
+
+      const successMsg = `${warrantyType === "full" ? "Full Warranty" : "Service Warranty"} ${targetActive ? "activated" : "deactivated"} successfully!`;
+      setToast({ message: successMsg, type: "success" });
+
+      setWarrantyStatusModal({
+        isOpen: false,
+        battery: null,
+        warrantyType: "full",
+        actionType: "deactivate",
+        reason: "",
+        submitting: false,
+        error: null
+      });
+
+      // Update viewDetailsTarget if currently open
+      if (viewDetailsTarget && (viewDetailsTarget.id === battery.id || (viewDetailsTarget.originalBatteries && viewDetailsTarget.originalBatteries.some(o => targetIds.includes(o.id))))) {
+        setViewDetailsTarget(prev => {
+          if (!prev) return null;
+          if (warrantyType === "full") {
+            return {
+              ...prev,
+              fullWarrantyActive: targetActive,
+              fullWarrantyStatusReason: reason.trim() || ""
+            };
+          } else {
+            return {
+              ...prev,
+              serviceWarrantyActive: targetActive,
+              serviceWarrantyStatusReason: reason.trim() || ""
+            };
+          }
+        });
+      }
+
+      await fetchBatteries();
+    } catch (err) {
+      console.error("Failed to update warranty status:", err);
+      const errMsg = err.message || "Failed to update warranty status. Please try again.";
+      setWarrantyStatusModal(prev => ({ ...prev, submitting: false, error: errMsg }));
+      setToast({ message: errMsg, type: "error" });
+    }
+  }, [warrantyStatusModal, viewDetailsTarget, fetchBatteries]);
+
   const activeBatteries = React.useMemo(() => {
     const scmWarrantyMap = new Map();
 
@@ -606,7 +896,31 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         const finalProductDetails = edited.productDetails || scmOverride.productDetails || b.productDetails;
         const finalStart = edited.warrantyStartDate || scmOverride.warrantyStartDate || b.warrantyStartDate;
         const finalEnd = edited.warrantyEndDate || scmOverride.warrantyEndDate || b.warrantyEndDate;
-        const active = checkWarrantyActive(finalStart, finalEnd);
+
+        // Full Warranty status - authoritative from backend
+        let fullActive;
+        if (edited.fullWarrantyActive !== undefined && edited.fullWarrantyActive !== null) {
+          fullActive = Boolean(edited.fullWarrantyActive);
+        } else if (b.fullWarrantyActive !== undefined && b.fullWarrantyActive !== null) {
+          fullActive = Boolean(b.fullWarrantyActive);
+        } else if (b.warrantyActive !== undefined && b.warrantyActive !== null) {
+          fullActive = Boolean(b.warrantyActive);
+        } else {
+          fullActive = checkWarrantyActive(finalStart, finalEnd);
+        }
+
+        // Service Warranty status - authoritative from backend
+        let serviceActive;
+        if (edited.serviceWarrantyActive !== undefined && edited.serviceWarrantyActive !== null) {
+          serviceActive = Boolean(edited.serviceWarrantyActive);
+        } else if (b.serviceWarrantyActive !== undefined && b.serviceWarrantyActive !== null) {
+          serviceActive = Boolean(b.serviceWarrantyActive);
+        } else {
+          serviceActive = fullActive;
+        }
+
+        const fullReason = edited.fullWarrantyStatusReason ?? b.fullWarrantyStatusReason ?? "";
+        const serviceReason = edited.serviceWarrantyStatusReason ?? b.serviceWarrantyStatusReason ?? "";
 
         return {
           ...b,
@@ -619,7 +933,11 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           serviceWarrantyMonths: scmOverride.serviceWarrantyMonths ?? b.serviceWarrantyMonths,
           totalWarrantyLabel: scmOverride.totalWarrantyLabel ?? b.totalWarrantyLabel,
           ...edited,
-          warrantyActive: active
+          fullWarrantyActive: fullActive,
+          serviceWarrantyActive: serviceActive,
+          fullWarrantyStatusReason: fullReason,
+          serviceWarrantyStatusReason: serviceReason,
+          warrantyActive: fullActive || serviceActive
         };
       });
     return result;
@@ -674,6 +992,49 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     return max;
   }, [activeBatteries]);
 
+  const getBatteryRecordDate = useCallback((b) => {
+    if (!b) return null;
+    const dateStr = b.warrantyStartDate || b.createdAt || b.registrationDate || b.created_at;
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }, []);
+
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set();
+    activeBatteries.forEach(b => {
+      const d = getBatteryRecordDate(b);
+      if (d) yearsSet.add(d.getFullYear());
+      if (Array.isArray(b.originalBatteries)) {
+        b.originalBatteries.forEach(orig => {
+          const od = getBatteryRecordDate(orig);
+          if (od) yearsSet.add(od.getFullYear());
+        });
+      }
+    });
+
+    if (yearsSet.size === 0) {
+      yearsSet.add(new Date().getFullYear());
+    }
+
+    return Array.from(yearsSet).sort((a, b) => b - a);
+  }, [activeBatteries, getBatteryRecordDate]);
+
+  const MONTH_OPTIONS = useMemo(() => [
+    { value: "1", label: "January" },
+    { value: "2", label: "February" },
+    { value: "3", label: "March" },
+    { value: "4", label: "April" },
+    { value: "5", label: "May" },
+    { value: "6", label: "June" },
+    { value: "7", label: "July" },
+    { value: "8", label: "August" },
+    { value: "9", label: "September" },
+    { value: "10", label: "October" },
+    { value: "11", label: "November" },
+    { value: "12", label: "December" }
+  ], []);
+
   const warrantyYearOptions = React.useMemo(() => {
     const options = [];
     for (let i = 1; i <= maxWarrantyDuration; i++) {
@@ -726,7 +1087,7 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
     return Array.from(categories);
   }, [activeBatteries]);
 
-  // Filtered batteries based on search query, warranty year, and product category
+  // Filtered batteries based on search query, warranty year, product category, year, and month
   const filteredBatteries = React.useMemo(() => {
     const result = groupedBatteries.filter(b => {
       const query = searchQuery.trim().toLowerCase();
@@ -749,11 +1110,33 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         if (cat !== productCategoryFilter) return false;
       }
 
+      if (selectedYear !== "All") {
+        const targetYr = parseInt(selectedYear, 10);
+        const bDate = getBatteryRecordDate(b);
+        const matchesMain = bDate && bDate.getFullYear() === targetYr;
+        const matchesOrig = b.originalBatteries?.some(orig => {
+          const od = getBatteryRecordDate(orig);
+          return od && od.getFullYear() === targetYr;
+        });
+        if (!matchesMain && !matchesOrig) return false;
+      }
+
+      if (selectedMonth !== "All") {
+        const targetMonth = parseInt(selectedMonth, 10);
+        const bDate = getBatteryRecordDate(b);
+        const matchesMain = bDate && (bDate.getMonth() + 1) === targetMonth;
+        const matchesOrig = b.originalBatteries?.some(orig => {
+          const od = getBatteryRecordDate(orig);
+          return od && (od.getMonth() + 1) === targetMonth;
+        });
+        if (!matchesMain && !matchesOrig) return false;
+      }
+
       return true;
     });
-    console.log("[BATTERY PIPELINE] 5. filteredBatteries:", result.length, "| search:", searchQuery, "| warrantyFilter:", warrantyYearFilter, "| catFilter:", productCategoryFilter);
+    console.log("[BATTERY PIPELINE] 5. filteredBatteries:", result.length, "| search:", searchQuery, "| warrantyFilter:", warrantyYearFilter, "| catFilter:", productCategoryFilter, "| yearFilter:", selectedYear, "| monthFilter:", selectedMonth);
     return result;
-  }, [groupedBatteries, searchQuery, warrantyYearFilter, productCategoryFilter, getCurrentWarrantyYear]);
+  }, [groupedBatteries, searchQuery, warrantyYearFilter, productCategoryFilter, selectedYear, selectedMonth, getCurrentWarrantyYear, getBatteryRecordDate]);
 
   // Sort the filtered batteries
   const sortedBatteries = React.useMemo(() => {
@@ -853,12 +1236,18 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.customerName || '-'}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.productDetails || '-'}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.invoiceNumber || '-'}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.warrantyStartDate} to ${b.warrantyEndDate}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${b.warrantyStartDate || '-'} to ${b.warrantyEndDate || '-'}</td>
         <td style="padding: 10px; border-bottom: 1px solid #ddd;">
-          <span style="padding: 4px 8px; border-radius: 9999px; font-size: 11px; font-weight: bold; ${b.warrantyActive ? 'background: #DEF7EC; color: #03543F;' : 'background: #FDE8E8; color: #9B1C1C;'
-      }">
-            ${b.warrantyActive ? 'Active' : 'Expired'}
-          </span>
+          <div style="margin-bottom: 4px;">
+            <span style="padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; ${b.fullWarrantyActive ? 'background: #DEF7EC; color: #03543F;' : 'background: #FDE8E8; color: #9B1C1C;'}">
+              Full: ${b.fullWarrantyActive ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+          <div>
+            <span style="padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; ${b.serviceWarrantyActive ? 'background: #DEF7EC; color: #03543F;' : 'background: #FDE8E8; color: #9B1C1C;'}">
+              Service: ${b.serviceWarrantyActive ? 'Active' : 'Inactive'}
+            </span>
+          </div>
         </td>
       </tr>
     `).join("");
@@ -921,7 +1310,10 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       "Product Details",
       "Invoice Number",
       "Warranty Period",
-      "Status"
+      "Full Warranty Status",
+      "Full Warranty Reason",
+      "Service Warranty Status",
+      "Service Warranty Reason"
     ];
 
     const rows = filteredBatteries.map(b => [
@@ -929,8 +1321,11 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
       `"${b.customerName || '-'}"`,
       `"${b.productDetails || '-'}"`,
       `"${b.invoiceNumber || '-'}"`,
-      `"${b.warrantyStartDate} to ${b.warrantyEndDate}"`,
-      `"${b.warrantyActive ? 'Active' : 'Expired'}"`
+      `"${b.warrantyStartDate || ''} to ${b.warrantyEndDate || ''}"`,
+      `"${b.fullWarrantyActive ? 'Active' : 'Inactive'}"`,
+      `"${(b.fullWarrantyStatusReason || '').replace(/"/g, '""')}"`,
+      `"${b.serviceWarrantyActive ? 'Active' : 'Inactive'}"`,
+      `"${(b.serviceWarrantyStatusReason || '').replace(/"/g, '""')}"`
     ]);
 
     const metaLine = getExportMetadataHeader();
@@ -946,7 +1341,32 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
   return (
     <div className="batteries-page-wrapper">
+      <Toast message={toast?.message} type={toast?.type} onClose={() => setToast(null)} />
       <style>{`
+        .toast-notification {
+          position: fixed;
+          top: 24px;
+          right: 24px;
+          z-index: 99999;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 20px;
+          border-radius: 10px;
+          font-size: 14px;
+          font-weight: 500;
+          color: #ffffff;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+          animation: slideInRightToast 0.3s ease;
+        }
+        .toast-notification.success { background: #059669; }
+        .toast-notification.error { background: #DC2626; }
+        .toast-icon { font-weight: bold; font-size: 16px; }
+
+        @keyframes slideInRightToast {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
         @keyframes fadeInPage {
           from {
             opacity: 0;
@@ -1490,10 +1910,15 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
         }
         .filters-container {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(3, 1fr);
           gap: 16px;
           flex: 1;
           min-width: 280px;
+        }
+        @media (max-width: 900px) {
+          .filters-container {
+            grid-template-columns: repeat(2, 1fr);
+          }
         }
         @media (max-width: 640px) {
           .filters-container {
@@ -2066,16 +2491,39 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
           <div className="filters-row">
             <div className="filters-container">
               <div className="filter-group">
-                <label className="filter-label">Battery Registered From</label>
+                <label className="filter-label">Year</label>
                 <div className="filter-select-wrapper">
                   <select
                     className="filter-select"
-                    value={warrantyYearFilter}
-                    onChange={(e) => setWarrantyYearFilter(e.target.value)}
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    id="battery-year-filter"
                   >
-                    <option value="All">All Warranty Years</option>
-                    {warrantyYearOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option value="All">All Years</option>
+                    {availableYears.map(yr => (
+                      <option key={yr} value={yr.toString()}>{yr}</option>
+                    ))}
+                  </select>
+                  <div className="select-caret">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="filter-group">
+                <label className="filter-label">Month</label>
+                <div className="filter-select-wrapper">
+                  <select
+                    className="filter-select"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    id="battery-month-filter"
+                  >
+                    <option value="All">All Months</option>
+                    {MONTH_OPTIONS.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
                     ))}
                   </select>
                   <div className="select-caret">
@@ -2108,13 +2556,15 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
               </div>
             </div>
 
-            {(warrantyYearFilter !== "All" || productCategoryFilter !== "All" || searchQuery !== "") && (
+            {(productCategoryFilter !== "All" || selectedYear !== "All" || selectedMonth !== "All" || searchQuery !== "") && (
               <button
                 type="button"
                 className="clear-filters-btn"
                 onClick={() => {
                   setWarrantyYearFilter("All");
                   setProductCategoryFilter("All");
+                  setSelectedYear("All");
+                  setSelectedMonth("All");
                   setSearchQuery("");
                 }}
               >
@@ -2224,9 +2674,9 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                           Warranty Period {renderSortIcon("warrantyStartDate")}
                         </div>
                       </th>
-                      <th onClick={() => handleSort("warrantyActive")} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      <th onClick={() => handleSort("fullWarrantyActive")} style={{ cursor: 'pointer', userSelect: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                          Status {renderSortIcon("warrantyActive")}
+                          Warranty Status {renderSortIcon("fullWarrantyActive")}
                         </div>
                       </th>
                       <th style={{ width: '60px' }}>Action</th>
@@ -2244,9 +2694,22 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                             {b.warrantyStartDate || "-"} to {b.warrantyEndDate || "-"}
                           </td>
                           <td>
-                            <span className={`status-badge ${b.warrantyActive ? "status-active" : "status-expired"}`}>
-                              {b.warrantyActive ? "Active" : "Expired"}
-                            </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                              <span 
+                                className={`status-badge ${b.fullWarrantyActive ? "status-active" : "status-expired"}`}
+                                title={b.fullWarrantyStatusReason ? `Full Warranty: ${b.fullWarrantyStatusReason}` : (b.fullWarrantyActive ? "Full Warranty Active" : "Full Warranty Inactive")}
+                                style={{ fontSize: '11px', padding: '2px 8px', whiteSpace: 'nowrap' }}
+                              >
+                                <strong style={{ fontWeight: 600 }}>Full:</strong> {b.fullWarrantyActive ? "Active" : "Inactive"}
+                              </span>
+                              <span 
+                                className={`status-badge ${b.serviceWarrantyActive ? "status-active" : "status-expired"}`}
+                                title={b.serviceWarrantyStatusReason ? `Service Warranty: ${b.serviceWarrantyStatusReason}` : (b.serviceWarrantyActive ? "Service Warranty Active" : "Service Warranty Inactive")}
+                                style={{ fontSize: '11px', padding: '2px 8px', whiteSpace: 'nowrap' }}
+                              >
+                                <strong style={{ fontWeight: 600 }}>Service:</strong> {b.serviceWarrantyActive ? "Active" : "Inactive"}
+                              </span>
+                            </div>
                           </td>
                           <td>
                             <div className="kebab-menu-container">
@@ -2269,6 +2732,46 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                                   <button type="button" onClick={() => { setViewDetailsTarget(b); setActiveMenuId(null); }}>
                                     View Details
                                   </button>
+                                  {isAuthorizedAdmin && (
+                                    <>
+                                      <div style={{ height: '1px', background: '#F1F5F9', margin: '4px 0' }} />
+                                      {b.fullWarrantyActive ? (
+                                        <button 
+                                          type="button" 
+                                          style={{ color: '#DC2626' }}
+                                          onClick={() => { openWarrantyStatusModal(b, "full", "deactivate"); setActiveMenuId(null); }}
+                                        >
+                                          Deactivate Full Warranty
+                                        </button>
+                                      ) : (
+                                        <button 
+                                          type="button" 
+                                          style={{ color: '#059669' }}
+                                          onClick={() => { openWarrantyStatusModal(b, "full", "activate"); setActiveMenuId(null); }}
+                                        >
+                                          Activate Full Warranty
+                                        </button>
+                                      )}
+                                      {b.serviceWarrantyActive ? (
+                                        <button 
+                                          type="button" 
+                                          style={{ color: '#DC2626' }}
+                                          onClick={() => { openWarrantyStatusModal(b, "service", "deactivate"); setActiveMenuId(null); }}
+                                        >
+                                          Deactivate Service Warranty
+                                        </button>
+                                      ) : (
+                                        <button 
+                                          type="button" 
+                                          style={{ color: '#059669' }}
+                                          onClick={() => { openWarrantyStatusModal(b, "service", "activate"); setActiveMenuId(null); }}
+                                        >
+                                          Activate Service Warranty
+                                        </button>
+                                      )}
+                                      <div style={{ height: '1px', background: '#F1F5F9', margin: '4px 0' }} />
+                                    </>
+                                  )}
                                   <button type="button" onClick={() => { handleOpenEdit(b); setActiveMenuId(null); }}>
                                     Edit
                                   </button>
@@ -2299,13 +2802,15 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                             <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 16px 0', maxWidth: '320px' }}>
                               We couldn't find any inventory items matching your query. Adjust your search keywords or clear filters to retry.
                             </p>
-                            {(searchQuery !== "" || warrantyYearFilter !== "All" || productCategoryFilter !== "All") && (
+                            {(searchQuery !== "" || productCategoryFilter !== "All" || selectedYear !== "All" || selectedMonth !== "All") && (
                               <button
                                 type="button"
                                 onClick={() => {
                                   setSearchQuery("");
                                   setWarrantyYearFilter("All");
                                   setProductCategoryFilter("All");
+                                  setSelectedYear("All");
+                                  setSelectedMonth("All");
                                 }}
                                 className="action-btn"
                                 style={{ display: 'inline-flex', padding: '6px 16px', borderRadius: '8px', border: '1px solid #d1d5db', background: '#fff', fontSize: '13px', fontWeight: 500, color: '#374151', cursor: 'pointer' }}
@@ -2463,12 +2968,22 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
 
       {viewDetailsTarget && (
         <div className="modal-overlay" onClick={() => setViewDetailsTarget(null)}>
-          <div className="modal-content" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 16px 0", fontSize: 20, color: "#111827" }}>Battery Details</h3>
+          <div className="modal-content" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 20, color: "#111827", fontWeight: 700 }}>Battery Details</h3>
+              <button
+                type="button"
+                onClick={() => setViewDetailsTarget(null)}
+                style={{ background: "transparent", border: "none", fontSize: 20, color: "#94A3B8", cursor: "pointer", lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
-                <span style={{ color: '#6B7280', fontSize: '13px' }}>Barcode</span>
-                <span style={{ fontWeight: 600, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.displayBarcode}</span>
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>Barcode / Serial</span>
+                <span style={{ fontWeight: 600, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.displayBarcode || viewDetailsTarget.barcode || "-"}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
                 <span style={{ color: '#6B7280', fontSize: '13px' }}>Customer Name</span>
@@ -2482,301 +2997,779 @@ export default function BatteriesPage({ baseUrl: propBaseUrl }) {
                 <span style={{ color: '#6B7280', fontSize: '13px' }}>Invoice Number</span>
                 <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.invoiceNumber || "-"}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px' }}>
-                <span style={{ color: '#6B7280', fontSize: '13px' }}>Warranty Period</span>
-                <span style={{ fontWeight: 500, color: '#111827', fontSize: '13px' }}>{viewDetailsTarget.warrantyStartDate} to {viewDetailsTarget.warrantyEndDate}</span>
+
+              {/* Full Warranty Section */}
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px 14px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    Full Warranty
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className={`status-badge ${viewDetailsTarget.fullWarrantyActive ? "status-active" : "status-expired"}`}>
+                      {viewDetailsTarget.fullWarrantyActive ? "Active" : "Inactive"}
+                    </span>
+                    {isAuthorizedAdmin && (
+                      viewDetailsTarget.fullWarrantyActive ? (
+                        <button
+                          type="button"
+                          onClick={() => openWarrantyStatusModal(viewDetailsTarget, "full", "deactivate")}
+                          style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#DC2626', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Deactivate
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openWarrantyStatusModal(viewDetailsTarget, "full", "activate")}
+                          style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', border: '1px solid #A7F3D0', background: '#ECFDF5', color: '#059669', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Activate
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                  <div>
+                    <span style={{ color: '#64748B' }}>Start Date: </span>
+                    <span style={{ fontWeight: 500, color: '#334155' }}>{viewDetailsTarget.fullWarrantyStartDate || viewDetailsTarget.warrantyStartDate || "-"}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748B' }}>End Date: </span>
+                    <span style={{ fontWeight: 500, color: '#334155' }}>{viewDetailsTarget.fullWarrantyEndDate || viewDetailsTarget.warrantyEndDate || "-"}</span>
+                  </div>
+                </div>
+                {Boolean(viewDetailsTarget.fullWarrantyStatusReason && String(viewDetailsTarget.fullWarrantyStatusReason).trim()) && (
+                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #E2E8F0', fontSize: '12px' }}>
+                    <span style={{ color: '#64748B' }}>Status Reason: </span>
+                    <span style={{ fontWeight: 500, color: '#475569', fontStyle: 'italic' }}>"{viewDetailsTarget.fullWarrantyStatusReason}"</span>
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F3F4F6', paddingBottom: '8px', alignItems: 'center' }}>
-                <span style={{ color: '#6B7280', fontSize: '13px' }}>Status</span>
-                <span className={`status-badge ${viewDetailsTarget.warrantyActive ? "status-active" : "status-expired"}`}>
-                  {viewDetailsTarget.warrantyActive ? "Active" : "Expired"}
-                </span>
+
+              {/* Service Warranty Section */}
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+                    </svg>
+                    Service Warranty
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className={`status-badge ${viewDetailsTarget.serviceWarrantyActive ? "status-active" : "status-expired"}`}>
+                      {viewDetailsTarget.serviceWarrantyActive ? "Active" : "Inactive"}
+                    </span>
+                    {isAuthorizedAdmin && (
+                      viewDetailsTarget.serviceWarrantyActive ? (
+                        <button
+                          type="button"
+                          onClick={() => openWarrantyStatusModal(viewDetailsTarget, "service", "deactivate")}
+                          style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#DC2626', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Deactivate
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openWarrantyStatusModal(viewDetailsTarget, "service", "activate")}
+                          style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', border: '1px solid #A7F3D0', background: '#ECFDF5', color: '#059669', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Activate
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                  <div>
+                    <span style={{ color: '#64748B' }}>Start Date: </span>
+                    <span style={{ fontWeight: 500, color: '#334155' }}>{viewDetailsTarget.serviceWarrantyStartDate || viewDetailsTarget.warrantyStartDate || "-"}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748B' }}>End Date: </span>
+                    <span style={{ fontWeight: 500, color: '#334155' }}>{viewDetailsTarget.serviceWarrantyEndDate || viewDetailsTarget.warrantyEndDate || "-"}</span>
+                  </div>
+                </div>
+                {Boolean(viewDetailsTarget.serviceWarrantyStatusReason && String(viewDetailsTarget.serviceWarrantyStatusReason).trim()) && (
+                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #E2E8F0', fontSize: '12px' }}>
+                    <span style={{ color: '#64748B' }}>Status Reason: </span>
+                    <span style={{ fontWeight: 500, color: '#475569', fontStyle: 'italic' }}>"{viewDetailsTarget.serviceWarrantyStatusReason}"</span>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="form-actions" style={{ marginTop: 24 }}>
+            <div className="form-actions" style={{ marginTop: 20 }}>
               <button type="button" className="action-btn" onClick={() => setViewDetailsTarget(null)}>Close</button>
             </div>
           </div>
         </div>
       )}
 
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3 style={{ margin: "0 0 4px 0", fontSize: 20 }}>Register Batteries</h3>
-            <p style={{ margin: "0 0 20px 0", fontSize: 13, color: "#666" }}>
-              Add a single battery or automatically expand a numeric series of serials
-            </p>
+      {/* Warranty Status Activate / Deactivate Confirmation Modal */}
+      {warrantyStatusModal.isOpen && warrantyStatusModal.battery && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => {
+            if (!warrantyStatusModal.submitting) {
+              setWarrantyStatusModal(prev => ({ ...prev, isOpen: false }));
+            }
+          }}
+        >
+          <div 
+            className="modal-content" 
+            style={{ maxWidth: 480, padding: "24px" }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ 
+                  margin: "0 0 4px 0", 
+                  fontSize: "18px", 
+                  fontWeight: 700, 
+                  color: warrantyStatusModal.actionType === "deactivate" ? "#DC2626" : "#059669",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}>
+                  {warrantyStatusModal.actionType === "deactivate" ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="15" y1="9" x2="9" y2="15"></line>
+                      <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  )}
+                  {warrantyStatusModal.actionType === "deactivate" ? "Deactivate" : "Activate"}{" "}
+                  {warrantyStatusModal.warrantyType === "full" ? "Full Warranty" : "Service Warranty"}
+                </h3>
+                <p style={{ margin: 0, fontSize: "13px", color: "#64748B" }}>
+                  {warrantyStatusModal.actionType === "deactivate"
+                    ? "Confirm warranty deactivation and specify the reason."
+                    : "Confirm warranty activation."}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={warrantyStatusModal.submitting}
+                onClick={() => setWarrantyStatusModal(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "20px",
+                  lineHeight: 1,
+                  color: "#94A3B8",
+                  cursor: warrantyStatusModal.submitting ? "not-allowed" : "pointer",
+                  padding: "4px"
+                }}
+              >
+                ✕
+              </button>
+            </div>
 
-            <div className="modal-tabs">
-              <div
-                className={`modal-tab ${registerMode === "single" ? "active" : ""}`}
-                onClick={() => { setRegisterMode("single"); setFormError(null); }}
-              >
-                Single Battery
+            {warrantyStatusModal.error && (
+              <div style={{ background: "#FEF2F2", color: "#DC2626", padding: "10px 12px", borderRadius: "8px", fontSize: "13px", border: "1px solid #FECACA", marginBottom: "14px" }}>
+                {warrantyStatusModal.error}
               </div>
-              <div
-                className={`modal-tab ${registerMode === "series" ? "active" : ""}`}
-                onClick={() => { setRegisterMode("series"); setFormError(null); }}
-              >
-                Bulk Registration
+            )}
+
+            <form onSubmit={handleWarrantyStatusSubmit}>
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px 14px", marginBottom: "16px", display: "flex", flexDirection: "column", gap: "8px", fontSize: "13px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748B" }}>Battery Number:</span>
+                  <span style={{ fontWeight: 600, color: "#1E293B" }}>
+                    {warrantyStatusModal.battery.displayBarcode || warrantyStatusModal.battery.barcode || "-"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748B" }}>Warranty Type:</span>
+                  <span style={{ fontWeight: 600, color: "#1E293B" }}>
+                    {warrantyStatusModal.warrantyType === "full" ? "Full Warranty" : "Service Warranty"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#64748B" }}>Current Status:</span>
+                  <span className={`status-badge ${
+                    (warrantyStatusModal.warrantyType === "full" ? warrantyStatusModal.battery.fullWarrantyActive : warrantyStatusModal.battery.serviceWarrantyActive)
+                      ? "status-active"
+                      : "status-expired"
+                  }`}>
+                    {(warrantyStatusModal.warrantyType === "full" ? warrantyStatusModal.battery.fullWarrantyActive : warrantyStatusModal.battery.serviceWarrantyActive)
+                      ? "Active"
+                      : "Inactive"}
+                  </span>
+                </div>
               </div>
+
+              <div className="form-group" style={{ marginBottom: "18px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
+                  {warrantyStatusModal.actionType === "deactivate" ? "Reason for deactivation *" : "Reason for activation (optional)"}
+                </label>
+                <textarea
+                  rows={3}
+                  value={warrantyStatusModal.reason}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWarrantyStatusModal(prev => ({ ...prev, reason: val, error: null }));
+                  }}
+                  placeholder={
+                    warrantyStatusModal.actionType === "deactivate"
+                      ? "Enter the mandatory reason for deactivating warranty (e.g., Warranty void due to physical damage)..."
+                      : "Optional reason or notes for activating warranty..."
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #D1D5DB",
+                    fontSize: "13px",
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                    outline: "none"
+                  }}
+                  required={warrantyStatusModal.actionType === "deactivate"}
+                />
+              </div>
+
+              <div className="form-actions" style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="action-btn"
+                  disabled={warrantyStatusModal.submitting}
+                  onClick={() => setWarrantyStatusModal(prev => ({ ...prev, isOpen: false }))}
+                  style={{ padding: "8px 16px", borderRadius: "8px", fontSize: "13px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={warrantyStatusModal.submitting || (warrantyStatusModal.actionType === "deactivate" && !warrantyStatusModal.reason.trim())}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: warrantyStatusModal.actionType === "deactivate" ? "#DC2626" : "#059669",
+                    color: "#fff",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: (warrantyStatusModal.submitting || (warrantyStatusModal.actionType === "deactivate" && !warrantyStatusModal.reason.trim())) ? "not-allowed" : "pointer",
+                    opacity: (warrantyStatusModal.submitting || (warrantyStatusModal.actionType === "deactivate" && !warrantyStatusModal.reason.trim())) ? 0.6 : 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}
+                >
+                  {warrantyStatusModal.submitting ? "Updating..." : (warrantyStatusModal.actionType === "deactivate" ? "Deactivate Warranty" : "Activate Warranty")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div
+            className="modal-content"
+            style={{ width: "860px", maxWidth: "95%", maxHeight: "90vh", padding: "28px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ margin: "0 0 4px 0", fontSize: "20px", fontWeight: 700, color: "#111827" }}>
+                  Register Batteries
+                </h3>
+                <p style={{ margin: 0, fontSize: "13px", color: "#64748B" }}>
+                  Register multiple battery products under the same Customer Name and Invoice.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "20px",
+                  lineHeight: 1,
+                  color: "#94A3B8",
+                  cursor: "pointer",
+                  padding: "4px 8px"
+                }}
+              >
+                ✕
+              </button>
             </div>
 
             {formError && (
-              <div style={{ background: "#fff5f5", color: "#f03e3e", padding: 12, borderRadius: 8, fontSize: 13, border: "1px solid #ffe3e3", marginBottom: 16 }}>
+              <div style={{ background: "#FEF2F2", color: "#DC2626", padding: "12px 14px", borderRadius: "8px", fontSize: "13px", border: "1px solid #FECACA", marginBottom: "16px", whiteSpace: "pre-line" }}>
                 {formError}
               </div>
             )}
 
             <form onSubmit={handleRegisterSubmit}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Customer Name</label>
-                  <input
-                    type="text"
-                    name="customerName"
-                    value={formData.customerName}
-                    onChange={handleFormChange}
-                    required
-                  />
+              {/* ===== 1. Customer & Invoice Details (Entered Once) ===== */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", marginBottom: "20px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  Customer &amp; Invoice Information
                 </div>
-                <div className="form-group">
-                  <label>Invoice Number</label>
-                  <input
-                    type="text"
-                    name="invoiceNumber"
-                    value={formData.invoiceNumber}
-                    onChange={handleFormChange}
-                    required
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>Product</label>
-                  <select
-                    name="selectedMadeProduct"
-                    value={formData.selectedMadeProduct || ""}
-                    onChange={handleFormChange}
-                    required
-                  >
-                    <option value="" disabled>Select Made Product</option>
-                    <option value="Solar Battery">Solar Battery</option>
-                    <option value="EV Battery">EV Battery</option>
-                    <option value="Inverter Battery">Inverter Battery</option>
-                    <option value="Robotics Battery">Robotics Battery</option>
-                    <option value="Defence Battery">Defence Battery</option>
-                    <option value="Medical Battery">Medical Battery</option>
-                    <option value="Strip Pump Battery">Spray pump battery</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                {formData.selectedMadeProduct === "Other" && (
-                  <div className="form-group full-width">
-                    <label>Battery Name</label>
+                <div className="form-grid" style={{ marginBottom: 0 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Customer Name *</label>
                     <input
                       type="text"
-                      name="customMadeProduct"
-                      placeholder="Enter battery name"
-                      value={formData.customMadeProduct}
-                      onChange={handleFormChange}
+                      name="customerName"
+                      placeholder="e.g. John Doe / Fleet Corp"
+                      value={formData.customerName}
+                      onChange={(e) => handleCustomerInfoChange("customerName", e.target.value)}
                       required
                     />
                   </div>
-                )}
-
-                <div className="form-group full-width">
-                  <label>Product Description</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto' }}>
-                    <input
-                      type="number"
-                      name="voltage"
-                      placeholder="V"
-                      value={formData.voltage}
-                      onChange={handleFormChange}
-                      min="0"
-                      style={{ width: '60px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
-                      required
-                    />
-                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>V</span>
-                    <input
-                      type="number"
-                      name="capacity"
-                      placeholder="Ah"
-                      value={formData.capacity}
-                      onChange={handleFormChange}
-                      min="0"
-                      style={{ width: '60px', padding: '8px 8px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
-                      required
-                    />
-                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px' }}>Ah</span>
-                    <span style={{ fontWeight: 600, color: '#374151', fontSize: '14px', marginLeft: '100px' }}>Chemistry </span>
-                    <select
-                      name="chemistry"
-                      value={formData.chemistry}
-                      onChange={handleFormChange}
-                      style={{
-                        width: '140px',
-                        padding: '8px 12px',
-                        border: '1px solid #D1D5DB',
-                        borderRadius: '8px',
-                        fontSize: '13px',
-                        outline: 'none',
-                        background: '#fff',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="NMC">NMC</option>
-                      <option value="LiFePO4">LiFePO4</option>
-                    </select>
-                  </div>
-                  {(formData.voltage || formData.capacity) && (
-                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#6B7280' }}>
-                      Preview:{' '}
-                      <strong style={{ color: '#111827' }}>
-                        {formData.voltage}V {formData.capacity}Ah{' '}
-                        <span style={{ marginLeft: '30px' }}>
-                          Chemistry = {formData.chemistry}
-                        </span>
-                      </strong>
-                    </div>
-                  )}
-                </div>
-                {registerMode === "single" ? (
-                  <div className="form-group">
-                    <label>Barcode</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Invoice Number *</label>
                     <input
                       type="text"
-                      name="barcode"
-                      placeholder="e.g. BAT001"
-                      value={formData.barcode}
-                      onChange={handleFormChange}
+                      name="invoiceNumber"
+                      placeholder="e.g. INV-2026-001"
+                      value={formData.invoiceNumber}
+                      onChange={(e) => handleCustomerInfoChange("invoiceNumber", e.target.value)}
                       required
                     />
                   </div>
-                ) : (
-                  <>
-                    <div className="form-group">
-                      <label>Start Barcode</label>
-                      <input
-                        type="text"
-                        name="startBarcode"
-                        placeholder="e.g. BAT001"
-                        value={formData.startBarcode}
-                        onChange={handleFormChange}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>End Barcode</label>
-                      <input
-                        type="text"
-                        name="endBarcode"
-                        placeholder="e.g. BAT005"
-                        value={formData.endBarcode}
-                        onChange={handleFormChange}
-                        required
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="form-group">
-                  <label>Warranty Start Date</label>
-                  <input
-                    type="date"
-                    name="warrantyStartDate"
-                    value={formData.warrantyStartDate}
-                    onChange={handleFormChange}
-                    required
-                  />
-                </div>
-
-                <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <div>
-                    <label>Full Warranty (Years)</label>
-                    <input
-                      type="number"
-                      name="fullWarrantyYears"
-                      min="0"
-                      value={formData.fullWarrantyYears}
-                      onChange={handleFormChange}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label>Full Warranty (Months)</label>
-                    <input
-                      type="number"
-                      name="fullWarrantyMonths"
-                      min="0"
-                      max="11"
-                      value={formData.fullWarrantyMonths}
-                      onChange={handleFormChange}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <div>
-                    <label>Service Warranty (Years)</label>
-                    <input
-                      type="number"
-                      name="serviceWarrantyYears"
-                      min="0"
-                      value={formData.serviceWarrantyYears}
-                      onChange={handleFormChange}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label>Service Warranty (Months)</label>
-                    <input
-                      type="number"
-                      name="serviceWarrantyMonths"
-                      min="0"
-                      max="11"
-                      value={formData.serviceWarrantyMonths}
-                      onChange={handleFormChange}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Total Warranty (Auto Calculated)</label>
-                  <input
-                    type="text"
-                    value={calculateExpiryAndTotal(
-                      formData.warrantyStartDate,
-                      formData.fullWarrantyYears,
-                      formData.fullWarrantyMonths,
-                      formData.serviceWarrantyYears,
-                      formData.serviceWarrantyMonths
-                    ).totalWarrantyLabel}
-                    readOnly
-                    style={{ background: "#f5f5f5", cursor: "not-allowed" }}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Warranty Expiry Date (Auto Calculated)</label>
-                  <input
-                    type="date"
-                    name="warrantyEndDate"
-                    value={formData.warrantyEndDate}
-                    readOnly
-                    required
-                    style={{ background: "#f5f5f5", cursor: "not-allowed" }}
-                  />
                 </div>
               </div>
+
+              {/* ===== 2. Products Section Header ===== */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A" }}>
+                    Battery Products
+                  </span>
+                  <span style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: "12px", fontWeight: 700, padding: "2px 8px", borderRadius: "10px", border: "1px solid #BFDBFE" }}>
+                    {formData.products.length} {formData.products.length === 1 ? "Product" : "Products"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  id="add-product-btn"
+                  onClick={handleAddProduct}
+                  style={{
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "7px 14px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 1px 2px rgba(37,99,235,0.2)"
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  Add Product
+                </button>
+              </div>
+
+              {/* ===== 3. Product Cards List ===== */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "16px" }}>
+                {formData.products.map((item, idx) => {
+                  const productTitle = item.selectedMadeProduct === "Other"
+                    ? (item.customMadeProduct || "Custom Battery")
+                    : (item.selectedMadeProduct || "EV Battery");
+                  const hasSpecs = item.voltage || item.capacity;
+
+                  return (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        background: "#FFFFFF",
+                        border: "1px solid #CBD5E1",
+                        borderRadius: "12px",
+                        padding: "16px",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+                      }}
+                    >
+                      {/* Product Card Header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          paddingBottom: item.isExpanded ? "12px" : "0",
+                          borderBottom: item.isExpanded ? "1px solid #F1F5F9" : "none",
+                          marginBottom: item.isExpanded ? "14px" : "0"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                          <span style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", borderRadius: "6px", padding: "3px 8px", fontSize: "12px", fontWeight: 700 }}>
+                            Product #{idx + 1}
+                          </span>
+                          <span style={{ fontSize: "13px", fontWeight: 600, color: "#1E293B" }}>
+                            {productTitle}
+                            {hasSpecs && ` (${item.voltage || "-"}V ${item.capacity || "-"}Ah ${item.chemistry || ""})`}
+                          </span>
+                          <span style={{ fontSize: "12px", background: "#F1F5F9", color: "#475569", padding: "2px 8px", borderRadius: "6px", fontWeight: 600 }}>
+                            Qty: {item.quantity || 1}
+                          </span>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleExpandProduct(idx)}
+                            style={{
+                              background: "#F8FAFC",
+                              color: "#475569",
+                              border: "1px solid #CBD5E1",
+                              borderRadius: "6px",
+                              padding: "4px 10px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer"
+                            }}
+                          >
+                            {item.isExpanded ? "Collapse" : "Edit"}
+                          </button>
+                          {formData.products.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveProduct(idx)}
+                              style={{
+                                background: "#FEF2F2",
+                                color: "#EF4444",
+                                border: "1px solid #FECACA",
+                                borderRadius: "6px",
+                                padding: "4px 10px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                cursor: "pointer"
+                              }}
+                              title="Remove this product"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Product Card Body (when expanded) */}
+                      {item.isExpanded && (
+                        <div className="form-grid">
+                          {/* Row 1: Product Catalog Auto-Fill Dropdown */}
+                          <div className="form-group full-width" style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "10px 12px", borderRadius: "8px", margin: "0 0 12px 0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                              <label style={{ fontSize: "12px", fontWeight: 700, color: "#166534", margin: 0 }}>
+                                Select from Product Catalog (Auto-fill specs)
+                              </label>
+                              {loadingCatalog && <span style={{ fontSize: "11px", color: "#15803D" }}>Loading catalog...</span>}
+                            </div>
+                            <select
+                              value={item.catalogProductId || ""}
+                              onChange={(e) => handleCatalogProductSelect(idx, e.target.value)}
+                              style={{ background: "#FFFFFF", borderColor: "#86EFAC" }}
+                            >
+                              <option value="">-- Choose from Catalog or Enter Manually --</option>
+                              {catalogProducts.map((p) => {
+                                const pName = p.name || p.productName || p.title || "Unnamed Product";
+                                const pSpecs = [
+                                  p.voltage ? `${p.voltage}V` : "",
+                                  p.capacity ? `${p.capacity}Ah` : "",
+                                  p.chemistry ? p.chemistry : ""
+                                ].filter(Boolean).join(" ");
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    {pName} {pSpecs ? `(${pSpecs})` : ""}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          {/* Row 2: Product Type & Custom Name */}
+                          <div className="form-group">
+                            <label>Product Category *</label>
+                            <select
+                              value={item.selectedMadeProduct || ""}
+                              onChange={(e) => handleProductItemChange(idx, "selectedMadeProduct", e.target.value)}
+                              required
+                            >
+                              <option value="" disabled>Select Made Product</option>
+                              <option value="Solar Battery">Solar Battery</option>
+                              <option value="EV Battery">EV Battery</option>
+                              <option value="Inverter Battery">Inverter Battery</option>
+                              <option value="Robotics Battery">Robotics Battery</option>
+                              <option value="Defence Battery">Defence Battery</option>
+                              <option value="Medical Battery">Medical Battery</option>
+                              <option value="Strip Pump Battery">Spray pump battery</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+
+                          <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                            <div>
+                              <label>Quantity *</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity || 1}
+                                onChange={(e) => handleProductItemChange(idx, "quantity", e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Registration Type</label>
+                              <select
+                                value={item.mode || (item.quantity > 1 ? "series" : "single")}
+                                onChange={(e) => handleProductItemChange(idx, "mode", e.target.value)}
+                              >
+                                <option value="single">Single Unit</option>
+                                <option value="series">Bulk / Series Range</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {item.selectedMadeProduct === "Other" && (
+                            <div className="form-group full-width">
+                              <label>Custom Battery Name *</label>
+                              <input
+                                type="text"
+                                placeholder="Enter custom battery name"
+                                value={item.customMadeProduct || ""}
+                                onChange={(e) => handleProductItemChange(idx, "customMadeProduct", e.target.value)}
+                                required
+                              />
+                            </div>
+                          )}
+
+                          {/* Row 3: Product Description specs (Voltage, Capacity, Chemistry) */}
+                          <div className="form-group full-width">
+                            <label>Product Specifications (V, Ah, Chemistry)</label>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", overflowX: "auto" }}>
+                              <input
+                                type="number"
+                                placeholder="V"
+                                value={item.voltage || ""}
+                                onChange={(e) => handleProductItemChange(idx, "voltage", e.target.value)}
+                                min="0"
+                                style={{ width: "65px", padding: "8px 8px", border: "1px solid #D1D5DB", borderRadius: "8px", fontSize: "13px", outline: "none", boxSizing: "border-box", textAlign: "center" }}
+                              />
+                              <span style={{ fontWeight: 600, color: "#374151", fontSize: "14px" }}>V</span>
+                              <input
+                                type="number"
+                                placeholder="Ah"
+                                value={item.capacity || ""}
+                                onChange={(e) => handleProductItemChange(idx, "capacity", e.target.value)}
+                                min="0"
+                                style={{ width: "65px", padding: "8px 8px", border: "1px solid #D1D5DB", borderRadius: "8px", fontSize: "13px", outline: "none", boxSizing: "border-box", textAlign: "center" }}
+                              />
+                              <span style={{ fontWeight: 600, color: "#374151", fontSize: "14px" }}>Ah</span>
+                              <span style={{ fontWeight: 600, color: "#374151", fontSize: "14px", marginLeft: "16px" }}>Chemistry:</span>
+                              <select
+                                value={item.chemistry || "NMC"}
+                                onChange={(e) => handleProductItemChange(idx, "chemistry", e.target.value)}
+                                style={{
+                                  width: "130px",
+                                  padding: "8px 12px",
+                                  border: "1px solid #D1D5DB",
+                                  borderRadius: "8px",
+                                  fontSize: "13px",
+                                  outline: "none",
+                                  background: "#fff",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                <option value="NMC">NMC</option>
+                                <option value="LiFePO4">LiFePO4</option>
+                              </select>
+                            </div>
+                            {(item.voltage || item.capacity) && (
+                              <div style={{ marginTop: "6px", fontSize: "12px", color: "#6B7280" }}>
+                                Preview:{" "}
+                                <strong style={{ color: "#111827" }}>
+                                  {item.voltage}V {item.capacity}Ah Chemistry = {item.chemistry || "NMC"}
+                                </strong>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Row 4: Barcode / Range */}
+                          {item.mode === "single" && item.quantity === 1 ? (
+                            <div className="form-group full-width">
+                              <label>Barcode / Serial Number *</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. BAT001"
+                                value={item.barcode || ""}
+                                onChange={(e) => handleProductItemChange(idx, "barcode", e.target.value)}
+                                required
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <div className="form-group">
+                                <label>Start Barcode *</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. BAT001"
+                                  value={item.startBarcode || ""}
+                                  onChange={(e) => handleProductItemChange(idx, "startBarcode", e.target.value)}
+                                  required
+                                />
+                              </div>
+                              <div className="form-group">
+                                <label>End Barcode *</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. BAT005"
+                                  value={item.endBarcode || ""}
+                                  onChange={(e) => handleProductItemChange(idx, "endBarcode", e.target.value)}
+                                  required
+                                />
+                              </div>
+                            </>
+                          )}
+
+                          {/* Row 5: Warranty Start Date, Full Warranty, Service Warranty */}
+                          <div className="form-group">
+                            <label>Warranty Start Date *</label>
+                            <input
+                              type="date"
+                              value={item.warrantyStartDate || ""}
+                              onChange={(e) => handleProductItemChange(idx, "warrantyStartDate", e.target.value)}
+                              required
+                            />
+                          </div>
+
+                          <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                            <div>
+                              <label>Full Warranty (Years)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.fullWarrantyYears}
+                                onChange={(e) => handleProductItemChange(idx, "fullWarrantyYears", e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Full Warranty (Months)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="11"
+                                value={item.fullWarrantyMonths}
+                                onChange={(e) => handleProductItemChange(idx, "fullWarrantyMonths", e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-group" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                            <div>
+                              <label>Service Warranty (Years)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.serviceWarrantyYears}
+                                onChange={(e) => handleProductItemChange(idx, "serviceWarrantyYears", e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Service Warranty (Months)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="11"
+                                value={item.serviceWarrantyMonths}
+                                onChange={(e) => handleProductItemChange(idx, "serviceWarrantyMonths", e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <label>Total Warranty (Auto Calculated)</label>
+                            <input
+                              type="text"
+                              value={calculateExpiryAndTotal(
+                                item.warrantyStartDate,
+                                item.fullWarrantyYears,
+                                item.fullWarrantyMonths,
+                                item.serviceWarrantyYears,
+                                item.serviceWarrantyMonths
+                              ).totalWarrantyLabel}
+                              readOnly
+                              style={{ background: "#f5f5f5", cursor: "not-allowed" }}
+                            />
+                          </div>
+
+                          <div className="form-group full-width">
+                            <label>Warranty Expiry Date (Auto Calculated)</label>
+                            <input
+                              type="date"
+                              value={item.warrantyEndDate || ""}
+                              readOnly
+                              required
+                              style={{ background: "#f5f5f5", cursor: "not-allowed" }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Add Product Button */}
+              <button
+                type="button"
+                onClick={handleAddProduct}
+                style={{
+                  width: "100%",
+                  background: "#F8FAFC",
+                  border: "2px dashed #93C5FD",
+                  color: "#2563EB",
+                  borderRadius: "10px",
+                  padding: "12px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  marginBottom: "20px"
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                + Add Another Product
+              </button>
 
               <div className="form-actions">
                 <button type="button" className="action-btn" onClick={() => setShowModal(false)}>Cancel</button>
                 <button type="submit" className="maint-btn" disabled={registerLoading}>
-                  {registerLoading ? "Registering..." : "Register"}
+                  {registerLoading ? "Registering All..." : `Register All Products (${formData.products.length})`}
                 </button>
               </div>
             </form>
@@ -3217,6 +4210,8 @@ function groupBatteries(batteryList) {
       String(battery.invoiceNumber || ""),
       String(battery.warrantyStartDate || ""),
       String(battery.warrantyEndDate || ""),
+      battery.fullWarrantyActive ? "full-active" : "full-inactive",
+      battery.serviceWarrantyActive ? "srv-active" : "srv-inactive",
       battery.warrantyActive ? "active" : "expired"
     ].join("||");
 

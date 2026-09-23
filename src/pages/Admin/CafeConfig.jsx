@@ -6,6 +6,9 @@ import activeIcon from "../../assets/icons/stationicon/green.svg";
 import uptimeIcon from "../../assets/icons/stationicon/yellow.svg";
 import editIcon from "../../assets/icons/stationicon/edit.svg";
 import deleteIcon from "../../assets/icons/stationicon/red.svg";
+import { cafeService } from "../../services/cafeService";
+import { stationService } from "../../services/stationService";
+import { parseCategory, stripCategoryPrefix } from "../../utils/cafeUtils";
 
 // ── Shimmer Skeleton Loader ───────────────────────────────────────────────────
 const LoadingSpinner = () => (
@@ -55,7 +58,7 @@ const AnimatedNumber = ({ value }) => {
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function CafeConfig({ baseUrl }) {
+export default function CafeConfig() {
   const navigate = useNavigate();
 
   // ── All state preserved exactly ───────────────────────────────────────────
@@ -70,13 +73,10 @@ export default function CafeConfig({ baseUrl }) {
   const [editSectionType, setEditSectionType] = useState("Cafe");
   const [isAddDropdownOpen, setIsAddDropdownOpen] = useState(false);
 
-  // ── All helper functions preserved exactly ────────────────────────────────
+  // ── Helper functions ────────────────────────────────
   const getSectionFromCafe = (cafe) => {
     if (cafe && cafe.category) {
-      const cat = cafe.category.trim().toLowerCase();
-      if (cat === "restaurant") return "Restaurant";
-      if (cat === "mall") return "Mall";
-      return "Cafe";
+      return parseCategory(cafe.category);
     }
     if (cafe && cafe.name) {
       if (cafe.name.startsWith("[Restaurant] ")) return "Restaurant";
@@ -85,12 +85,9 @@ export default function CafeConfig({ baseUrl }) {
     return "Cafe";
   };
 
-  const getCleanName = (name) => {
+  const getCleanName = (name, category) => {
     if (!name) return "";
-    if (name.startsWith("[Cafe] ")) return name.slice(7);
-    if (name.startsWith("[Restaurant] ")) return name.slice(13);
-    if (name.startsWith("[Mall] ")) return name.slice(7);
-    return name;
+    return stripCategoryPrefix(name, category);
   };
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -113,35 +110,23 @@ export default function CafeConfig({ baseUrl }) {
   const [formErrors, setFormErrors] = useState({});
   const [formSubmitting, setFormSubmitting] = useState(false);
 
-  // ── All useEffects / API calls preserved exactly ──────────────────────────
+  // ── All useEffects / API calls ──────────────────────────
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       const token = localStorage.getItem("token");
       if (!token) { navigate("/"); return; }
 
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-
       try {
-        const cafeRes = await fetch(`${baseUrl}/cafes/all`, { headers });
-        if (cafeRes.status === 401 || cafeRes.status === 403) {
-          localStorage.removeItem("token");
-          navigate("/");
-          return;
-        }
-        const cafeData = await cafeRes.json();
+        const cafeData = await cafeService.getAllCafes();
         const sortedCafes = Array.isArray(cafeData)
           ? cafeData.sort((a, b) => (b.rating || 0) - (a.rating || 0))
           : [];
         setCafes(sortedCafes);
 
-        const stationRes = await fetch(`${baseUrl}/stations/all`, { headers });
-        if (stationRes.ok) {
-          const stationData = await stationRes.json();
-          setStations(Array.isArray(stationData) ? stationData : []);
+        const stationData = await stationService.getAllStations();
+        if (Array.isArray(stationData)) {
+          setStations(stationData);
           if (stationData.length > 0 && !formData.stationId) {
             setFormData((prev) => ({ ...prev, stationId: stationData[0].id }));
           }
@@ -153,7 +138,7 @@ export default function CafeConfig({ baseUrl }) {
       }
     };
     fetchData();
-  }, [baseUrl, navigate, refreshKey, formData.stationId]);
+  }, [navigate, refreshKey, formData.stationId]);
 
   // ── All modal / form handlers preserved exactly ───────────────────────────
   const openAddModal = (type = "Cafe") => {
@@ -228,7 +213,6 @@ export default function CafeConfig({ baseUrl }) {
     e.preventDefault();
     if (!validateForm()) return;
     setFormSubmitting(true);
-    const token = localStorage.getItem("token");
     const payload = {
       stationId: parseInt(formData.stationId),
       name: formData.name.trim(),
@@ -242,22 +226,13 @@ export default function CafeConfig({ baseUrl }) {
       category: formData.category,
     };
     try {
-      const res = await fetch(`${baseUrl}/cafes/add`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        setIsAddModalOpen(false);
-        setActiveTab(formData.category);
-        setRefreshKey((prev) => prev + 1);
-      } else {
-        const errorData = await res.json();
-        alert(errorData.error || `Failed to create ${formData.category.toLowerCase()}`);
-      }
+      await cafeService.createCafe(payload);
+      setIsAddModalOpen(false);
+      setActiveTab(formData.category);
+      setRefreshKey((prev) => prev + 1);
     } catch (err) {
       console.error(`Error creating ${formData.category.toLowerCase()}:`, err);
-      alert("An unexpected error occurred.");
+      alert(err.message || `Failed to create ${formData.category.toLowerCase()}`);
     } finally {
       setFormSubmitting(false);
     }
@@ -267,7 +242,6 @@ export default function CafeConfig({ baseUrl }) {
     e.preventDefault();
     if (!validateForm()) return;
     setFormSubmitting(true);
-    const token = localStorage.getItem("token");
     const payload = {
       stationId: parseInt(formData.stationId),
       name: formData.name.trim(),
@@ -281,29 +255,19 @@ export default function CafeConfig({ baseUrl }) {
       category: formData.category,
     };
     try {
-      const res = await fetch(`${baseUrl}/cafes/update/${selectedCafe.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        setIsEditModalOpen(false);
-        setSelectedCafe(null);
-        setRefreshKey((prev) => prev + 1);
-      } else {
-        const errorData = await res.json();
-        alert(errorData.error || `Failed to update ${formData.category.toLowerCase()}`);
-      }
+      await cafeService.updateCafe(selectedCafe.id, payload);
+      setIsEditModalOpen(false);
+      setSelectedCafe(null);
+      setRefreshKey((prev) => prev + 1);
     } catch (err) {
       console.error(`Error updating ${formData.category.toLowerCase()}:`, err);
-      alert("An unexpected error occurred.");
+      alert(err.message || `Failed to update ${formData.category.toLowerCase()}`);
     } finally {
       setFormSubmitting(false);
     }
   };
 
   const handleToggleActiveState = async (cafe) => {
-    const token = localStorage.getItem("token");
     const payload = {
       stationId: cafe.stationId,
       name: cafe.name,
@@ -317,31 +281,23 @@ export default function CafeConfig({ baseUrl }) {
       category: cafe.category,
     };
     try {
-      const res = await fetch(`${baseUrl}/cafes/update/${cafe.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) { setRefreshKey((prev) => prev + 1); }
-      else { alert("Failed to update status"); }
+      await cafeService.updateCafe(cafe.id, payload);
+      setRefreshKey((prev) => prev + 1);
     } catch (err) {
       console.error("Error toggling status:", err);
+      alert(err.message || "Failed to update status");
     }
   };
 
   const handleDeleteCafe = async (cafe) => {
     const sectionName = getSectionFromCafe(cafe) === "Cafe" ? "café" : getSectionFromCafe(cafe).toLowerCase();
     if (!window.confirm(`Are you sure you want to delete this ${sectionName} configuration?`)) return;
-    const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${baseUrl}/cafes/delete/${cafe.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) { setRefreshKey((prev) => prev + 1); }
-      else { alert(`Failed to delete ${sectionName}`); }
+      await cafeService.deleteCafe(cafe.id);
+      setRefreshKey((prev) => prev + 1);
     } catch (error) {
       console.error(`Error deleting ${sectionName}:`, error);
+      alert(error.message || `Failed to delete ${sectionName}`);
     }
   };
 
@@ -1141,9 +1097,9 @@ export default function CafeConfig({ baseUrl }) {
             {/* Add Section Dropdown */}
             <div className="cc-add-wrap">
               <button className="cc-add-btn" onClick={() => setIsAddDropdownOpen(!isAddDropdownOpen)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 Add Section
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
               </button>
               {isAddDropdownOpen && (
                 <div className="cc-dropdown-menu">
@@ -1231,7 +1187,7 @@ export default function CafeConfig({ baseUrl }) {
           <div className="cc-search-wrap">
             <span className="cc-search-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
             </span>
             <input
@@ -1310,7 +1266,7 @@ export default function CafeConfig({ baseUrl }) {
                       <td>
                         {cafe.googleMapsUri ? (
                           <a href={cafe.googleMapsUri} target="_blank" rel="noopener noreferrer" className="cc-map-link">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
                             View on Maps
                           </a>
                         ) : (

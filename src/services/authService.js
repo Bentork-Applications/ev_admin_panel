@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient";
+import { pageCache } from "../utils/pageCache";
 
 export const authService = {
   login: async (credentials) => {
@@ -13,6 +14,9 @@ export const authService = {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("role");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("auth");
+    pageCache.invalidate();
   },
 
   getToken: () => {
@@ -20,6 +24,7 @@ export const authService = {
   },
 
   isAuthenticated: () => {
-    return Boolean(localStorage.getItem("token"));
+    const token = localStorage.getItem("token");
+    return Boolean(token && token !== "null" && token !== "undefined" && token.trim() !== "");
   }
 };

@@ -11,7 +11,7 @@ export const OrderProgressStepper = React.memo(({ currentStatus, orderId, select
     { key: "production_complete", label: "Packed", desc: "Manufacturing complete & packed", icon: Box },
     { key: "scm_complete", label: "Shipped", desc: "SCM verified & barcode assigned", icon: Truck },
     { key: "dispatched", label: "Out For Delivery", desc: "In transit with courier partner", icon: MapPin },
-    { key: "delivered", label: "Delivered ✅", desc: "Successfully delivered to customer", icon: CheckCircle },
+    { key: "delivered", label: "Completed ✅", desc: "Successfully delivered to customer", icon: CheckCircle },
   ];
 
   const getStageIndex = (st) => {
@@ -21,7 +21,8 @@ export const OrderProgressStepper = React.memo(({ currentStatus, orderId, select
       case "production_complete": return 2;
       case "scm_complete": return 3;
       case "dispatched": return 4;
-      case "delivered": return 5;
+      case "delivered":
+      case "completed": return 5;
       default: return 0;
     }
   };
@@ -86,8 +87,8 @@ export const OrderProgressStepper = React.memo(({ currentStatus, orderId, select
                 {ts && <span style={{ fontSize: "11px", fontWeight: 400, color: "#64748B", marginLeft: "8px" }}>({ts})</span>}
               </div>
               <div className="vertical-step-desc">
-                {stage.key === "delivered" && status === "delivered" && ts
-                  ? `Delivered on ${ts}`
+                {stage.key === "delivered" && (status === "delivered" || status === "completed") && ts
+                  ? `Completed on ${ts}`
                   : stage.desc}
               </div>
             </div>

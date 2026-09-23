@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-
 import settings from "../../assets/images/setting_icon.svg";
 import Profile from "../../assets/icons/Profile.svg";
+import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
 
 export default function Topbar({ onMenuClick, onLogout }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -12,15 +12,17 @@ export default function Topbar({ onMenuClick, onLogout }) {
     if (!token) return;
 
     try {
-      const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-      const decoded = JSON.parse(atob(base64));
+      const decoded = safeDecodeJwt(token);
+      const resolvedRole = extractRoleFromToken(token) || "ADMIN";
 
-      setUser({
-        name: decoded.name || decoded.sub || "Admin",
-        role: decoded.role || decoded.roles?.[0] || "Admin",
-      });
+      if (decoded) {
+        setUser({
+          name: decoded.name || decoded.sub || decoded.email || "Admin",
+          role: resolvedRole.replace(/_/g, " "),
+        });
+      }
     } catch {
-      console.error("Invalid token");
+      console.error("Invalid token in Topbar");
     }
   }, []);
 
@@ -46,13 +48,11 @@ export default function Topbar({ onMenuClick, onLogout }) {
 
           <img src={settings} alt="Settings" className="icon-img" />
 
-
-
           <div
             className="profile-box"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           >
-            <img src={Profile} className="avatar" />
+            <img src={Profile} className="avatar" alt="Profile" />
 
             <div className="profile-text">
               <span className="name">{user.name}</span>
@@ -67,7 +67,7 @@ export default function Topbar({ onMenuClick, onLogout }) {
               <div className="dropdown" onClick={(e) => e.stopPropagation()}>
                 <div className="active-profile">
                   <div className="active-left">
-                    <img src={Profile} className="avatar" />
+                    <img src={Profile} className="avatar" alt="Profile" />
                     <div>
                       <span className="name">{user.name}</span> <br />
                       <span className="role">{user.role}</span>
@@ -87,7 +87,7 @@ export default function Topbar({ onMenuClick, onLogout }) {
         </div>
       </header>
 
-      {/* ✅ ALL CSS INSIDE JSX */}
+      {/* STYLES */}
       <style>{`
         .topbar {
           width: 95%;
@@ -124,7 +124,6 @@ export default function Topbar({ onMenuClick, onLogout }) {
           display: flex;
           align-items: center;
           gap: 20px;
-           
         }
 
         .icon {
@@ -141,8 +140,6 @@ export default function Topbar({ onMenuClick, onLogout }) {
           height: 24px;
           cursor: pointer;
         }
-
-
 
         .profile-box {
           display: flex;
@@ -174,6 +171,7 @@ export default function Topbar({ onMenuClick, onLogout }) {
         .role {
           font-size: 12px;
           color: #757575;
+          text-transform: capitalize;
         }
 
         .dropdown-arrow {
@@ -189,14 +187,16 @@ export default function Topbar({ onMenuClick, onLogout }) {
           top: 50px;
           right: 0;
           width: 270px;
-         height: 64px;
+          height: auto;
+          min-height: fit-content;
           background: #fff;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
           border-radius: 16px;
           padding: 16px;
           display: flex;
           flex-direction: column;
           gap: 12px;
+          z-index: 1001;
         }
 
         .active-profile {
@@ -230,6 +230,12 @@ export default function Topbar({ onMenuClick, onLogout }) {
           background: #333;
           color: #fff;
           cursor: pointer;
+          font-weight: 600;
+          transition: background 0.2s ease;
+        }
+
+        .logout-btn:hover {
+          background: #111;
         }
       `}</style>
     </>

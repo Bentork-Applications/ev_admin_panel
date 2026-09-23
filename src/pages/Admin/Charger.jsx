@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy, useMemo, useCallback } from "react";
+import React, { useState, useEffect, Suspense, lazy, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from "framer-motion";
@@ -82,53 +82,80 @@ const Model = ({ children }) => (
 const checkHasActiveSession = (charger, sessionsList = []) => {
   if (!charger) return false;
 
-  // 1. Direct charger object properties / flags from API & live debug
-  const isOccupied = charger.occupied === true || charger.occupied === "true" || charger.occupied === 1 || charger.occupied === "1" ||
-    charger.isOccupied === true || charger.isOccupied === "true" || charger.isOccupied === 1 || charger.isOccupied === "1" ||
-    charger.hasActiveSession === true || charger.hasActiveSession === "true";
-
-  if (isOccupied) return true;
-
-  const rawStatus = String(charger.status || "").toUpperCase().trim();
-  const busyStatuses = ["BUSY", "CHARGING", "OCCUPIED", "IN_PROGRESS", "RUNNING", "PREPARING", "FINISHING", "SUSPENDED_EVSE", "SUSPENDED_EV", "RESERVED"];
-  if (busyStatuses.includes(rawStatus)) return true;
-
-  if (charger.activeSession || charger.currentSession || charger.session) {
-    const sObj = charger.activeSession || charger.currentSession || charger.session;
-    const sStatus = String(sObj?.status || "").toUpperCase().trim();
-    const inactiveStatuses = ["COMPLETED", "STOPPED", "CANCELLED", "ENDED", "FAILED", "ERROR", "EXPIRED", "SUCCESS"];
-    if (!inactiveStatuses.includes(sStatus) && !sObj?.endTime) {
+  // 1. Check direct active session object attached to charger
+  const sObj = charger.activeSession || charger.currentSession || charger.session;
+  if (sObj && typeof sObj === 'object') {
+    const sStatus = String(sObj.status || "").toUpperCase().trim();
+    const terminalStatuses = ["COMPLETED", "STOPPED", "CANCELLED", "ENDED", "FAILED", "ERROR", "EXPIRED", "SUCCESS", "FINISHED", "REJECTED", "TERMINATED", "ABORTED", "INACTIVE"];
+    const hasEnded = terminalStatuses.includes(sStatus) || (sObj.endTime && sObj.endTime !== "null" && sObj.endTime !== "NULL");
+    if (!hasEnded) {
       return true;
     }
   }
 
-  // 2. Cross-reference with active sessions list from API
+  // 2. Cross-reference with sessions list from API / live debug
+  let hasMatchingActiveSession = false;
+  let hasMatchingSession = false;
+  let hasOnlyInactiveSessions = false;
+
   if (Array.isArray(sessionsList) && sessionsList.length > 0) {
-    const activeSessionMatch = sessionsList.find(s => {
+    const terminalStatuses = ["COMPLETED", "STOPPED", "CANCELLED", "ENDED", "FAILED", "ERROR", "EXPIRED", "SUCCESS", "FINISHED", "REJECTED", "TERMINATED", "ABORTED", "INACTIVE"];
+    const activeStatuses = ["ACTIVE", "CHARGING", "RUNNING", "IN_PROGRESS", "STARTED", "INITIATED", "OCCUPIED", "PREPARING", "SUSPENDED_EV", "SUSPENDED_EVSE", "FINISHING", "RESERVED", "BUSY"];
+
+    const matchingSessions = sessionsList.filter(s => {
       if (!s) return false;
-      const status = String(s.status || "").toUpperCase().trim();
-      const inactiveStatuses = ["COMPLETED", "STOPPED", "CANCELLED", "ENDED", "FAILED", "ERROR", "EXPIRED", "SUCCESS"];
-      if (inactiveStatuses.includes(status)) return false;
-
-      const activeStatuses = ["ACTIVE", "CHARGING", "RUNNING", "IN_PROGRESS", "STARTED", "INITIATED", "OCCUPIED"];
-      const isActive = activeStatuses.includes(status) || (!s.endTime && status !== "COMPLETED" && status !== "STOPPED");
-      if (!isActive) return false;
-
-      // Match by chargerId or ocppId
+      // Match by charger ID
       const sChargerId = s.chargerId ?? s.charger_id ?? s.charger?.id;
-      if (sChargerId !== undefined && sChargerId !== null && charger.id !== undefined && charger.id !== null) {
-        if (String(sChargerId) === String(charger.id)) return true;
+      if (sChargerId !== undefined && sChargerId !== null && String(sChargerId) !== "" && String(sChargerId) !== "null" && charger.id !== undefined && charger.id !== null) {
+        if (String(sChargerId).trim() === String(charger.id).trim()) return true;
       }
-
-      const sOcppId = s.ocppId ?? s.chargerOcppId ?? s.charger?.ocppId;
+      // Match by OCPP ID / Box ID
+      const sOcppId = s.ocppId ?? s.chargerOcppId ?? s.charger?.ocppId ?? s.boxId ?? s.chargerIdentifier;
       if (sOcppId && charger.ocppId) {
         if (String(sOcppId).trim().toLowerCase() === String(charger.ocppId).trim().toLowerCase()) return true;
       }
-
       return false;
     });
 
-    if (activeSessionMatch) return true;
+    if (matchingSessions.length > 0) {
+      hasMatchingSession = true;
+      const activeMatch = matchingSessions.find(s => {
+        const status = String(s.status || "").toUpperCase().trim();
+        const hasEndTime = s.endTime && s.endTime !== "null" && s.endTime !== "NULL";
+        if (terminalStatuses.includes(status)) return false;
+        if (hasEndTime && !activeStatuses.includes(status)) return false;
+        return activeStatuses.includes(status) || !hasEndTime;
+      });
+
+      if (activeMatch) {
+        hasMatchingActiveSession = true;
+      } else {
+        hasOnlyInactiveSessions = true;
+      }
+    }
+  }
+
+  if (hasMatchingActiveSession) {
+    return true;
+  }
+
+  // 3. Direct charger object properties / flags from API & live debug
+  const isOccupiedFlag = charger.occupied === true || charger.occupied === "true" || charger.occupied === 1 || charger.occupied === "1" ||
+    charger.isOccupied === true || charger.isOccupied === "true" || charger.isOccupied === 1 || charger.isOccupied === "1" ||
+    charger.hasActiveSession === true || charger.hasActiveSession === "true";
+
+  if (isOccupiedFlag) return true;
+
+  // 4. Raw status field fallback
+  const rawStatus = String(charger.status || "").toUpperCase().trim();
+  const busyStatuses = ["BUSY", "CHARGING", "OCCUPIED", "IN_PROGRESS", "RUNNING", "PREPARING", "FINISHING", "SUSPENDED_EVSE", "SUSPENDED_EV", "RESERVED"];
+
+  // If status is BUSY/CHARGING, but all matching sessions are completed and occupied is false, treat as available
+  if (busyStatuses.includes(rawStatus)) {
+    if (hasMatchingSession && hasOnlyInactiveSessions && (charger.occupied === false || charger.isOccupied === false)) {
+      return false;
+    }
+    return true;
   }
 
   return false;
@@ -138,30 +165,27 @@ const checkHasActiveSession = (charger, sessionsList = []) => {
 const getChargerStatus = (charger, sessionsList = []) => {
   if (!charger) return "Offline";
 
+  // 1. Priority 1: Active charging session -> BUSY
   const hasActiveSession = checkHasActiveSession(charger, sessionsList);
-
-  // ROOT CAUSE FIX:
-  // If charger is occupied or running an active session, return "Busy" immediately!
-  // Prevents a charger with an active session from wrongly defaulting to "Offline" due to a stale DB string.
   if (hasActiveSession) {
     return "Busy";
   }
 
   const rawStatus = String(charger.status || "").toUpperCase().trim();
 
-  // Explicit Faulted / Error status from backend
-  if (rawStatus === "FAULTED" || rawStatus === "ERROR") {
+  // 2. Priority 2: Explicit Faulted / Error status
+  if (rawStatus === "FAULTED" || rawStatus === "ERROR" || rawStatus === "FAULT" || charger.isFaulted === true || charger.faulted === true) {
     return "Faulted";
   }
 
-  // Explicit WebSocket disconnect from live debug status
+  // 3. Priority 3: Explicit WebSocket disconnect or deactivated
   if (charger.wsConnected === false || charger.wsConnected === "false" || charger.wsConnected === 0) {
     return "Offline";
   }
 
-  const isAvailableFlag = charger.availability === true || charger.availability === "true" || charger.availability === 1 ||
-    charger.available === true || charger.available === "true" || charger.available === 1 ||
-    charger.isAvailability === true || charger.isAvailability === "true" || charger.isAvailability === 1;
+  if (charger.active === false || charger.active === "false" || charger.active === 0) {
+    return "Offline";
+  }
 
   const isUnavailableFlag = charger.availability === false || charger.availability === "false" || charger.availability === 0 ||
     charger.available === false || charger.available === "false" || charger.available === 0 ||
@@ -169,22 +193,16 @@ const getChargerStatus = (charger, sessionsList = []) => {
 
   const offlineStatuses = ["OFFLINE", "UNAVAILABLE", "DISCONNECTED", "INACTIVE", "OUT_OF_SERVICE", "DOWN"];
 
-  // Explicit Offline/Unavailable from backend status field without availability flag override
-  if (offlineStatuses.includes(rawStatus) && !isAvailableFlag) {
+  // If status is explicitly offline and websocket is not connected
+  if (offlineStatuses.includes(rawStatus) && charger.wsConnected !== true) {
     return "Offline";
   }
 
-  if (isUnavailableFlag && !isAvailableFlag) {
+  if (isUnavailableFlag && charger.wsConnected !== true) {
     return "Offline";
   }
 
-  if (charger.active === false || charger.active === "false" || charger.active === 0) {
-    if (!isAvailableFlag) {
-      return "Offline";
-    }
-  }
-
-  // Backend Online / Available status or availability flag set to true
+  // 4. Priority 4: Online / Available
   return "Online";
 };
 
@@ -196,54 +214,86 @@ const getStatusBadgeClass = (status) => {
   return "status-inactive";
 };
 
-// Mocks helper for charging analytics metrics
-const generateAnalyticsData = (filter) => {
+// Analytics calculation helper for charging metrics (without fabricated random data)
+const generateAnalyticsData = (filter, sessionsList = []) => {
   const data = [];
   const now = new Date();
+  const sessions = Array.isArray(sessionsList) ? sessionsList : [];
 
   if (filter === "Today") {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 60 * 60 * 1000);
+      const hour = d.getHours();
+      const hourSessions = sessions.filter(s => {
+        const sTime = s.startTime || s.createdAt;
+        if (!sTime) return false;
+        const dt = new Date(sTime);
+        return dt.toDateString() === now.toDateString() && dt.getHours() === hour;
+      });
+      const totalEnergy = hourSessions.reduce((sum, s) => sum + (parseFloat(s.energyKwh || s.energy || 0) || 0), 0);
+      const totalRev = hourSessions.reduce((sum, s) => sum + (parseFloat(s.cost || s.totalCost || s.amount || 0) || 0), 0);
       data.push({
-        label: `${d.getHours()}:00`,
-        sessions: Math.round(4 + Math.random() * 12),
-        energy: Math.round(60 + Math.random() * 150),
-        revenue: Math.round(120 + Math.random() * 400),
-        duration: Math.round(25 + Math.random() * 35),
+        label: `${hour}:00`,
+        sessions: hourSessions.length,
+        energy: Math.round(totalEnergy),
+        revenue: Math.round(totalRev),
+        duration: hourSessions.length > 0 ? Math.round(hourSessions.reduce((sum, s) => sum + (parseFloat(s.durationMinutes || s.duration || 0) || 0), 0) / hourSessions.length) : 0,
       });
     }
   } else if (filter === "Week") {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const daySessions = sessions.filter(s => {
+        const sTime = s.startTime || s.createdAt;
+        if (!sTime) return false;
+        return new Date(sTime).toDateString() === d.toDateString();
+      });
+      const totalEnergy = daySessions.reduce((sum, s) => sum + (parseFloat(s.energyKwh || s.energy || 0) || 0), 0);
+      const totalRev = daySessions.reduce((sum, s) => sum + (parseFloat(s.cost || s.totalCost || s.amount || 0) || 0), 0);
       data.push({
         label: d.toLocaleDateString([], { weekday: 'short' }),
-        sessions: Math.round(25 + Math.random() * 45),
-        energy: Math.round(400 + Math.random() * 900),
-        revenue: Math.round(1500 + Math.random() * 3500),
-        duration: Math.round(30 + Math.random() * 18),
+        sessions: daySessions.length,
+        energy: Math.round(totalEnergy),
+        revenue: Math.round(totalRev),
+        duration: daySessions.length > 0 ? Math.round(daySessions.reduce((sum, s) => sum + (parseFloat(s.durationMinutes || s.duration || 0) || 0), 0) / daySessions.length) : 0,
       });
     }
   } else if (filter === "Month") {
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const daySessions = sessions.filter(s => {
+        const sTime = s.startTime || s.createdAt;
+        if (!sTime) return false;
+        return new Date(sTime).toDateString() === d.toDateString();
+      });
+      const totalEnergy = daySessions.reduce((sum, s) => sum + (parseFloat(s.energyKwh || s.energy || 0) || 0), 0);
+      const totalRev = daySessions.reduce((sum, s) => sum + (parseFloat(s.cost || s.totalCost || s.amount || 0) || 0), 0);
       data.push({
         label: d.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-        sessions: Math.round(120 + Math.random() * 200),
-        energy: Math.round(2500 + Math.random() * 5000),
-        revenue: Math.round(10000 + Math.random() * 20000),
-        duration: Math.round(32 + Math.random() * 10),
+        sessions: daySessions.length,
+        energy: Math.round(totalEnergy),
+        revenue: Math.round(totalRev),
+        duration: daySessions.length > 0 ? Math.round(daySessions.reduce((sum, s) => sum + (parseFloat(s.durationMinutes || s.duration || 0) || 0), 0) / daySessions.length) : 0,
       });
     }
   } else {
     // Year
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthSessions = sessions.filter(s => {
+        const sTime = s.startTime || s.createdAt;
+        if (!sTime) return false;
+        const dt = new Date(sTime);
+        return dt.getFullYear() === d.getFullYear() && dt.getMonth() === d.getMonth();
+      });
+      const totalEnergy = monthSessions.reduce((sum, s) => sum + (parseFloat(s.energyKwh || s.energy || 0) || 0), 0);
+      const totalRev = monthSessions.reduce((sum, s) => sum + (parseFloat(s.cost || s.totalCost || s.amount || 0) || 0), 0);
       data.push({
         label: d.toLocaleDateString([], { month: 'short' }),
-        sessions: Math.round(1500 + Math.random() * 1500),
-        energy: Math.round(30000 + Math.random() * 40000),
-        revenue: Math.round(120000 + Math.random() * 180000),
-        duration: Math.round(35 + Math.random() * 12),
+        sessions: monthSessions.length,
+        energy: Math.round(totalEnergy),
+        revenue: Math.round(totalRev),
+        duration: monthSessions.length > 0 ? Math.round(monthSessions.reduce((sum, s) => sum + (parseFloat(s.durationMinutes || s.duration || 0) || 0), 0) / monthSessions.length) : 0,
       });
     }
   }
@@ -334,8 +384,10 @@ function Charger({ baseUrl, userRole }) {
   const [deletingCharger, setDeletingCharger] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const recordsLoadedRef = useRef(false);
+
   const fetchData = useCallback(async (isSilent = false) => {
-    if (!isSilent && chargerRecoards.length === 0) setLoading(true);
+    if (!isSilent && !recordsLoadedRef.current) setLoading(true);
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/');
@@ -363,12 +415,16 @@ function Charger({ baseUrl, userRole }) {
         list = Array.isArray(data) ? data : [];
       }
 
+      let debugData = null;
       if (debugRes.status === 'fulfilled' && debugRes.value.ok) {
         try {
-          const debugData = await debugRes.value.json();
+          debugData = await debugRes.value.json();
           if (debugData && Array.isArray(debugData.chargers)) {
             list = list.map(c => {
-              const live = debugData.chargers.find(dc => dc.id === c.id || dc.ocppId === c.ocppId);
+              const live = debugData.chargers.find(dc =>
+                (dc.id !== undefined && c.id !== undefined && String(dc.id).trim() === String(c.id).trim()) ||
+                (dc.ocppId && c.ocppId && String(dc.ocppId).trim().toLowerCase() === String(c.ocppId).trim().toLowerCase())
+              );
               if (live) {
                 return {
                   ...c,
@@ -400,11 +456,21 @@ function Charger({ baseUrl, userRole }) {
         }
       }
 
+      // Merge real-time active sessions from debug status if available
+      if (debugData && Array.isArray(debugData.activeSessions)) {
+        debugData.activeSessions.forEach(ds => {
+          if (ds && !sessionsList.some(s => s && ((s.id && s.id === ds.sessionId) || (s.sessionId && s.sessionId === ds.sessionId)))) {
+            sessionsList.push(ds);
+          }
+        });
+      }
+
+      recordsLoadedRef.current = true;
       setSessions(sessionsList);
       setChargerRecoards(list);
 
       const total = list.length;
-      const available = list.filter(c => getChargerStatus(c, sessionsList).toLowerCase() === "online").length;
+      const available = list.filter(c => getChargerStatus(c, sessionsList) === "Online").length;
       const acCount = list.filter(c => c.chargerType === 'AC').length;
       const dcCount = list.filter(c => c.chargerType === 'DC').length;
 
@@ -427,7 +493,7 @@ function Charger({ baseUrl, userRole }) {
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [baseUrl, navigate, isDealer, chargerRecoards.length]);
+  }, [baseUrl, navigate, isDealer]);
 
   useEffect(() => {
     fetchData(false);
@@ -539,7 +605,7 @@ function Charger({ baseUrl, userRole }) {
     { name: "Offline", value: statusCounts.offline || 0, color: "#6B7280" },
   ], [statusCounts]);
 
-  const analyticsData = useMemo(() => generateAnalyticsData(analyticsFilter), [analyticsFilter]);
+  const analyticsData = useMemo(() => generateAnalyticsData(analyticsFilter, sessions), [analyticsFilter, sessions]);
 
   const cards = [
     { title: "Total Chargers", value: chargerData.totalData, value1: "+317 from last month", icon: VectorIcon },
@@ -576,7 +642,7 @@ function Charger({ baseUrl, userRole }) {
       }
 
       // 3. Station Drawer Filter
-      const matchesStation = stationFilter === "All" || String(charger.stationId) === String(stationFilter);
+      const matchesStation = stationFilter === "All" || (charger.stationId && charger.stationId.toString() === stationFilter);
 
       // 4. Connector Drawer Filter
       const matchesConnector = connectorFilter === "All" || charger.connectorType === connectorFilter;
@@ -591,7 +657,7 @@ function Charger({ baseUrl, userRole }) {
 
       return matchesSearch && matchesStatus && matchesStation && matchesConnector && matchesChargerType && matchesRevenue;
     });
-  }, [chargerRecoards, searchTerm, statusFilter, stationFilter, connectorFilter, chargerTypeFilter, revenueFilter]);
+  }, [chargerRecoards, searchTerm, statusFilter, stationFilter, connectorFilter, chargerTypeFilter, revenueFilter, sessions]);
 
   const sortedRecords = useMemo(() => {
     return [...filteredRecords].sort((a, b) => {

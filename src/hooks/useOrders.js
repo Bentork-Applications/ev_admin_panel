@@ -72,15 +72,25 @@ export const useOrders = (userRoleFromProp) => {
     return orders.filter((order) => {
       // Stage Tab Filter for Super Admin
       if (isSuperAdmin && adminStageTab !== "ALL") {
-        if (adminStageTab === "SALES" && order.orderStatus !== "sales_registered") return false;
-        if (adminStageTab === "PRODUCTION" && order.orderStatus !== "in_production") return false;
-        if (adminStageTab === "PROD_DONE" && order.orderStatus !== "production_complete") return false;
-        if (adminStageTab === "SCM_DONE" && order.orderStatus !== "scm_complete") return false;
-        if (adminStageTab === "DISPATCHED" && order.orderStatus !== "dispatched") return false;
+        const ordSt = (order.orderStatus || "").toLowerCase();
+        if (adminStageTab === "SALES" && ordSt !== "sales_registered") return false;
+        if (adminStageTab === "PRODUCTION" && ordSt !== "in_production") return false;
+        if (adminStageTab === "PROD_DONE" && ordSt !== "production_complete") return false;
+        if (adminStageTab === "SCM_DONE" && ordSt !== "scm_complete") return false;
+        if (adminStageTab === "DISPATCHED" && ordSt !== "dispatched") return false;
+        if (adminStageTab === "COMPLETED" && ordSt !== "delivered" && ordSt !== "completed") return false;
       }
 
       // Status Filter
-      if (statusFilter && order.orderStatus !== statusFilter) return false;
+      if (statusFilter) {
+        const ordSt = (order.orderStatus || "").toLowerCase();
+        const fltSt = statusFilter.toLowerCase();
+        if (fltSt === "delivered" || fltSt === "completed") {
+          if (ordSt !== "delivered" && ordSt !== "completed") return false;
+        } else if (ordSt !== fltSt) {
+          return false;
+        }
+      }
 
       // Priority Filter
       if (priorityFilter && (order.priority || "").toLowerCase() !== priorityFilter.toLowerCase()) return false;

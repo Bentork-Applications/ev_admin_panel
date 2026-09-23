@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 
 import totalIcon from "../../assets/icons/stationicon/Vector.svg";
@@ -842,47 +843,126 @@ function Sessions({ baseUrl, userRole }) {
 
         /* ── Confirmation Modal ──────────────────────────────────────────── */
         .ss-modal-overlay {
-          position: fixed; inset: 0;
-          background: rgba(15,23,42,0.45);
-          backdrop-filter: blur(5px);
-          display: flex; align-items: center; justify-content: center;
-          z-index: 9999;
-          animation: ss-fade-in 0.18s ease;
+          position: fixed;
+          inset: 0;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          height: 100dvh;
+          background: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 99999;
+          animation: ss-fade-in 0.2s ease-out;
+          padding: 16px;
+          box-sizing: border-box;
         }
         .ss-modal-box {
-          background: #fff;
-          border-radius: 18px;
-          width: 92%; max-width: 430px;
+          position: relative;
+          background: #ffffff;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 420px;
           padding: 28px 24px 24px;
-          display: flex; flex-direction: column; align-items: center; text-align: center;
-          box-shadow: 0 24px 48px rgba(0,0,0,0.14), 0 6px 12px rgba(0,0,0,0.08);
-          animation: ss-slide-in 0.25s cubic-bezier(0.16,1,0.3,1);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
+          animation: ss-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+          max-height: 90vh;
+          overflow-y: auto;
+          box-sizing: border-box;
+        }
+        .ss-modal-close-btn {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+          background: transparent;
+          border: none;
+          color: #9CA3AF;
+          cursor: pointer;
+          padding: 6px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s ease;
+        }
+        .ss-modal-close-btn:hover {
+          background: #F3F4F6;
+          color: #374151;
         }
         .ss-modal-icon-wrap {
-          width: 58px; height: 58px;
-          background: #FEF2F2; border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          margin-bottom: 16px; border: 2px solid #FECACA;
+          width: 56px;
+          height: 56px;
+          background: #FEF2F2;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 16px;
+          border: 1px solid #FCA5A5;
+          color: #EF4444;
+          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.12);
+          flex-shrink: 0;
         }
-        .ss-modal-title { font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 10px; }
-        .ss-modal-desc  { font-size: 14px; color: #4B5563; line-height: 1.6; margin: 0 0 22px; }
-        .ss-modal-actions { display: flex; gap: 12px; width: 100%; }
+        .ss-modal-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #111827;
+          margin: 0 0 8px;
+          line-height: 1.3;
+        }
+        .ss-modal-desc {
+          font-size: 14px;
+          color: #4B5563;
+          line-height: 1.6;
+          margin: 0 0 24px;
+          width: 100%;
+        }
+        .ss-modal-actions {
+          display: flex;
+          gap: 12px;
+          width: 100%;
+        }
         .ss-btn {
-          flex: 1; padding: 10px 0; border-radius: 8px;
-          font-size: 14px; font-weight: 600; cursor: pointer;
-          border: none; transition: all 0.15s ease;
-          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          flex: 1;
+          padding: 10px 16px;
+          border-radius: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          border: none;
+          transition: all 0.15s ease;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
           font-family: inherit;
+          min-height: 42px;
         }
-        .ss-btn-cancel { background: #F3F4F6; color: #374151; }
-        .ss-btn-cancel:hover { background: #E5E7EB; }
+        .ss-btn-cancel {
+          background: #F3F4F6;
+          color: #374151;
+          border: 1px solid #E5E7EB;
+        }
+        .ss-btn-cancel:hover {
+          background: #E5E7EB;
+          color: #111827;
+        }
         .ss-btn-confirm {
-          background: linear-gradient(135deg,#EF4444,#DC2626); color: #fff;
-          box-shadow: 0 2px 8px rgba(239,68,68,0.3);
+          background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+          color: #ffffff;
+          box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
         }
         .ss-btn-confirm:hover {
-          background: linear-gradient(135deg,#DC2626,#B91C1C);
-          box-shadow: 0 4px 14px rgba(239,68,68,0.4);
+          background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+          box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
         }
 
         /* ── Toast Notification ──────────────────────────────────────────── */
@@ -1305,9 +1385,20 @@ function Sessions({ baseUrl, userRole }) {
       </div>
 
       {/* ── Confirmation Modal ─────────────────────────────────────────────── */}
-      {confirmModal.show && (
+      {confirmModal.show && createPortal(
         <div className="ss-modal-overlay" onClick={() => setConfirmModal({ show: false, session: null })}>
           <div className="ss-modal-box" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              className="ss-modal-close-btn"
+              onClick={() => setConfirmModal({ show: false, session: null })}
+              aria-label="Close modal"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
             <div className="ss-modal-icon-wrap">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2" />
@@ -1323,12 +1414,14 @@ function Sessions({ baseUrl, userRole }) {
             </p>
             <div className="ss-modal-actions">
               <button
+                type="button"
                 className="ss-btn ss-btn-cancel"
                 onClick={() => setConfirmModal({ show: false, session: null })}
               >
                 Cancel
               </button>
               <button
+                type="button"
                 className="ss-btn ss-btn-confirm"
                 onClick={() => handleConfirmStop(confirmModal.session)}
               >
@@ -1339,7 +1432,8 @@ function Sessions({ baseUrl, userRole }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Toast Notification ─────────────────────────────────────────────── */}

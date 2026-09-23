@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { X, FileText, Layers, Edit2, Sparkles, Truck, Clock, CheckCircle } from "lucide-react";
+import { X, FileText, Layers, Edit2, Sparkles, Truck, Clock, CheckCircle, Plus, Trash2, MapPin } from "lucide-react";
 import { OrderProgressStepper } from "./OrderProgressStepper";
 import { OrderItemsEditor } from "./OrderItemsEditor";
 import { calculateExpiryAndTotal } from "../../utils/formatters";
@@ -12,6 +12,10 @@ export const OrderDetailsDrawer = React.memo(({
   isProductionAdmin,
   isScmAdmin,
   isSuperAdmin,
+  isAdministrator,
+  onOpenAddTracking,
+  onOpenEditTracking,
+  onDeleteTracking,
   submitting,
   recordPaymentAmount,
   setRecordPaymentAmount,
@@ -156,7 +160,7 @@ export const OrderDetailsDrawer = React.memo(({
             <div className="order-number-subtitle">{selectedOrder.orderNumber || `ORD-#${selectedOrder.id}`}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {selectedOrder.orderStatus === "dispatched" && (
+            {((selectedOrder.orderStatus || "").toLowerCase() === "dispatched" || (selectedOrder.orderStatus || "").toLowerCase() === "delivered" || (selectedOrder.orderStatus || "").toLowerCase() === "completed") && (
               <button
                 onClick={() => generateOrderPdfReport(selectedOrder)}
                 style={{
@@ -195,7 +199,7 @@ export const OrderDetailsDrawer = React.memo(({
               <h4 className="section-title" style={{ margin: 0 }}>
                 <Layers size={16} /> Product Line Items & Quantities
               </h4>
-              {!isEditingDrawerProductDetails && (isSalesAdmin || isSuperAdmin) && selectedOrder.orderStatus === "sales_registered" && (
+              {!isEditingDrawerProductDetails && (isSalesAdmin || isAdministrator) && selectedOrder.orderStatus === "sales_registered" && (
                 <button
                   type="button"
                   onClick={openDrawerItemsEdit}
@@ -427,30 +431,59 @@ export const OrderDetailsDrawer = React.memo(({
                       </span>
                     </div>
 
-                    <div className="details-grid">
-                      <div className="detail-item">
-                        <span className="label">Barcode</span>
-                        <span className="val">{info.barcode}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#64748B", marginBottom: "12px", borderBottom: "1px solid #E2E8F0", paddingBottom: "8px" }}>
+                      <span>Barcode: <strong style={{ color: "#0F172A" }}>{info.barcode}</strong></span>
+                      {info.warrantyStartDate && info.warrantyStartDate !== "—" && (
+                        <span>Start Date: <strong style={{ color: "#0F172A" }}>{info.warrantyStartDate}</strong></span>
+                      )}
+                    </div>
+
+                    {/* Simple Battery Warranty Summary */}
+                    <div style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: "8px",
+                      padding: "14px"
+                    }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "10px" }}>
+                        Battery Warranty
                       </div>
-                      <div className="detail-item">
-                        <span className="label">Warranty Start Date</span>
-                        <span className="val">{info.warrantyStartDate}</span>
+
+                      {/* Supporting Full Warranty & Service Warranty */}
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "12px",
+                        marginBottom: "12px",
+                        fontSize: "13px",
+                        color: "#475569"
+                      }}>
+                        <div>
+                          <span style={{ color: "#64748B", fontSize: "12px", display: "block" }}>Full Warranty</span>
+                          <strong style={{ color: "#1E293B", fontSize: "13px" }}>{info.fullWarranty}</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: "#64748B", fontSize: "12px", display: "block" }}>Service Warranty</span>
+                          <strong style={{ color: "#1E293B", fontSize: "13px" }}>{info.serviceWarranty}</strong>
+                        </div>
                       </div>
-                      <div className="detail-item">
-                        <span className="label">Full Warranty</span>
-                        <span className="val">{info.fullWarranty}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Service Warranty</span>
-                        <span className="val">{info.serviceWarranty}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Total Warranty</span>
-                        <span className="val highlight">{info.totalWarranty}</span>
-                      </div>
-                      <div className="detail-item">
-                        <span className="label">Warranty Expiry Date</span>
-                        <span className="val highlight">{info.warrantyEndDate}</span>
+
+                      {/* Prominently Highlighted Total Warranty */}
+                      <div style={{
+                        background: "#EFF6FF",
+                        border: "1.5px solid #3B82F6",
+                        borderRadius: "8px",
+                        padding: "12px 16px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}>
+                        <span style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A" }}>
+                          Total Warranty
+                        </span>
+                        <span style={{ fontSize: "16px", fontWeight: 800, color: "#1D4ED8" }}>
+                          {info.totalWarranty}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -489,69 +522,200 @@ export const OrderDetailsDrawer = React.memo(({
                 <span className="label">Dispatch Time</span>
                 <span className="val">{formatDate(selectedOrder.dispatchedAt)}</span>
               </div>
+              {(selectedOrder.deliveredAt || (selectedOrder.id && localStorage.getItem(`order_delivered_date_${selectedOrder.id}`))) && (
+                <div className="detail-item">
+                  <span className="label">Delivered Time</span>
+                  <span className="val">{formatDate(selectedOrder.deliveredAt || (selectedOrder.id && localStorage.getItem(`order_delivered_date_${selectedOrder.id}`)))}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Order Tracking & Activity History Timeline */}
           <div className="drawer-section">
-            <h4 className="section-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Clock size={16} /> Order Tracking & Activity History
-            </h4>
-            {Array.isArray(selectedOrder.statusHistory) && selectedOrder.statusHistory.length > 0 ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <h4 className="section-title" style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+                <Clock size={16} /> Order Tracking & Activity Timeline
+              </h4>
+              {(isAdministrator || isSuperAdmin) && (
+                <button
+                  type="button"
+                  onClick={() => onOpenAddTracking && onOpenAddTracking(selectedOrder)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    background: "#EEF2FF",
+                    color: "#4F46E5",
+                    border: "1px solid #C7D2FE",
+                    borderRadius: "6px",
+                    padding: "4px 10px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  <Plus size={14} /> Add Event
+                </button>
+              )}
+            </div>
+
+            {((Array.isArray(selectedOrder.trackingUpdates) && selectedOrder.trackingUpdates.length > 0) ||
+              (Array.isArray(selectedOrder.statusHistory) && selectedOrder.statusHistory.length > 0)) ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px" }}>
-                {selectedOrder.statusHistory.map((item, idx) => (
+                {/* 1. Live Backend OrderTracking entities */}
+                {Array.isArray(selectedOrder.trackingUpdates) && selectedOrder.trackingUpdates.map((item, idx) => (
                   <div
-                    key={item.id || idx}
+                    key={`track_${item.id || idx}`}
                     style={{
-                      background: "#F8FAFC",
+                      background: "#FFFFFF",
                       border: "1px solid #E2E8F0",
+                      borderLeft: "4px solid #2563EB",
                       borderRadius: "8px",
                       padding: "12px",
-                      position: "relative"
+                      position: "relative",
+                      boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
-                        {item.title}
-                      </span>
-                      <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 500 }}>
-                        {formatDate(item.timestamp)}
-                      </span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "12px", fontWeight: 700, background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "6px" }}>
+                          {item.status?.replace(/_/g, " ")}
+                        </span>
+                        {item.location && (
+                          <span style={{ fontSize: "12px", color: "#64748B", display: "flex", alignItems: "center", gap: "3px" }}>
+                            <MapPin size={12} color="#64748B" /> {item.location}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 500 }}>
+                          {formatDate(item.timestamp || item.createdAt)}
+                        </span>
+                        {(isAdministrator || isSuperAdmin) && (
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            <button
+                              type="button"
+                              title="Edit tracking event"
+                              onClick={() => onOpenEditTracking && onOpenEditTracking(selectedOrder, item)}
+                              style={{
+                                border: "none",
+                                background: "#F1F5F9",
+                                color: "#475569",
+                                cursor: "pointer",
+                                padding: "4px",
+                                borderRadius: "4px",
+                                display: "flex",
+                                alignItems: "center"
+                              }}
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete tracking event"
+                              onClick={() => onDeleteTracking && onDeleteTracking(item.id)}
+                              style={{
+                                border: "none",
+                                background: "#FEF2F2",
+                                color: "#DC2626",
+                                cursor: "pointer",
+                                padding: "4px",
+                                borderRadius: "4px",
+                                display: "flex",
+                                alignItems: "center"
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {item.description && (
-                      <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px" }}>
+                      <div style={{ fontSize: "12px", color: "#334155", marginTop: "4px", lineHeight: "1.4" }}>
                         {item.description}
                       </div>
                     )}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px", fontSize: "11px", color: "#64748B" }}>
-                      <span>Updated by: <strong style={{ color: "#334155" }}>{item.updatedBy || "System Admin"}</strong></span>
-                      {item.stage && (
-                        <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>
-                          {item.stage}
-                        </span>
-                      )}
-                    </div>
                   </div>
                 ))}
+
+                {/* 2. Baseline status history if trackingUpdates is empty */}
+                {(!Array.isArray(selectedOrder.trackingUpdates) || selectedOrder.trackingUpdates.length === 0) &&
+                  selectedOrder.statusHistory.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        background: "#F8FAFC",
+                        border: "1px solid #E2E8F0",
+                        borderRadius: "8px",
+                        padding: "12px",
+                        position: "relative"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
+                          {item.title}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 500 }}>
+                          {formatDate(item.timestamp)}
+                        </span>
+                      </div>
+                      {item.description && (
+                        <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px" }}>
+                          {item.description}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px", fontSize: "11px", color: "#64748B" }}>
+                        <span>Updated by: <strong style={{ color: "#334155" }}>{item.updatedBy || "System Admin"}</strong></span>
+                        {item.stage && (
+                          <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>
+                            {item.stage}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
             ) : (
-              <div style={{ fontSize: "12px", color: "#64748B", fontStyle: "italic", padding: "8px 0" }}>
+              <div style={{ fontSize: "12px", color: "#64748B", fontStyle: "italic", padding: "12px 0", textAlign: "center" }}>
                 No tracking activities recorded yet.
+                {(isAdministrator || isSuperAdmin) && (
+                  <div style={{ marginTop: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenAddTracking && onOpenAddTracking(selectedOrder)}
+                      style={{
+                        background: "#2563EB",
+                        color: "#fff",
+                        border: "none",
+                        padding: "6px 14px",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      + Add First Tracking Update
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
 
           {/* Action Toolbar Inside Drawer */}
-          {(isSalesAdmin || isProductionAdmin || isScmAdmin || isSuperAdmin) && (
+          {(isSalesAdmin || isProductionAdmin || isScmAdmin || isAdministrator) && (
             <div className="drawer-actions-bar" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {isSalesAdmin && selectedOrder.orderStatus === "sales_registered" && (
+              {/* Sales Actions: Edit Sales Order & Incremental Payment */}
+              {(isSalesAdmin || isAdministrator) && selectedOrder.orderStatus === "sales_registered" && (
                 <button className="primary-action-btn full-w" onClick={() => openEditSalesModal(selectedOrder)}>
                   <Edit2 size={16} /> Edit Sales Order
                 </button>
               )}
 
-              {isSalesAdmin && (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" && (
+              {(isSalesAdmin || isAdministrator) && (selectedOrder.paymentStatus || "").toLowerCase() !== "paid" && (
                 <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
                   <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Record Incremental Payment</span>
                   <form onSubmit={handleRecordIncrementalPayment} style={{ display: "flex", gap: "8px", margin: 0 }}>
@@ -574,7 +738,8 @@ export const OrderDetailsDrawer = React.memo(({
                 </div>
               )}
 
-              {isProductionAdmin && selectedOrder.orderStatus !== "dispatched" && (
+              {/* Production Actions: Start & Complete Production */}
+              {(isProductionAdmin || isAdministrator) && selectedOrder.orderStatus !== "dispatched" && selectedOrder.orderStatus !== "delivered" && selectedOrder.orderStatus !== "completed" && (
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button
                     className="status-transition-btn start-prod"
@@ -595,24 +760,29 @@ export const OrderDetailsDrawer = React.memo(({
                 </div>
               )}
 
-              {isScmAdmin && (
+              {/* SCM Actions: Fill Details, Dispatch, Warranty Registration, Mark Delivered */}
+              {(isScmAdmin || isAdministrator) && (
                 <>
-                  <button
-                    className="scm-action-btn fill-details"
-                    style={{ width: "100%", padding: "10px", justifyContent: "center", fontSize: "13px" }}
-                    onClick={() => { onClose(); openScmModal(selectedOrder); }}
-                  >
-                    Fill SCM Details
-                  </button>
+                  {(selectedOrder.orderStatus === "production_complete" || (isAdministrator && selectedOrder.orderStatus !== "sales_registered" && selectedOrder.orderStatus !== "in_production")) && (
+                    <button
+                      className="scm-action-btn fill-details"
+                      style={{ width: "100%", padding: "10px", justifyContent: "center", fontSize: "13px" }}
+                      onClick={() => { onClose(); openScmModal(selectedOrder); }}
+                    >
+                      Fill SCM Details
+                    </button>
+                  )}
 
-                  <button
-                    className="scm-action-btn dispatch-btn"
-                    style={{ width: "100%", padding: "10px", justifyContent: "center", fontSize: "13px" }}
-                    onClick={() => handleDispatchOrder(selectedOrder.id)}
-                    disabled={submitting}
-                  >
-                    <Truck size={16} /> Mark as Dispatched
-                  </button>
+                  {(selectedOrder.orderStatus === "scm_complete" || (isAdministrator && selectedOrder.orderStatus === "production_complete")) && (
+                    <button
+                      className="scm-action-btn dispatch-btn"
+                      style={{ width: "100%", padding: "10px", justifyContent: "center", fontSize: "13px" }}
+                      onClick={() => handleDispatchOrder(selectedOrder.id)}
+                      disabled={submitting}
+                    >
+                      <Truck size={16} /> Mark as Dispatched
+                    </button>
+                  )}
 
                   <button
                     className="primary-action-btn full-w"
@@ -622,9 +792,20 @@ export const OrderDetailsDrawer = React.memo(({
                     Register / Update Warranty
                   </button>
 
-                  {(selectedOrder.orderStatus === "completed" || selectedOrder.orderStatus === "delivered") && (
+                  {((selectedOrder.orderStatus || "").toLowerCase() === "dispatched") && (
+                    <button
+                      className="primary-action-btn full-w"
+                      style={{ background: "#059669", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
+                      onClick={() => handleMarkAsDelivered(selectedOrder)}
+                      disabled={submitting}
+                    >
+                      <CheckCircle size={16} /> Mark as Delivered
+                    </button>
+                  )}
+
+                  {(((selectedOrder.orderStatus || "").toLowerCase() === "completed") || ((selectedOrder.orderStatus || "").toLowerCase() === "delivered")) && (
                     <div style={{ padding: "12px", background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: "10px", textAlign: "center", fontWeight: 700, fontSize: "14px" }}>
-                      ✅ Order Completed (Received by Customer)
+                      ✅ Order Completed (Delivered)
                     </div>
                   )}
                 </>

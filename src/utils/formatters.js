@@ -141,9 +141,14 @@ export const calculateExpiryAndTotal = (startDateStr, fullY, fullM, servY, servM
   }
 
   let expiryDateStr = "";
+  let fullWarrantyEndDate = "";
+  let serviceWarrantyStartDate = "";
+  let serviceWarrantyEndDate = "";
+
   if (startDateStr) {
     const start = new Date(startDateStr);
     if (!isNaN(start.getTime())) {
+      // 1. Total Expiry Date
       const end = new Date(start);
       end.setFullYear(start.getFullYear() + totalYears);
       end.setMonth(start.getMonth() + totalMonths);
@@ -153,12 +158,35 @@ export const calculateExpiryAndTotal = (startDateStr, fullY, fullM, servY, servM
       const mm = String(end.getMonth() + 1).padStart(2, '0');
       const dd = String(end.getDate()).padStart(2, '0');
       expiryDateStr = `${yyyy}-${mm}-${dd}`;
+
+      // 2. Full Warranty End Date
+      if (fy > 0 || fm > 0) {
+        const fullEnd = new Date(start);
+        fullEnd.setFullYear(start.getFullYear() + fy);
+        fullEnd.setMonth(start.getMonth() + fm);
+        fullEnd.setDate(fullEnd.getDate() - 1);
+        fullWarrantyEndDate = `${fullEnd.getFullYear()}-${String(fullEnd.getMonth() + 1).padStart(2, '0')}-${String(fullEnd.getDate()).padStart(2, '0')}`;
+      } else {
+        fullWarrantyEndDate = expiryDateStr;
+      }
+
+      // 3. Service Warranty Start & End Date
+      if (sy > 0 || sm > 0) {
+        const servStart = new Date(start);
+        servStart.setFullYear(start.getFullYear() + fy);
+        servStart.setMonth(start.getMonth() + fm);
+        serviceWarrantyStartDate = `${servStart.getFullYear()}-${String(servStart.getMonth() + 1).padStart(2, '0')}-${String(servStart.getDate()).padStart(2, '0')}`;
+        serviceWarrantyEndDate = expiryDateStr;
+      }
     }
   }
 
   return {
     totalWarrantyLabel,
     expiryDateStr,
+    fullWarrantyEndDate: fullWarrantyEndDate || expiryDateStr,
+    serviceWarrantyStartDate: serviceWarrantyStartDate || null,
+    serviceWarrantyEndDate: serviceWarrantyEndDate || null,
     totalYearsDecimal: totalYears + (totalMonths / 12),
     fullWarrantyMonths: fy * 12 + fm,
     serviceWarrantyMonths: sy * 12 + sm

@@ -11,6 +11,12 @@ export default function SalesDashboard() {
 
   const fetchSalesData = useCallback(async () => {
     try {
+      const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
+      if (["ADMIN", "SUPER_ADMIN", "ADMINISTRATOR"].includes(userRole)) {
+        const all = await orderService.adminGetAllOrders();
+        const arr = Array.isArray(all) ? all : Array.isArray(all?.orders) ? all.orders : [];
+        if (arr.length > 0) return arr;
+      }
       return await orderService.salesGetMyOrders();
     } catch (err) {
       console.warn("Failed to fetch sales orders for dashboard:", err);

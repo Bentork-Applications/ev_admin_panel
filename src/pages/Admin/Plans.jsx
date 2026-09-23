@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import ChargingPlanCard from "../../components/card/ChargingPlanCard";
 import EditForm from "../../pages/Admin/form/editform";
+import { planService } from "../../services/planService";
+import { chargerService } from "../../services/chargerService";
+import {
+  encodeChargerPlanDescription,
+  stripChargerIdFromDescription,
+  isPlanAssignedToCharger
+} from "../../utils/planUtils";
 
 const ACCENT = "#7c3aed";
 
-export default function PlansPage({ baseUrl }) {
+export default function PlansPage({ baseUrl: propBaseUrl }) {
+  const baseUrl = propBaseUrl || import.meta.env.VITE_API_URL || "";
   const [plans, setPlans] = useState([]);
   const [chargers, setChargers] = useState([]);
   const [selectedCharger, setSelectedCharger] = useState(null);
@@ -26,59 +34,54 @@ export default function PlansPage({ baseUrl }) {
     chargerType: "AC",
   });
 
+  const refreshPlans = useCallback(async () => {
+    try {
+      const data = await planService.getAllPlans();
+      setPlans(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to refresh plans:", err);
+    }
+  }, []);
+
   // ✅ Fetch all chargers and plans
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!plans || plans.length === 0) setLoading(true);
-    if (!chargers || chargers.length === 0) setChargersLoading(true);
+    let isMounted = true;
+    setLoading(true);
+    setChargersLoading(true);
 
-    // Fetch Chargers
-    fetch(`${baseUrl}/chargers/all`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch chargers: ${res.status} - ${text}`);
-        }
-        return res.json();
-      })
+    chargerService.getAllChargers()
       .then((data) => {
-        setChargers(data || []);
-        setChargersLoading(false);
+        if (isMounted) {
+          setChargers(Array.isArray(data) ? data : []);
+          setChargersLoading(false);
+        }
       })
       .catch((err) => {
-        console.error("Error fetching chargers:", err);
-        setChargersLoading(false);
+        if (isMounted) {
+          console.error("Error fetching chargers:", err);
+          setChargersLoading(false);
+        }
       });
 
-    // Fetch Plans
-    fetch(`${baseUrl}/plans/all`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Failed to fetch plans: ${res.status} - ${text}`);
-        }
-        return res.json();
-      })
+    planService.getAllPlans()
       .then((data) => {
-        setPlans(data || []);
-        setLoading(false);
+        if (isMounted) {
+          setPlans(Array.isArray(data) ? data : []);
+          setLoading(false);
+        }
       })
       .catch((err) => {
-        console.error("Error fetching plans:", err);
-        setError(err.message);
-        setLoading(false);
+        if (isMounted) {
+          console.error("Error fetching plans:", err);
+          setError(err.message);
+          setLoading(false);
+        }
       });
-  }, [baseUrl]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Set default charger type when selected charger changes
   useEffect(() => {
@@ -92,18 +95,10 @@ export default function PlansPage({ baseUrl }) {
 
   // ✅ Delete Plan
   const handleDelete = async (id) => {
-    const token = localStorage.getItem("token");
     if (!window.confirm("Are you sure you want to delete this plan?")) return;
 
     try {
-      const res = await fetch(`${baseUrl}/plans/delete/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await res.text();
-      if (!res.ok) throw new Error(data || "Failed to delete plan");
-
+      await planService.deletePlan(id);
       setPlans((prev) => prev.filter((plan) => plan.id !== id));
       setMessage("✅ Plan deleted successfully");
       await refreshPlans();
@@ -157,10 +152,9 @@ export default function PlansPage({ baseUrl }) {
       return;
     }
 
-    const token = localStorage.getItem("token");
     const payload = {
-      planName: newPlan.planName,
-      description: `[C:${selectedCharger.id}] ${newPlan.description}`,
+      planName: newPlan.planName.trim(),
+      description: encodeChargerPlanDescription(selectedCharger.id, newPlan.description),
       durationMin: Number(newPlan.durationMin),
       rate: Number(newPlan.rate),
       walletDeduction: Number(newPlan.walletDeduction),
@@ -168,18 +162,7 @@ export default function PlansPage({ baseUrl }) {
     };
 
     try {
-      const res = await fetch(`${baseUrl}/plans/add`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const text = await res.text();
-      if (!res.ok) throw new Error(text || "Failed to add plan");
-
+      await planService.createPlan(payload);
       await refreshPlans();
       setMessage("✅ New plan added successfully");
       setShowAddModal(false);
@@ -196,35 +179,20 @@ export default function PlansPage({ baseUrl }) {
     }
   };
 
-  const refreshPlans = async () => {
-    const token = localStorage.getItem("token");
-    try {
-      const res = await fetch(`${baseUrl}/plans/all`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPlans(data);
-      }
-    } catch {
-      // ignore
-    }
-  };
-
   // Filter plans for the selected charger
   const filteredPlans = selectedCharger
-    ? plans.filter((p) => p.isActive !== false && p.description && p.description.startsWith(`[C:${selectedCharger.id}]`))
+    ? plans.filter((p) => p.isActive !== false && isPlanAssignedToCharger(p, selectedCharger.id))
     : [];
 
   // Deduplicate and get plans from other chargers to assign
   const availablePlansToAssign = selectedCharger
-    ? plans.filter((p) => p.isActive !== false && (!p.description || !p.description.startsWith(`[C:${selectedCharger.id}]`)))
+    ? plans.filter((p) => p.isActive !== false && !isPlanAssignedToCharger(p, selectedCharger.id))
     : [];
 
   const uniqueTemplates = [];
   const templateKeys = new Set();
   availablePlansToAssign.forEach((p) => {
-    const cleanDesc = p.description?.replace(/^\[C:\d+\]\s*/, "") || "";
+    const cleanDesc = stripChargerIdFromDescription(p.description);
     const key = `${p.planName}_${p.rate}_${p.durationMin}_${p.walletDeduction}_${p.chargerType}`;
     if (!templateKeys.has(key)) {
       templateKeys.add(key);
@@ -711,10 +679,9 @@ export default function PlansPage({ baseUrl }) {
                     </div>
                     <button
                       onClick={async () => {
-                        const token = localStorage.getItem("token");
                         const payload = {
                           planName: template.planName,
-                          description: `[C:${selectedCharger.id}] ${template.cleanDescription}`,
+                          description: encodeChargerPlanDescription(selectedCharger.id, template.cleanDescription),
                           durationMin: template.durationMin,
                           rate: template.rate,
                           walletDeduction: template.walletDeduction,
@@ -722,16 +689,7 @@ export default function PlansPage({ baseUrl }) {
                         };
 
                         try {
-                          const res = await fetch(`${baseUrl}/plans/add`, {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                              Authorization: `Bearer ${token}`,
-                            },
-                            body: JSON.stringify(payload),
-                          });
-                          if (!res.ok) throw new Error("Failed to assign plan");
-
+                          await planService.createPlan(payload);
                           await refreshPlans();
                           setMessage(`✅ Plan "${template.planName}" assigned successfully`);
                           setShowAssignModal(false);

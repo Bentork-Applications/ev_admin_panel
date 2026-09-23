@@ -14,7 +14,7 @@ import {
 const generateData = (range) => {
   const data = [];
   const now = new Date();
-  
+
   if (range === "24h") {
     for (let i = 23; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 60 * 60 * 1000);
@@ -144,16 +144,16 @@ export default function StationOverviewChart() {
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="colorUptime" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.2}/>
-                <stop offset="95%" stopColor="#7C3AED" stopOpacity={0.0}/>
+                <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#7C3AED" stopOpacity={0.0} />
               </linearGradient>
               <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#14B8A6" stopOpacity={0.2}/>
-                <stop offset="95%" stopColor="#14B8A6" stopOpacity={0.0}/>
+                <stop offset="5%" stopColor="#14B8A6" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#14B8A6" stopOpacity={0.0} />
               </linearGradient>
               <linearGradient id="colorErrors" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#EF4444" stopOpacity={0.2}/>
-                <stop offset="95%" stopColor="#EF4444" stopOpacity={0.0}/>
+                <stop offset="5%" stopColor="#EF4444" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#EF4444" stopOpacity={0.0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />

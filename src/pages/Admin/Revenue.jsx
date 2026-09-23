@@ -6,6 +6,10 @@ import SessionTable from "../../components/admin/SessionTable";
 import SearchBar from "../../components/admin/SearchBar";
 import RevenueChart from "../../components/admin/RevenueChart";
 import { getExportMetadataHeader } from "../../utils/watermark";
+import { revenueService } from "../../services/revenueService";
+import { dealerService } from "../../services/dealerService";
+import { stationService } from "../../services/stationService";
+import { chargerService } from "../../services/chargerService";
 
 const RevenueSkeleton = () => (
   <div className="revenue-container">
@@ -72,7 +76,7 @@ const ErrorDisplay = ({ message }) => (
   </div>
 );
 
-const RevenuePage = ({ baseUrl, userRole }) => {
+const RevenuePage = ({ userRole }) => {
   const navigate = useNavigate();
   const isDealer = userRole === "DEALER";
   const [summaryStats, setSummaryStats] = useState({});
@@ -94,7 +98,7 @@ const RevenuePage = ({ baseUrl, userRole }) => {
 
   useEffect(() => {
     const fetchAllData = async () => {
-      if (!revenueRecords || revenueRecords.length === 0) setLoading(true);
+      setLoading(true);
       setError(null);
 
       const token = localStorage.getItem("token");
@@ -103,56 +107,23 @@ const RevenuePage = ({ baseUrl, userRole }) => {
         return;
       }
 
-      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-      const cleanBaseUrl = (baseUrl || import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-
-      const fetchData = async (endpoint) => {
-        try {
-          const cleanEndpoint = endpoint.startsWith("/") ? endpoint : "/" + endpoint;
-          const res = await fetch(`${cleanBaseUrl}${cleanEndpoint}`, { headers });
-          if (!res.ok) return null;
-          return await res.json();
-        } catch (err) {
-          console.error(`Fetch error for ${endpoint}:`, err);
-          return null;
-        }
-      };
-
       try {
         if (isDealer) {
           const [totalRevRes, records, dealerStations, dealerChargers] = await Promise.all([
-            fetchData("/dealer/revenue/total"),
-            fetchData("/dealer/revenue"),
-            fetchData("/dealer/stations"),
-            fetchData("/dealer/chargers")
+            revenueService.getDealerTotalRevenue().catch(() => 0),
+            revenueService.getDealerRevenueRecords().catch(() => []),
+            revenueService.getDealerStations().catch(() => []),
+            revenueService.getDealerChargers().catch(() => [])
           ]);
 
-          let revList = Array.isArray(records) ? records : (Array.isArray(records?.data) ? records.data : []);
-          if (revList.length === 0) {
-            const dealerSessions = await fetchData("/dealer/sessions");
-            if (Array.isArray(dealerSessions) && dealerSessions.length > 0) {
-              revList = dealerSessions.map(s => ({
-                id: s.id,
-                sessionId: s.id,
-                userId: s.userId || s.user?.id || 'N/A',
-                chargerId: s.chargerId || s.charger?.id || 'N/A',
-                stationId: s.stationId || s.station?.id || 'N/A',
-                amount: parseFloat(s.cost || s.totalCost || s.amount || (s.energyKwh ? s.energyKwh * 15 : 0)) || 0,
-                paymentMethod: s.paymentMethod || 'App Wallet',
-                transactionId: s.transactionId || `TXN-SESS-${s.id}`,
-                paymentStatus: (s.status === 'COMPLETED' || s.status === 'STOPPED' || s.status === 'ACTIVE' || s.status === 'success') ? 'SUCCESS' : (s.status || 'SUCCESS'),
-                createdAt: s.startTime || s.createdAt || new Date().toISOString()
-              }));
-            }
-          }
-
+          const revList = Array.isArray(records) ? records : (Array.isArray(records?.data) ? records.data : []);
           const totalRevVal = typeof totalRevRes === 'object' && totalRevRes !== null ? (totalRevRes.totalRevenue ?? 0) : (Number(totalRevRes) || 0);
 
           setSummaryStats({
             totalRevenue: totalRevVal,
             pendingRevenue: 0,
             totalTransactions: revList.length,
-            successRate: 100
+            successRate: revList.length > 0 ? 100 : 0
           });
           setRevenueRecords(revList);
           setStations(Array.isArray(dealerStations) ? dealerStations : []);
@@ -163,36 +134,18 @@ const RevenuePage = ({ baseUrl, userRole }) => {
             totalRev, pendingRev, transCount, sRate,
             records, allDealers, allStations, allChargers, allAssignments
           ] = await Promise.all([
-            fetchData("/revenue/total"),
-            fetchData("/revenue/pending"),
-            fetchData("/revenue/transactions/total"),
-            fetchData("/revenue/success-rate"),
-            fetchData("/revenue/all"),
-            fetchData("/admin/alladmin"),
-            fetchData("/stations/all"),
-            fetchData("/chargers/all"),
-            fetchData("/dealer-stations")
+            revenueService.getTotalRevenue().catch(() => 0),
+            revenueService.getPendingRevenue().catch(() => 0),
+            revenueService.getTotalTransactions().catch(() => 0),
+            revenueService.getSuccessRate().catch(() => 0),
+            revenueService.getAllRevenueRecords().catch(() => []),
+            dealerService.getAllAdmins().catch(() => []),
+            stationService.getAllStations().catch(() => []),
+            chargerService.getAllChargers().catch(() => []),
+            dealerService.getAllDealerAssignments().catch(() => [])
           ]);
 
-          let revList = Array.isArray(records) ? records : (Array.isArray(records?.data) ? records.data : []);
-
-          if (revList.length === 0) {
-            const sessionRecords = await fetchData("/sessions/all/records");
-            if (Array.isArray(sessionRecords) && sessionRecords.length > 0) {
-              revList = sessionRecords.map(s => ({
-                id: s.id,
-                sessionId: s.id,
-                userId: s.userId || s.user?.id || 'N/A',
-                chargerId: s.chargerId || s.charger?.id || 'N/A',
-                stationId: s.stationId || s.station?.id || 'N/A',
-                amount: parseFloat(s.cost || s.totalCost || s.amount || (s.energyKwh ? s.energyKwh * 15 : 0)) || 0,
-                paymentMethod: s.paymentMethod || 'App Wallet',
-                transactionId: s.transactionId || `TXN-SESS-${s.id}`,
-                paymentStatus: (s.status === 'COMPLETED' || s.status === 'STOPPED' || s.status === 'ACTIVE' || s.status === 'success') ? 'SUCCESS' : (s.status || 'SUCCESS'),
-                createdAt: s.startTime || s.createdAt || new Date().toISOString()
-              }));
-            }
-          }
+          const revList = Array.isArray(records) ? records : (Array.isArray(records?.data) ? records.data : []);
 
           setSummaryStats({
             totalRevenue: Number(totalRev) || 0,
@@ -215,7 +168,7 @@ const RevenuePage = ({ baseUrl, userRole }) => {
       }
     };
     fetchAllData();
-  }, [baseUrl, navigate, isDealer]);
+  }, [navigate, isDealer]);
 
   // Cascading Filter Options
   const stationOptions = useMemo(() => {
@@ -833,7 +786,6 @@ const AnimatedNumber = ({ value }) => {
       return;
     }
     let start = 0;
-    const duration = 400; // ms
     const stepTime = 15;
     const increment = target / 20;
     const timer = setInterval(() => {

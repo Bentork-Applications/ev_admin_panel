@@ -18,10 +18,22 @@ export const slotService = {
   },
 
   deleteSlot: async (id) => {
-    return await apiClient.delete(`/slots/delete/${id}`);
+    return await apiClient.delete(`/slots/${id}`);
   },
 
   getAllBookings: async () => {
     return await apiClient.get("/slots/bookings/all");
+  },
+
+  getBookingsByStation: async (stationId) => {
+    return await apiClient.get(`/slot-bookings/station/${stationId}`);
+  },
+
+  getAvailableSlotsByCharger: async (chargerId) => {
+    return await apiClient.get(`/slots/charger/${chargerId}/available`);
+  },
+
+  cancelBooking: async (bookingId) => {
+    return await apiClient.put(`/slot-bookings/${bookingId}/cancel`);
   }
 };

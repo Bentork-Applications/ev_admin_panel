@@ -3,13 +3,13 @@ import { Routes, Route, useNavigate } from "react-router-dom";
 import Topbar from "../../components/admin/topbar";
 import Sidebar from "../../components/admin/Sidebar";
 import Card from "../../components/card/card.jsx";
-import LogoutModal from "../../components/common/LogoutModal";
+import LogoutModal from "../../components/admin/LogoutModal";
 
-const Stations = lazy(() => import("./Stations"));
-const Charger = lazy(() => import("./Charger"));
-const Sessions = lazy(() => import("./Sessions"));
-const Slot = lazy(() => import("./Slot"));
-const Users = lazy(() => import("./Users"));
+const Stations = lazy(() => import("../pages/Admin/Stations"));
+const Charger = lazy(() => import("../pages/Admin/Charger"));
+const Sessions = lazy(() => import("../pages/Admin/Sessions"));
+const Slot = lazy(() => import("../pages/Admin/Slot"));
+const Users = lazy(() => import("../pages/Admin/Users"));
 
 export default function Dashboard() {
   const [isSidebarOpen] = useState(true);

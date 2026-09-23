@@ -32,23 +32,23 @@ function AnimatedCounter({ value }) {
     const frameRate = 1000 / 60;
     const totalFrames = Math.round(duration / frameRate);
     let frame = 0;
-    
+
     const counter = setInterval(() => {
       frame++;
       const progress = frame / totalFrames;
       const currentCount = end * (progress * (2 - progress));
-      
+
       if (frame >= totalFrames) {
         setCount(value);
         clearInterval(counter);
       } else {
-        const displayVal = Number.isInteger(end) 
-          ? Math.round(currentCount) 
+        const displayVal = Number.isInteger(end)
+          ? Math.round(currentCount)
           : currentCount.toFixed(1);
         setCount(hasPercent ? `${displayVal}%` : displayVal);
       }
     }, frameRate);
-    
+
     return () => clearInterval(counter);
   }, [value]);
 
@@ -93,7 +93,7 @@ function Stations({ baseUrl, userRole }) {
   const [stations, setStations] = useState([]);
   const [chargers, setChargers] = useState([]);
   const [sessions, setSessions] = useState([]);
-  
+
   const [summaryData, setSummaryData] = useState({
     totalStations: '...',
     activeStations: '...',
@@ -107,7 +107,7 @@ function Stations({ baseUrl, userRole }) {
   const [selectedStation, setSelectedStation] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // Advanced Filter Drawer State
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("All");
@@ -322,7 +322,7 @@ function Stations({ baseUrl, userRole }) {
 
   const handleToggleStatus = async (sta) => {
     const newStatus = sta.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-    
+
     setStations(prev => prev.map(s => s.id === sta.id ? { ...s, status: newStatus } : s));
     setSummaryData(prev => {
       const change = newStatus === "ACTIVE" ? 1 : -1;
@@ -390,9 +390,9 @@ function Stations({ baseUrl, userRole }) {
         s.status,
         s.directionLink || ""
       ]);
-      const csvContent = "data:text/csv;charset=utf-8," 
+      const csvContent = "data:text/csv;charset=utf-8,"
         + [metaHeader, headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-      
+
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
@@ -423,7 +423,7 @@ function Stations({ baseUrl, userRole }) {
   // Filters logic
   const filteredStations = useMemo(() => {
     return stations.filter((station) => {
-      const matchesSearch = 
+      const matchesSearch =
         station.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         String(station.id).includes(searchTerm) ||
         (station.locationId && String(station.locationId).includes(searchTerm));
@@ -435,7 +435,7 @@ function Stations({ baseUrl, userRole }) {
       const stationChargers = chargers.filter(c => c.stationId === station.id);
       const isDCOnly = stationChargers.some(c => c.chargerType === "DC");
       const isACOnly = stationChargers.every(c => c.chargerType === "AC") && stationChargers.length > 0;
-      
+
       let matchesCapacity = true;
       if (capacityFilter === "AC") matchesCapacity = isACOnly;
       if (capacityFilter === "DC") matchesCapacity = isDCOnly;
@@ -455,7 +455,7 @@ function Stations({ baseUrl, userRole }) {
       x: rect.left + window.scrollX,
       y: rect.bottom + window.scrollY + 8
     });
-    
+
     const stationChargers = chargers.filter(c => c.stationId === sta.id);
     setHoveredStation({
       ...sta,
@@ -468,7 +468,7 @@ function Stations({ baseUrl, userRole }) {
   };
 
   return (
-    <motion.div 
+    <motion.div
       className="stations-page-wrapper"
       initial="hidden"
       animate="show"
@@ -1179,14 +1179,14 @@ function Stations({ baseUrl, userRole }) {
         <AnimatePresence>
           {isFilterDrawerOpen && (
             <>
-              <motion.div 
+              <motion.div
                 className="filter-drawer-backdrop"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsFilterDrawerOpen(false)}
               />
-              <motion.div 
+              <motion.div
                 className="filter-drawer"
                 initial={{ x: "100%" }}
                 animate={{ x: 0 }}
@@ -1197,13 +1197,13 @@ function Stations({ baseUrl, userRole }) {
                   <h3 className="drawer-title">Advanced Filters</h3>
                   <button className="drawer-close-btn" onClick={() => setIsFilterDrawerOpen(false)}>×</button>
                 </div>
-                
+
                 <div className="drawer-body">
                   <div className="drawer-form-group">
                     <label>Station Status</label>
-                    <select 
-                      className="drawer-select" 
-                      value={statusFilter} 
+                    <select
+                      className="drawer-select"
+                      value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
                     >
                       <option value="All">All Statuses</option>
@@ -1214,9 +1214,9 @@ function Stations({ baseUrl, userRole }) {
 
                   <div className="drawer-form-group">
                     <label>City</label>
-                    <select 
-                      className="drawer-select" 
-                      value={cityFilter} 
+                    <select
+                      className="drawer-select"
+                      value={cityFilter}
                       onChange={(e) => setCityFilter(e.target.value)}
                     >
                       {uniqueCities.map(c => (
@@ -1227,9 +1227,9 @@ function Stations({ baseUrl, userRole }) {
 
                   <div className="drawer-form-group">
                     <label>Capacity Threshold</label>
-                    <select 
-                      className="drawer-select" 
-                      value={capacityFilter} 
+                    <select
+                      className="drawer-select"
+                      value={capacityFilter}
                       onChange={(e) => setCapacityFilter(e.target.value)}
                     >
                       <option value="All">All Capacities</option>
@@ -1240,9 +1240,9 @@ function Stations({ baseUrl, userRole }) {
 
                   <div className="drawer-form-group">
                     <label>Connector Type</label>
-                    <select 
-                      className="drawer-select" 
-                      value={connectorFilter} 
+                    <select
+                      className="drawer-select"
+                      value={connectorFilter}
                       onChange={(e) => setConnectorFilter(e.target.value)}
                     >
                       <option value="All">All Connectors</option>
@@ -1254,8 +1254,8 @@ function Stations({ baseUrl, userRole }) {
                 </div>
 
                 <div className="drawer-footer">
-                  <button 
-                    className="action-outlined-btn" 
+                  <button
+                    className="action-outlined-btn"
                     style={{ flex: 1 }}
                     onClick={() => {
                       setStatusFilter("All");
@@ -1267,8 +1267,8 @@ function Stations({ baseUrl, userRole }) {
                   >
                     Reset
                   </button>
-                  <button 
-                    className="action-outlined-btn primary" 
+                  <button
+                    className="action-outlined-btn primary"
                     style={{ flex: 1 }}
                     onClick={() => {
                       setIsFilterDrawerOpen(false);
@@ -1299,7 +1299,7 @@ function Stations({ baseUrl, userRole }) {
                 <div>📍 {hoveredStation.location?.address || "N/A"}</div>
                 <div style={{ marginTop: "4px" }}>⚡ Chargers count: {hoveredStation.chargerCount}</div>
               </div>
-              <button 
+              <button
                 className="action-outlined-btn"
                 style={{ width: "100%", padding: "6px 12px", justifyContent: "center" }}
                 onClick={() => handleEdit(hoveredStation)}
@@ -1451,24 +1451,24 @@ function Stations({ baseUrl, userRole }) {
 
                     return (
                       <React.Fragment key={sta.id}>
-                        <tr 
+                        <tr
                           className="table-row"
                           onClick={() => setExpandedRowId(isExpanded ? null : sta.id)}
                         >
-                          <td 
+                          <td
                             className="table-td td-name"
                             onMouseEnter={(e) => handleNameMouseEnter(sta, e)}
                             onMouseLeave={handleNameMouseLeave}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span>{sta.name || 'N/A'}</span>
-                              <svg 
-                                width="12" 
-                                height="12" 
-                                viewBox="0 0 24 24" 
-                                fill="none" 
-                                stroke="#9CA3AF" 
-                                strokeWidth="2.5" 
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="#9CA3AF"
+                                strokeWidth="2.5"
                                 style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s' }}
                               >
                                 <polyline points="6 9 12 15 18 9"></polyline>
@@ -1548,7 +1548,7 @@ function Stations({ baseUrl, userRole }) {
                                           </svg>
                                         </div>
                                       </div>
-                                      
+
                                       <div className="details-grid">
                                         <div className="details-item">
                                           <span className="details-label">Station Name</span>
@@ -1623,7 +1623,7 @@ function Stations({ baseUrl, userRole }) {
 
 // Staggered KPI Card component
 const Card = ({ title, value, icon, subtext }) => (
-  <motion.div 
+  <motion.div
     className="station-card"
     variants={itemVariants}
     whileHover={{
@@ -1635,7 +1635,7 @@ const Card = ({ title, value, icon, subtext }) => (
   >
     <div className="card-header">
       <span className="card-title">{title}</span>
-      <motion.div 
+      <motion.div
         className="stat-icon-circle"
         whileHover={{ rotate: 12 }}
       >

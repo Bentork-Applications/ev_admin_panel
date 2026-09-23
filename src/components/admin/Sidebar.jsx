@@ -16,10 +16,13 @@ import logoutIcon from "../../assets/icons/log.svg";
 import LogoutModal from "../../components/admin/LogoutModal";
 import { warrantyService } from "../../services/warrantyService";
 import { orderService } from "../../services/orderService";
+import { authService } from "../../services/authService";
 import { apiClient } from "../../services/apiClient";
 import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
 
-export default function Sidebar({ onLogout, isMobileOpen, setIsMobileOpen, userRole, baseUrl: propBaseUrl }) {
+export default function Sidebar({ onLogout, isMobileOpen: _isMobileOpen, setIsMobileOpen: _setIsMobileOpen, userRole, baseUrl: propBaseUrl }) {
+  void _isMobileOpen;
+  void _setIsMobileOpen;
   const navigate = useNavigate();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
@@ -77,6 +80,17 @@ export default function Sidebar({ onLogout, isMobileOpen, setIsMobileOpen, userR
             return await warrantyService.getPendingCount();
           }
         }
+      ]
+    },
+    {
+      title: "Material Inventory",
+      items: [
+        { name: "Vendors", icon: staffIcon, path: "/dashboard/vendors", roles: ["ADMIN", "SCM_ADMIN", "SCM"] },
+        { name: "Purchase Orders", icon: plansIcon, path: "/dashboard/purchase-orders", roles: ["ADMIN", "SCM_ADMIN", "SCM"] },
+        { name: "Material IN", icon: stationsIcon, path: "/dashboard/material-in", roles: ["ADMIN", "SCM_ADMIN", "SCM"] },
+        { name: "Material OUT", icon: chargerIcon, path: "/dashboard/material-out", roles: ["ADMIN", "SCM_ADMIN", "SCM"] },
+        { name: "Inventory Stock", icon: dashboardIcon, path: "/dashboard/inventory-stock", roles: ["ADMIN", "SCM_ADMIN", "SCM"] },
+        { name: "Material Reports", icon: maintenanceIcon, path: "/dashboard/material-reports", roles: ["ADMIN", "SCM_ADMIN", "SCM"] }
       ]
     },
     {
@@ -247,7 +261,7 @@ export default function Sidebar({ onLogout, isMobileOpen, setIsMobileOpen, userR
     if (typeof onLogout === "function") {
       onLogout(); // call parent handler
     } else {
-      localStorage.removeItem("auth"); // or token
+      authService.logout();
       navigate("/"); // redirect to login
     }
   };

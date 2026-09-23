@@ -12,7 +12,14 @@ export default function ProductionDashboard() {
   const fetchProductionData = useCallback(async () => {
     let data = [];
     try {
-      data = await orderService.productionGetOrders();
+      const userRole = (localStorage.getItem("userRole") || "").toUpperCase();
+      if (["ADMIN", "SUPER_ADMIN", "ADMINISTRATOR"].includes(userRole)) {
+        const all = await orderService.adminGetAllOrders();
+        data = Array.isArray(all) ? all : Array.isArray(all?.orders) ? all.orders : [];
+      }
+      if (!data || data.length === 0) {
+        data = await orderService.productionGetOrders();
+      }
     } catch (err) {
       console.warn("Failed to fetch production orders for dashboard:", err);
     }

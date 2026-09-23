@@ -261,11 +261,48 @@ export const ScmDetailsModal = React.memo(({
                       </div>
                     </div>
 
-                    {/* Auto-calculated Total Warranty & Expiry Info */}
-                    <div style={{ fontSize: "11px", color: "#065F46", background: "#ECFDF5", padding: "6px 10px", borderRadius: "6px", border: "1px solid #A7F3D0", marginTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
-                      <span>Total Coverage: <strong>{item.totalWarrantyLabel || "1 Year"}</strong></span>
-                      <span>Expiry: <strong>{item.warrantyEndDate || "—"}</strong></span>
-                    </div>
+                    {/* Battery Warranty Summary */}
+                    {(() => {
+                      const fY = parseInt(item.fullWarrantyYears ?? "1", 10) || 0;
+                      const fM = parseInt(item.fullWarrantyMonths ?? "0", 10) || 0;
+                      const sY = parseInt(item.serviceWarrantyYears ?? "0", 10) || 0;
+                      const sM = parseInt(item.serviceWarrantyMonths ?? "0", 10) || 0;
+                      const fmt = (y, m) => {
+                        if (y > 0 && m > 0) return `${y} Year${y > 1 ? "s" : ""} ${m} Month${m > 1 ? "s" : ""}`;
+                        if (y > 0) return `${y} Year${y > 1 ? "s" : ""}`;
+                        if (m > 0) return `${m} Month${m > 1 ? "s" : ""}`;
+                        return "0 Years";
+                      };
+                      return (
+                        <div style={{
+                          background: "#F8FAFC",
+                          border: "1px solid #E2E8F0",
+                          borderRadius: "8px",
+                          padding: "12px 14px",
+                          marginTop: "12px"
+                        }}>
+                          <div style={{ fontSize: "12px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>
+                            Battery Warranty
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "10px", fontSize: "12px", color: "#475569", flexWrap: "wrap" }}>
+                            <div>Full Warranty: <strong style={{ color: "#0F172A" }}>{fmt(fY, fM)}</strong></div>
+                            <div>Service Warranty: <strong style={{ color: "#0F172A" }}>{fmt(sY, sM)}</strong></div>
+                          </div>
+                          <div style={{
+                            background: "#EFF6FF",
+                            border: "1.5px solid #3B82F6",
+                            borderRadius: "6px",
+                            padding: "8px 12px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}>
+                            <span style={{ fontSize: "13px", fontWeight: 700, color: "#1E3A8A" }}>Total Warranty</span>
+                            <span style={{ fontSize: "15px", fontWeight: 800, color: "#1D4ED8" }}>{item.totalWarrantyLabel || "1 Year"}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Barcode Sequence Info Badge */}
                     <div style={{ fontSize: "11px", color: "#64748B", background: "#F8FAFC", padding: "6px 10px", borderRadius: "6px", border: "1px solid #E2E8F0", marginTop: "6px", wordBreak: "break-word" }}>

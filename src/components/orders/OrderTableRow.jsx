@@ -7,6 +7,8 @@ export const OrderTableRow = React.memo(({
   isProductionAdmin,
   isScmAdmin,
   isSuperAdmin,
+  isAdministrator,
+  isAdminStaff,
   submitting,
   onViewDetails,
   onEditSales,
@@ -21,8 +23,11 @@ export const OrderTableRow = React.memo(({
 }) => {
   const statusBadge = getStatusBadge(order.orderStatus);
   const priorityBadge = getPriorityBadge(order.priority);
-  const isSalesRegistered = order.orderStatus === "sales_registered";
-  const isScmComplete = order.orderStatus === "scm_complete";
+  const orderStatusLower = (order.orderStatus || "").toLowerCase();
+  const isSalesRegistered = orderStatusLower === "sales_registered";
+  const isScmComplete = orderStatusLower === "scm_complete";
+  const isDispatched = orderStatusLower === "dispatched";
+  const isDelivered = orderStatusLower === "delivered" || orderStatusLower === "completed";
 
   return (
     <tr onClick={() => onViewDetails(order.id)}>
@@ -132,7 +137,7 @@ export const OrderTableRow = React.memo(({
                 ? "Unpaid"
                 : "Pending"}
           </span>
-          {(isSalesAdmin || isSuperAdmin) && (
+          {(isSalesAdmin || isAdministrator || isSuperAdmin) && (
             <div style={{ fontSize: "11px", fontWeight: 600, color: (Number(order.pendingAmount) || (order.paymentStatus === "paid" ? 0 : 1)) > 0 ? "#DC2626" : "#059669", marginTop: "2px" }}>
               Pending: ₹{parseFloat(order.pendingAmount !== undefined && order.pendingAmount !== null ? order.pendingAmount : (order.paymentStatus === "paid" ? 0 : (order.totalAmount || order.totalPrice || 0))).toLocaleString("en-IN")}
             </div>
@@ -162,8 +167,8 @@ export const OrderTableRow = React.memo(({
             <Eye size={15} />
           </button>
 
-          {/* Sales Admin Edit Order */}
-          {isSalesAdmin && (
+          {/* Sales Admin & Administrator Edit Order */}
+          {(isSalesAdmin || isAdministrator) && (
             <button
               className="icon-action-btn edit-btn"
               title={isSalesRegistered ? "Edit Sales Order" : "Read-only: Order has progressed past Sales stage"}
@@ -174,8 +179,8 @@ export const OrderTableRow = React.memo(({
             </button>
           )}
 
-          {/* Production Admin Transitions */}
-          {isProductionAdmin && (
+          {/* Production Admin & Administrator Transitions */}
+          {(isProductionAdmin || isAdministrator) && (
             <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
               <select
                 className="filter-select"
@@ -192,8 +197,8 @@ export const OrderTableRow = React.memo(({
             </div>
           )}
 
-          {/* SCM Admin Actions */}
-          {isScmAdmin && (
+          {/* SCM Admin & Administrator Actions */}
+          {(isScmAdmin || isAdministrator) && (
             <>
               {order.orderStatus === "production_complete" && (
                 <button
@@ -215,11 +220,29 @@ export const OrderTableRow = React.memo(({
                 </button>
               )}
 
-              {order.orderStatus === "dispatched" && (
+              {isDispatched && (
                 <>
-                  <span className="done-badge dispatched" style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", padding: "5px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
-                    Dispatched
-                  </span>
+                  <button
+                    className="scm-action-btn"
+                    style={{
+                      background: "#059669",
+                      color: "#FFFFFF",
+                      border: "1px solid #047857",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding: "5px 10px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: submitting ? "not-allowed" : "pointer"
+                    }}
+                    disabled={submitting}
+                    onClick={() => onMarkAsDelivered && onMarkAsDelivered(order)}
+                    title="Mark Order as Delivered"
+                  >
+                    <CheckCircle size={14} /> Mark as Delivered
+                  </button>
                   <button
                     className="icon-action-btn pdf-btn"
                     title="Download Order Report (PDF)"
@@ -231,20 +254,30 @@ export const OrderTableRow = React.memo(({
                 </>
               )}
 
-              {(order.orderStatus === "completed" || order.orderStatus === "delivered") && (
-                <span className="done-badge completed" style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", padding: "5px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
-                  ✅ Completed
-                </span>
+              {isDelivered && (
+                <>
+                  <span className="done-badge completed" style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", padding: "5px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
+                    ✅ Completed
+                  </span>
+                  <button
+                    className="icon-action-btn pdf-btn"
+                    title="Download Order Report (PDF)"
+                    style={{ background: "#ECFDF5", color: "#065F46", borderColor: "#A7F3D0" }}
+                    onClick={() => onGeneratePdfReport(order)}
+                  >
+                    <FileText size={15} />
+                  </button>
+                </>
               )}
 
-              {(order.orderStatus === "sales_registered" || order.orderStatus === "in_production") && (
+              {!isAdministrator && (isSalesRegistered || orderStatusLower === "in_production") && (
                 <span className="read-only-label">In Pipeline</span>
               )}
             </>
           )}
 
-          {/* Super Admin Read-only view label */}
-          {isSuperAdmin && (
+          {/* Non-Administrator Staff Read-only view label */}
+          {isAdminStaff && !isAdministrator && (
             <span className="read-only-label">Read Only</span>
           )}
         </div>

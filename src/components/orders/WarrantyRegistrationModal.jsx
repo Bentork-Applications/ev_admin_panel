@@ -7,7 +7,6 @@ export const WarrantyRegistrationModal = React.memo(({
   onClose,
   warrantyModalData,
   scmFormData,
-  setScmFormData,
   showToast
 }) => {
   const [selectedItemIdx, setSelectedItemIdx] = useState(0);

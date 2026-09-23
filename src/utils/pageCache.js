@@ -41,7 +41,9 @@ export const pageCache = {
         Object.keys(sessionStorage).forEach((k) => {
           if (k.startsWith("page_cache_")) sessionStorage.removeItem(k);
         });
-      } catch {}
+      } catch (err) {
+        console.warn("pageCache invalidate error:", err);
+      }
       return;
     }
     for (const k of memoryCache.keys()) {
@@ -55,6 +57,8 @@ export const pageCache = {
           sessionStorage.removeItem(k);
         }
       });
-    } catch {}
+    } catch (err) {
+      console.warn("pageCache pattern invalidate error:", err);
+    }
   }
 };

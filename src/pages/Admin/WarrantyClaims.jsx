@@ -107,7 +107,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
   const [analyticsTab, setAnalyticsTab] = useState("month");
   const [statusFilter, setStatusFilter] = useState(null);
   const tableRef = useRef(null);
-  
+
   // Action state
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -210,7 +210,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
       trackingNumber: "",
       dispatchDate: new Date().toISOString().split('T')[0],
     });
-    
+
     const token = localStorage.getItem("token");
     try {
       const response = await fetch(`${baseUrl}/warranty-claims/admin/${claimId}`, {
@@ -228,6 +228,11 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
               detail.barcode = batteryDetail.barcode;
               detail.warrantyStartDate = batteryDetail.warrantyStartDate;
               detail.warrantyEndDate = batteryDetail.warrantyEndDate;
+              detail.serviceWarrantyStartDate = batteryDetail.serviceWarrantyStartDate;
+              detail.serviceWarrantyEndDate = batteryDetail.serviceWarrantyEndDate;
+              detail.activeWarrantyType = batteryDetail.activeWarrantyType;
+              detail.fullWarrantyActive = batteryDetail.fullWarrantyActive;
+              detail.serviceWarrantyActive = batteryDetail.serviceWarrantyActive;
             }
           } catch (batErr) {
             console.error("Error fetching battery details for claim:", batErr);
@@ -334,8 +339,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
   };
 
   const tabFiltered = getTabFilteredClaims();
-  
-  const searchFilteredClaims = tabFiltered.filter(c => 
+
+  const searchFilteredClaims = tabFiltered.filter(c =>
     c.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.productDetails?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -354,7 +359,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
   const rejectedCount = useMemo(() => claims.filter(c => c.status === "rejected").length, [claims]);
   const processingCount = useMemo(() => claims.filter(c => ["processing", "product_received"].includes(c.status)).length, [claims]);
   const deliveredCount = useMemo(() => claims.filter(c => ["delivered", "user_confirmed", "closed"].includes(c.status)).length, [claims]);
-  
+
   const successRate = useMemo(() => {
     const total = claims.length;
     if (total === 0) return 100;
@@ -1500,21 +1505,21 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
               )}
             </div>
 
-            <button 
-              className="refresh-btn" 
-              onClick={() => fetchClaims(true)} 
+            <button
+              className="refresh-btn"
+              onClick={() => fetchClaims(true)}
               disabled={refreshing}
               title="Refresh claims list"
             >
-              <svg 
+              <svg
                 className={`refresh-icon ${refreshing ? 'spinning' : ''}`}
-                width="18" 
-                height="18" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
                 strokeLinejoin="round"
               >
                 <path d="M23 4v6h-6"></path>
@@ -1527,8 +1532,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
           {statusFilter && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#EFF6FF", color: "#1D4ED8", padding: "8px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: "500", marginBottom: "16px", width: "fit-content" }}>
               <span>Filtered by Card: <strong>{statusFilter === "success" ? "Successful" : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)} Claims</strong></span>
-              <button 
-                onClick={() => setStatusFilter(null)} 
+              <button
+                onClick={() => setStatusFilter(null)}
                 style={{ background: "none", border: "none", color: "#1D4ED8", cursor: "pointer", fontSize: "16px", marginLeft: "4px", padding: 0, fontWeight: "700", display: "flex", alignItems: "center" }}
                 title="Clear filter"
               >
@@ -1577,8 +1582,12 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                           <td className="col-warranty">
                             {c.warrantyStartDate && c.warrantyEndDate ? (
                               <div style={{ fontSize: "11px", lineHeight: "1.2" }}>
-                                <div>{c.warrantyStartDate}</div>
-                                <div style={{ color: "#6B7280", fontSize: "9px" }}>to {c.warrantyEndDate}</div>
+                                <div><strong>Full:</strong> {c.warrantyStartDate} to {c.warrantyEndDate}</div>
+                                {c.serviceWarrantyEndDate && (
+                                  <div style={{ color: "#2563EB", fontSize: "10px", marginTop: "2px" }}>
+                                    <strong>Serv:</strong> {c.serviceWarrantyStartDate || "-"} to {c.serviceWarrantyEndDate}
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               "-"
@@ -1621,8 +1630,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                   <span>{Math.min(currentPage * rowsPerPage, searchFilteredClaims.length)}</span> of <span>{searchFilteredClaims.length}</span> Claims
                 </div>
                 <div className="pagination-controls">
-                  <button 
-                    className="pagination-btn" 
+                  <button
+                    className="pagination-btn"
                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1}
                   >
@@ -1649,8 +1658,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                       </button>
                     );
                   })}
-                  <button 
-                    className="pagination-btn" 
+                  <button
+                    className="pagination-btn"
                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(searchFilteredClaims.length / rowsPerPage) || 1))}
                     disabled={currentPage === (Math.ceil(searchFilteredClaims.length / rowsPerPage) || 1)}
                   >
@@ -1659,8 +1668,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                 </div>
                 <div className="pagination-rows-select">
                   <span>Rows per page:</span>
-                  <select 
-                    value={rowsPerPage} 
+                  <select
+                    value={rowsPerPage}
                     onChange={(e) => setRowsPerPage(Number(e.target.value))}
                   >
                     <option value={10}>10</option>
@@ -1681,13 +1690,13 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
             <div className="analytics-card-title">
               <span>Claims Analytics</span>
               <div className="analytics-tabs">
-                <button 
+                <button
                   className={`analytics-tab-btn ${analyticsTab === "month" ? "active" : ""}`}
                   onClick={() => setAnalyticsTab("month")}
                 >
                   Monthly Trend
                 </button>
-                <button 
+                <button
                   className={`analytics-tab-btn ${analyticsTab === "product" ? "active" : ""}`}
                   onClick={() => setAnalyticsTab("product")}
                 >
@@ -1695,7 +1704,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                 </button>
               </div>
             </div>
-            
+
             <div style={{ flex: 1, minHeight: "200px" }}>
               {analyticsTab === "month" ? (
                 <ResponsiveContainer width="100%" height={200}>
@@ -1726,7 +1735,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
             <div className="analytics-card-title">
               <span>Status Distribution & Performance</span>
             </div>
-            
+
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flex: 1 }}>
               <div style={{ width: "120px", height: "120px", flexShrink: 0 }}>
                 {statusData.length > 0 ? (
@@ -1752,7 +1761,7 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                   <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", color: "#9CA3AF" }}>No Data</div>
                 )}
               </div>
-              
+
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
                 {statusData.slice(0, 3).map((d, index) => (
                   <div key={index} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" }}>
@@ -1822,13 +1831,40 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                       <div className="detail-value">{selectedClaim.barcode || "-"}</div>
                     </div>
                     <div style={{ gridColumn: "span 2" }}>
-                      <div className="detail-label">Warranty Period</div>
+                      <div className="detail-label">Full Warranty Period</div>
                       <div className="detail-value">
-                        {selectedClaim.warrantyStartDate && selectedClaim.warrantyEndDate 
+                        {selectedClaim.warrantyStartDate && selectedClaim.warrantyEndDate
                           ? `${selectedClaim.warrantyStartDate} to ${selectedClaim.warrantyEndDate}`
                           : "-"}
                       </div>
                     </div>
+                    {selectedClaim.serviceWarrantyEndDate && (
+                      <div style={{ gridColumn: "span 2" }}>
+                        <div className="detail-label" style={{ color: "#2563EB" }}>Service Warranty Period</div>
+                        <div className="detail-value" style={{ color: "#1D4ED8" }}>
+                          {selectedClaim.serviceWarrantyStartDate || "-"} to {selectedClaim.serviceWarrantyEndDate}
+                        </div>
+                      </div>
+                    )}
+                    {selectedClaim.activeWarrantyType && (
+                      <div style={{ gridColumn: "span 2" }}>
+                        <div className="detail-label">Active Warranty Coverage</div>
+                        <div className="detail-value" style={{ marginTop: "4px" }}>
+                          <span
+                            className={`status-badge ${selectedClaim.activeWarrantyType === "service_warranty" ? "status-service" : (selectedClaim.activeWarrantyType === "full_warranty" ? "status-active" : "status-expired")}`}
+                            style={selectedClaim.activeWarrantyType === "service_warranty"
+                              ? { background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", fontSize: 11, padding: "3px 10px", borderRadius: 6, display: "inline-block" }
+                              : { fontSize: 11, padding: "3px 10px", borderRadius: 6, display: "inline-block" }}
+                          >
+                            {selectedClaim.activeWarrantyType === "service_warranty"
+                              ? "Active (Service Warranty / Repair)"
+                              : (selectedClaim.activeWarrantyType === "full_warranty"
+                                ? "Active (Full Warranty / Replacement)"
+                                : "Expired")}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1842,9 +1878,9 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                 {selectedClaim.photoBase64 && (
                   <div className="detail-box">
                     <div className="detail-label" style={{ marginBottom: "8px" }}>Battery Photo</div>
-                    <img 
-                      src={getClaimImageSrc(selectedClaim.photoBase64)} 
-                      alt="Battery Issue" 
+                    <img
+                      src={getClaimImageSrc(selectedClaim.photoBase64)}
+                      alt="Battery Issue"
                       className="claim-image"
                       onClick={() => {
                         const win = window.open();
@@ -1909,8 +1945,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                             {formatTimestamp(selectedClaim.dispatchedAt) || "-"}
                             {selectedClaim.courierName && (
                               <div style={{ fontSize: "11px", color: "#4B5563", marginTop: "6px", background: "#F3F4F6", padding: "6px 10px", borderRadius: "6px", border: "1px solid #E5E7EB", lineHeight: "1.5" }}>
-                                <strong>Courier:</strong> {selectedClaim.courierName}<br/>
-                                <strong>Tracking:</strong> {selectedClaim.trackingNumber}<br/>
+                                <strong>Courier:</strong> {selectedClaim.courierName}<br />
+                                <strong>Tracking:</strong> {selectedClaim.trackingNumber}<br />
                                 <strong>Date:</strong> {selectedClaim.dispatchDate}
                               </div>
                             )}
@@ -1937,10 +1973,10 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                 {(() => {
                   const startDateTime = selectedClaim.createdAt;
                   const isTerminal = ["closed", "user_confirmed", "rejected"].includes(selectedClaim.status);
-                  const closeDateTime = isTerminal 
+                  const closeDateTime = isTerminal
                     ? (selectedClaim.status === "rejected" ? selectedClaim.rejectedAt : selectedClaim.closedAt)
                     : null;
-                  
+
                   return (
                     <div className="detail-box" style={{ marginTop: "24px", marginBottom: 0 }}>
                       <h4 style={{ margin: "0 0 12px 0", fontSize: "11px", fontWeight: "700", color: "#111827", textTransform: "uppercase", letterSpacing: "0.5px" }}>Process Duration Metrics</h4>
@@ -2001,8 +2037,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                         </div>
                         <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "12px" }}>
                           <button className="action-btn" type="button" onClick={() => setShowRejectForm(false)}>Cancel</button>
-                          <button 
-                            className="maint-btn" 
+                          <button
+                            className="maint-btn"
                             style={{ background: "#dc2626" }}
                             type="button"
                             onClick={() => handleWorkflowAction("reject", "PUT", { rejectReason })}
@@ -2073,8 +2109,8 @@ export default function WarrantyClaimsPage({ baseUrl: propBaseUrl }) {
                         </div>
                         <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                           <button className="action-btn" type="button" onClick={() => setShowDispatchForm(false)}>Cancel</button>
-                          <button 
-                            className="maint-btn" 
+                          <button
+                            className="maint-btn"
                             type="button"
                             onClick={() => handleWorkflowAction("dispatch", "PUT", courierData)}
                           >

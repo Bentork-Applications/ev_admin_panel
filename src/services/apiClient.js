@@ -1,3 +1,5 @@
+import { pageCache } from "../utils/pageCache";
+
 /**
  * Centralized API Client abstraction following Dependency Inversion & Open/Closed Principles.
  * Provides unified HTTP methods, automatic token header handling, and standardized ApiError instances.
@@ -27,12 +29,12 @@ const formatUrl = (endpoint) => {
   return `${baseUrl}${cleanEndpoint}`;
 };
 
-const getAuthHeaders = (customHeaders = {}) => {
+const getAuthHeaders = (customHeaders = {}, isMultipart = false) => {
   const token = localStorage.getItem("token");
-  const headers = {
-    "Content-Type": "application/json",
-    ...customHeaders
-  };
+  const headers = { ...customHeaders };
+  if (!isMultipart && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
   if (token && token !== "null" && token !== "undefined" && token.trim() !== "") {
     headers["Authorization"] = `Bearer ${token.trim()}`;
   }
@@ -76,8 +78,6 @@ const parseResponse = async (response) => {
 
   return data;
 };
-
-import { pageCache } from "../utils/pageCache";
 
 export const apiClient = {
   get: async (endpoint, customHeaders = {}) => {
@@ -129,6 +129,21 @@ export const apiClient = {
       const response = await fetch(formatUrl(endpoint), {
         method: "DELETE",
         headers: getAuthHeaders(customHeaders)
+      });
+      return await parseResponse(response);
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(err.message || "Network error occurred", 0, err);
+    }
+  },
+
+  upload: async (endpoint, formData, customHeaders = {}) => {
+    try {
+      pageCache.invalidate(endpoint.split("/")[1] || "");
+      const response = await fetch(formatUrl(endpoint), {
+        method: "POST",
+        headers: getAuthHeaders(customHeaders, true),
+        body: formData
       });
       return await parseResponse(response);
     } catch (err) {

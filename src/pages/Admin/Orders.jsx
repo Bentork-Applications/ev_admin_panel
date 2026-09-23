@@ -12,6 +12,8 @@ import { CreateSalesOrderModal } from "../../components/orders/CreateSalesOrderM
 import { EditSalesOrderModal } from "../../components/orders/EditSalesOrderModal";
 import { ScmDetailsModal } from "../../components/orders/ScmDetailsModal";
 import { WarrantyRegistrationModal } from "../../components/orders/WarrantyRegistrationModal";
+import { OrderTrackingModal } from "../../components/orders/OrderTrackingModal";
+import { MarkDeliveredModal } from "../../components/orders/MarkDeliveredModal";
 import { Toast } from "../../components/common/Toast";
 import { Pagination } from "../../components/common/Pagination";
 import { safeDecodeJwt, extractRoleFromToken } from "../../utils/jwtUtils";
@@ -26,30 +28,26 @@ import {
 import { getStatusBadgeConfig, getPriorityBadgeConfig } from "../../config/orderConfig";
 import { Package, Plus, AlertTriangle } from "lucide-react";
 
-let globalSalesOrderLock = false;
-
 export default function Orders({ userRole: propUserRole }) {
   // Memoize effective user role calculation safely
   const role = useMemo(() => {
-    const rawRole = (propUserRole || localStorage.getItem("userRole") || "").toUpperCase();
     const token = localStorage.getItem("token");
-    let resolvedRole = "";
-
-    if (rawRole.includes("SALES")) resolvedRole = "SALES_ADMIN";
-    else if (rawRole.includes("PRODUCTION")) resolvedRole = "PRODUCTION_ADMIN";
-    else if (rawRole.includes("SCM")) resolvedRole = "SCM_ADMIN";
-    else if (rawRole.includes("ADMIN")) resolvedRole = "ADMIN";
-
     if (token) {
       const roleFromToken = extractRoleFromToken(token);
-      if (roleFromToken) resolvedRole = roleFromToken;
+      if (roleFromToken) return roleFromToken;
     }
-
-    if (!resolvedRole) resolvedRole = "SALES_ADMIN";
-    return resolvedRole;
+    const rawRole = (propUserRole || localStorage.getItem("userRole") || "").toUpperCase().trim();
+    if (rawRole === "SALES_ADMIN" || rawRole === "SALES") return "SALES_ADMIN";
+    if (rawRole === "PRODUCTION_ADMIN" || rawRole === "PRODUCTION") return "PRODUCTION_ADMIN";
+    if (rawRole === "SCM_ADMIN" || rawRole === "SCM") return "SCM_ADMIN";
+    if (rawRole === "ADMIN" || rawRole === "ADMINISTRATOR" || rawRole === "SUPER_ADMIN") return "ADMIN";
+    if (rawRole === "ADMIN_STAFF") return "ADMIN_STAFF";
+    return rawRole || "SALES_ADMIN";
   }, [propUserRole]);
 
-  const isSuperAdmin = role === "ADMIN" || role === "ADMIN_STAFF";
+  const isAdministrator = role === "ADMIN" || role === "ADMINISTRATOR";
+  const isAdminStaff = role === "ADMIN_STAFF";
+  const isSuperAdmin = isAdministrator || isAdminStaff;
   const isSalesAdmin = role === "SALES_ADMIN";
   const isProductionAdmin = role === "PRODUCTION_ADMIN";
   const isScmAdmin = role === "SCM_ADMIN";
@@ -89,6 +87,19 @@ export default function Orders({ userRole: propUserRole }) {
   // Warranty Registration Modal State
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantyModalData, setWarrantyModalData] = useState(null);
+
+  // Order Tracking Modal State (Admin CRUD)
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const [selectedTrackingItem, setSelectedTrackingItem] = useState(null);
+  const [trackingOrderId, setTrackingOrderId] = useState(null);
+  const [trackingOrderNumber, setTrackingOrderNumber] = useState("");
+  const [trackingSubmitting, setTrackingSubmitting] = useState(false);
+
+  // Mark Delivered Confirmation Modal State
+  const [showDeliverModal, setShowDeliverModal] = useState(false);
+  const [orderToDeliver, setOrderToDeliver] = useState(null);
+  const [deliverAdminNotes, setDeliverAdminNotes] = useState("");
+  const [deliverSubmitting, setDeliverSubmitting] = useState(false);
 
   const [recordPaymentAmount, setRecordPaymentAmount] = useState("");
 
@@ -299,7 +310,9 @@ export default function Orders({ userRole: propUserRole }) {
           }
           try {
             localStorage.setItem(`order_history_${id}`, JSON.stringify(statusHistory));
-          } catch { }
+          } catch (_E) {
+            void _E;
+          }
         }
 
         const resolvedWarrantyStart = ord.warrantyStartDate || ord.warranty_start_date || localWarrantyStart || null;
@@ -367,27 +380,118 @@ export default function Orders({ userRole: propUserRole }) {
         const localStatus = localStorage.getItem(`order_status_${orderId}`);
         const localHistory = JSON.parse(localStorage.getItem(`order_history_${orderId}`) || "[]");
 
+        let trackingUpdates = rawDetails.trackingUpdates || [];
+        if ((!trackingUpdates || trackingUpdates.length === 0) && (isSuperAdmin || isAdministrator)) {
+          const liveTracking = await orderService.getOrderTracking(orderId).catch(() => null);
+          if (Array.isArray(liveTracking)) trackingUpdates = liveTracking;
+        }
+
         setSelectedOrder({
           ...rawDetails,
           orderStatus: localStatus || rawDetails.orderStatus,
-          statusHistory: localHistory.length > 0 ? localHistory : rawDetails.statusHistory || []
+          statusHistory: localHistory.length > 0 ? localHistory : rawDetails.statusHistory || [],
+          trackingUpdates: trackingUpdates
         });
         setShowDrawer(true);
       }
-    } catch (err) {
+    } catch (_ERR) {
+      void _ERR;
       const fallback = orders.find((o) => o.id === orderId);
       if (fallback) {
         const localHistory = JSON.parse(localStorage.getItem(`order_history_${orderId}`) || "[]");
         setSelectedOrder({
           ...fallback,
-          statusHistory: localHistory.length > 0 ? localHistory : fallback.statusHistory || []
+          statusHistory: localHistory.length > 0 ? localHistory : fallback.statusHistory || [],
+          trackingUpdates: fallback.trackingUpdates || []
         });
         setShowDrawer(true);
       } else {
         showToast("Failed to load order details", "error");
       }
     }
-  }, [isSalesAdmin, isProductionAdmin, isScmAdmin, orders, showToast]);
+  }, [isSalesAdmin, isProductionAdmin, isScmAdmin, isSuperAdmin, isAdministrator, orders, showToast]);
+
+  // Order Tracking Actions
+  const handleOpenAddTracking = useCallback((order) => {
+    setSelectedTrackingItem(null);
+    setTrackingOrderId(order?.id || order?.orderNumber);
+    setTrackingOrderNumber(order?.orderNumber || order?.piNumber || order?.id || "");
+    setShowTrackingModal(true);
+  }, []);
+
+  const handleOpenEditTracking = useCallback((order, trackingItem) => {
+    setSelectedTrackingItem(trackingItem);
+    setTrackingOrderId(order?.id || order?.orderNumber);
+    setTrackingOrderNumber(order?.orderNumber || order?.piNumber || order?.id || "");
+    setShowTrackingModal(true);
+  }, []);
+
+  const handleSaveTracking = useCallback(async (payload, trackingId) => {
+    setTrackingSubmitting(true);
+    try {
+      if (trackingId) {
+        await orderService.updateOrderTracking(trackingId, payload);
+        showToast("Tracking event updated successfully", "success");
+      } else {
+        await orderService.addOrderTracking(trackingOrderId, payload);
+        showToast("Tracking event added successfully", "success");
+      }
+      setShowTrackingModal(false);
+
+      // Refresh tracking list for current order
+      const trackingList = await orderService.getOrderTracking(trackingOrderId).catch(() => null);
+      if (trackingList) {
+        setSelectedOrder((prev) =>
+          prev
+            ? {
+                ...prev,
+                trackingUpdates: Array.isArray(trackingList)
+                  ? trackingList
+                  : Array.isArray(trackingList?.trackingUpdates)
+                  ? trackingList.trackingUpdates
+                  : []
+              }
+            : null
+        );
+      }
+      fetchOrders();
+    } catch (err) {
+      console.error("Error saving tracking event:", err);
+      showToast(err.message || "Failed to save tracking event", "error");
+    } finally {
+      setTrackingSubmitting(false);
+    }
+  }, [trackingOrderId, showToast, fetchOrders]);
+
+  const handleDeleteTracking = useCallback(async (trackingId) => {
+    if (!window.confirm("Are you sure you want to delete this tracking event?")) return;
+    try {
+      await orderService.deleteOrderTracking(trackingId);
+      showToast("Tracking event deleted", "success");
+
+      if (selectedOrder?.id) {
+        const trackingList = await orderService.getOrderTracking(selectedOrder.id).catch(() => null);
+        if (trackingList) {
+          setSelectedOrder((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  trackingUpdates: Array.isArray(trackingList)
+                    ? trackingList
+                    : Array.isArray(trackingList?.trackingUpdates)
+                    ? trackingList.trackingUpdates
+                    : []
+                }
+              : null
+          );
+        }
+      }
+      fetchOrders();
+    } catch (err) {
+      console.error("Error deleting tracking event:", err);
+      showToast(err.message || "Failed to delete tracking event", "error");
+    }
+  }, [selectedOrder, showToast, fetchOrders]);
 
   // Validate Sales Form
   const validateSalesForm = (data) => {
@@ -452,7 +556,7 @@ export default function Orders({ userRole: propUserRole }) {
   const handleCreateSalesOrder = useCallback(async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (e && e.stopPropagation) e.stopPropagation();
-    if (submitting || isCreatingRef.current || globalSalesOrderLock) return;
+    if (submitting || isCreatingRef.current) return;
 
     const errors = validateSalesForm(salesFormData);
     if (Object.keys(errors).length > 0) {
@@ -466,7 +570,10 @@ export default function Orders({ userRole: propUserRole }) {
     let sessionSubmittedPis = [];
     try {
       sessionSubmittedPis = JSON.parse(sessionStorage.getItem("submitted_pi_numbers") || "[]");
-    } catch { }
+    } catch (_PARSE_ERR) {
+      void _PARSE_ERR;
+      sessionSubmittedPis = [];
+    }
 
     if (submittedPiNumbersRef.current.has(trimmedPi) || sessionSubmittedPis.includes(trimmedPi)) {
       showToast(`An order for P.I. Number "${salesFormData.piNumber}" is already being processed or created.`, "warning");
@@ -488,12 +595,13 @@ export default function Orders({ userRole: propUserRole }) {
     }
 
     // Set immediate synchronous locks BEFORE any async execution
-    globalSalesOrderLock = true;
     isCreatingRef.current = true;
     submittedPiNumbersRef.current.add(trimmedPi);
     try {
       sessionStorage.setItem("submitted_pi_numbers", JSON.stringify([...sessionSubmittedPis, trimmedPi]));
-    } catch { }
+    } catch (_SET_ERR) {
+      void _SET_ERR;
+    }
 
     setSalesFormErrors({});
     setSubmitting(true);
@@ -638,7 +746,6 @@ export default function Orders({ userRole: propUserRole }) {
     } finally {
       setSubmitting(false);
       isCreatingRef.current = false;
-      globalSalesOrderLock = false;
     }
   }, [salesFormData, registeredUsers, submitting, showToast, fetchOrders, recordOrderActivity]);
 
@@ -898,7 +1005,7 @@ export default function Orders({ userRole: propUserRole }) {
         ? "Battery manufacturing & quality testing completed. Transferred to SCM pipeline."
         : `Production workflow stage updated to '${targetStatus.replace("_", " ")}'.`;
 
-      const updatedHistory = recordOrderActivity(orderId, {
+      recordOrderActivity(orderId, {
         title: activityTitle,
         description: activityDesc,
         status: resolvedOrderStatus,
@@ -1341,6 +1448,7 @@ export default function Orders({ userRole: propUserRole }) {
         orderItems: updatedItems,
         statusHistory: updatedHistory
       };
+      void orderToSave;
 
       if (selectedOrder && selectedOrder.id === orderForScm.id) {
         setSelectedOrder((prev) => ({ ...prev, ...(updated || {}), orderStatus: "scm_complete", warrantyStartDate: finalStartDate, warranty_start_date: finalStartDate, warrantyEndDate: finalEndDate, warranty_end_date: finalEndDate }));
@@ -1387,62 +1495,92 @@ export default function Orders({ userRole: propUserRole }) {
     }
   }, [selectedOrder, showToast, fetchOrders, recordOrderActivity]);
 
-  const handleMarkAsDelivered = useCallback(async (orderId) => {
-    setSubmitting(true);
+  const openDeliverModal = useCallback((order) => {
+    if (!order) return;
+    setOrderToDeliver(order);
+    setDeliverAdminNotes("");
+    setShowDeliverModal(true);
+  }, []);
+
+  const handleConfirmDelivery = useCallback(async () => {
+    if (!orderToDeliver) return;
+    const orderId = orderToDeliver.id || orderToDeliver.orderNumber;
+    setDeliverSubmitting(true);
     try {
-      localStorage.setItem(`order_status_${orderId}`, "delivered");
-      localStorage.setItem(`order_delivered_date_${orderId}`, new Date().toISOString());
-
-      const updatedHistory = recordOrderActivity(orderId, {
-        title: "Order Delivered",
-        description: "Order marked as successfully delivered to customer.",
-        status: "delivered",
-        stage: "Delivered",
-        updatedBy: "Logistics Partner"
-      });
-
-      const currentOrder = orders.find((o) => o.id === orderId) || selectedOrder;
-      if (currentOrder) {
-        const enriched = {
-          ...currentOrder,
-          orderStatus: "delivered",
-          address: localStorage.getItem(`order_shipping_address_${orderId}`) || currentOrder.address || "",
-          gstNumber: currentOrder.gstNumber || "",
-          statusHistory: updatedHistory
-        };
-        generateOrderPdfReport(enriched);
-        orderService.saveCachedOrders([enriched]);
+      const payload = {};
+      if (deliverAdminNotes && deliverAdminNotes.trim()) {
+        payload.adminNotes = deliverAdminNotes.trim();
       }
 
-      showToast("Order marked as Delivered & overview PDF generated!", "success");
+      const updated = await orderService.scmDeliverOrder(orderId, payload);
+      const deliveredTime = updated?.deliveredAt || new Date().toISOString();
 
-      if (selectedOrder && selectedOrder.id === orderId) {
-        const updatedOrderDetail = {
-          ...selectedOrder,
+      localStorage.setItem(`order_status_${orderId}`, "delivered");
+      localStorage.setItem(`order_delivered_date_${orderId}`, deliveredTime);
+
+      const noteText = deliverAdminNotes.trim() ? ` (Notes: ${deliverAdminNotes.trim()})` : "";
+      const updatedHistory = recordOrderActivity(orderId, {
+        title: "Order Delivered",
+        description: `Order marked as successfully delivered to customer.${noteText}`,
+        status: "delivered",
+        stage: "Delivered",
+        updatedBy: role === "SCM_ADMIN" ? "SCM Admin" : "Administrator"
+      });
+
+      const currentOrder = orders.find((o) => o.id === orderId) || orderToDeliver;
+      const enriched = {
+        ...(currentOrder || {}),
+        ...(updated || {}),
+        id: orderId,
+        orderStatus: "delivered",
+        deliveredAt: deliveredTime,
+        address: localStorage.getItem(`order_shipping_address_${orderId}`) || currentOrder?.address || "",
+        gstNumber: currentOrder?.gstNumber || "",
+        statusHistory: updatedHistory
+      };
+
+      try {
+        generateOrderPdfReport(enriched);
+      } catch (_PDF_ERR) {
+        console.warn("PDF generation note:", _PDF_ERR);
+      }
+
+      showToast(`Order ${orderToDeliver.orderNumber || `ORD-#${orderId}`} marked as Delivered!`, "success");
+      setShowDeliverModal(false);
+      setOrderToDeliver(null);
+      setDeliverAdminNotes("");
+
+      if (selectedOrder && (selectedOrder.id === orderId || selectedOrder.orderNumber === orderId)) {
+        setSelectedOrder((prev) => ({
+          ...(prev || {}),
+          ...(updated || {}),
           orderStatus: "delivered",
+          deliveredAt: deliveredTime,
           statusHistory: updatedHistory
-        };
-        setSelectedOrder(updatedOrderDetail);
+        }));
       }
 
       fetchOrders();
-    } catch {
-      showToast("Failed to mark as delivered", "error");
+    } catch (err) {
+      console.error("Delivery error:", err);
+      showToast(err.message || "Failed to mark order as delivered", "error");
     } finally {
-      setSubmitting(false);
+      setDeliverSubmitting(false);
     }
-  }, [orders, selectedOrder, showToast, fetchOrders, recordOrderActivity, generateOrderPdfReport]);
+  }, [orderToDeliver, deliverAdminNotes, role, orders, selectedOrder, recordOrderActivity, showToast, fetchOrders]);
 
   // Memoized Filter & Sort
   const filteredOrders = useMemo(() => {
     const list = orders.filter((o) => {
       // Super Admin Stage Tab Filter
       if (isSuperAdmin && adminStageTab !== "ALL") {
-        if (adminStageTab === "SALES" && o.orderStatus !== "sales_registered") return false;
-        if (adminStageTab === "PRODUCTION" && o.orderStatus !== "in_production") return false;
-        if (adminStageTab === "PROD_DONE" && o.orderStatus !== "production_complete") return false;
-        if (adminStageTab === "SCM_DONE" && o.orderStatus !== "scm_complete") return false;
-        if (adminStageTab === "DISPATCHED" && o.orderStatus !== "dispatched") return false;
+        const ordSt = (o.orderStatus || "").toLowerCase();
+        if (adminStageTab === "SALES" && ordSt !== "sales_registered") return false;
+        if (adminStageTab === "PRODUCTION" && ordSt !== "in_production") return false;
+        if (adminStageTab === "PROD_DONE" && ordSt !== "production_complete") return false;
+        if (adminStageTab === "SCM_DONE" && ordSt !== "scm_complete") return false;
+        if (adminStageTab === "DISPATCHED" && ordSt !== "dispatched") return false;
+        if (adminStageTab === "COMPLETED" && ordSt !== "delivered" && ordSt !== "completed") return false;
       }
 
       // Search Query
@@ -1460,7 +1598,16 @@ export default function Orders({ userRole: propUserRole }) {
         paymentStatusText.includes(q);
 
       // Status Filter
-      const matchesStatus = !statusFilter || o.orderStatus === statusFilter;
+      let matchesStatus = true;
+      if (statusFilter) {
+        const ordSt = (o.orderStatus || "").toLowerCase();
+        const fltSt = statusFilter.toLowerCase();
+        if (fltSt === "delivered" || fltSt === "completed") {
+          matchesStatus = ordSt === "delivered" || ordSt === "completed";
+        } else {
+          matchesStatus = ordSt === fltSt;
+        }
+      }
 
       // Priority Filter
       const matchesPriority = !priorityFilter || o.priority === priorityFilter;
@@ -1499,6 +1646,7 @@ export default function Orders({ userRole: propUserRole }) {
         isProductionAdmin={isProductionAdmin}
         isScmAdmin={isScmAdmin}
         isSuperAdmin={isSuperAdmin}
+        isAdministrator={isAdministrator}
         loading={loading}
         onRefresh={fetchOrders}
         onCreateOrderClick={() => setShowCreateModal(true)}
@@ -1553,7 +1701,7 @@ export default function Orders({ userRole: propUserRole }) {
             <p>
               {searchQuery || statusFilter || priorityFilter
                 ? "No orders match your current search or filter criteria."
-                : isSalesAdmin
+                : (isSalesAdmin || isAdministrator)
                   ? "You haven't created any orders yet. Click 'Create Order' to start."
                   : isProductionAdmin
                     ? "There are currently no orders in the production pipeline."
@@ -1561,7 +1709,7 @@ export default function Orders({ userRole: propUserRole }) {
                       ? "There are no production-completed orders ready for SCM processing."
                       : "No orders exist in the system."}
             </p>
-            {isSalesAdmin && !searchQuery && (
+            {(isSalesAdmin || isAdministrator) && !searchQuery && (
               <button className="primary-action-btn mt-4" onClick={() => setShowCreateModal(true)}>
                 <Plus size={16} /> Create First Order
               </button>
@@ -1593,13 +1741,15 @@ export default function Orders({ userRole: propUserRole }) {
                   isProductionAdmin={isProductionAdmin}
                   isScmAdmin={isScmAdmin}
                   isSuperAdmin={isSuperAdmin}
+                  isAdministrator={isAdministrator}
+                  isAdminStaff={isAdminStaff}
                   submitting={submitting}
                   onViewDetails={handleViewDetails}
                   onEditSales={openEditSalesModal}
                   onUpdateProductionStatus={handleUpdateProductionStatus}
                   onOpenScmModal={openScmModal}
                   onDispatchOrder={handleDispatchOrder}
-                  onMarkAsDelivered={handleMarkAsDelivered}
+                  onMarkAsDelivered={openDeliverModal}
                   onGeneratePdfReport={generateOrderPdfReport}
                   getStatusBadge={getStatusBadgeConfig}
                   getPriorityBadge={getPriorityBadgeConfig}
@@ -1631,6 +1781,11 @@ export default function Orders({ userRole: propUserRole }) {
         isProductionAdmin={isProductionAdmin}
         isScmAdmin={isScmAdmin}
         isSuperAdmin={isSuperAdmin}
+        isAdministrator={isAdministrator}
+        isAdminStaff={isAdminStaff}
+        onOpenAddTracking={handleOpenAddTracking}
+        onOpenEditTracking={handleOpenEditTracking}
+        onDeleteTracking={handleDeleteTracking}
         submitting={submitting}
         recordPaymentAmount={recordPaymentAmount}
         setRecordPaymentAmount={setRecordPaymentAmount}
@@ -1640,7 +1795,7 @@ export default function Orders({ userRole: propUserRole }) {
         openWarrantyModal={openWarrantyModal}
         openScmModal={openScmModal}
         handleDispatchOrder={handleDispatchOrder}
-        handleMarkAsDelivered={handleMarkAsDelivered}
+        handleMarkAsDelivered={openDeliverModal}
         generateOrderPdfReport={generateOrderPdfReport}
         getStatusBadge={getStatusBadgeConfig}
         getPriorityBadge={getPriorityBadgeConfig}
@@ -1703,6 +1858,34 @@ export default function Orders({ userRole: propUserRole }) {
         scmFormData={scmFormData}
         setScmFormData={setScmFormData}
         showToast={showToast}
+      />
+
+      {/* Order Tracking Modal for Administrators */}
+      <OrderTrackingModal
+        showModal={showTrackingModal}
+        onClose={() => setShowTrackingModal(false)}
+        onSubmit={handleSaveTracking}
+        isSubmitting={trackingSubmitting}
+        trackingItem={selectedTrackingItem}
+        orderId={trackingOrderId}
+        orderNumber={trackingOrderNumber}
+      />
+
+      {/* Mark Delivered Confirmation Modal */}
+      <MarkDeliveredModal
+        showModal={showDeliverModal}
+        onClose={() => {
+          if (!deliverSubmitting) {
+            setShowDeliverModal(false);
+            setOrderToDeliver(null);
+            setDeliverAdminNotes("");
+          }
+        }}
+        order={orderToDeliver}
+        adminNotes={deliverAdminNotes}
+        setAdminNotes={setDeliverAdminNotes}
+        onConfirm={handleConfirmDelivery}
+        submitting={deliverSubmitting}
       />
 
       {/* Embedded Modern Styling */}

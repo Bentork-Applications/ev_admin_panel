@@ -40,6 +40,12 @@ const WarrantyClaims = React.lazy(() => import("./WarrantyClaims"));
 const SalesDashboard = React.lazy(() => import("./dashboards/SalesDashboard"));
 const ProductionDashboard = React.lazy(() => import("./dashboards/ProductionDashboard"));
 const ScmDashboard = React.lazy(() => import("./dashboards/ScmDashboard"));
+const Vendors = React.lazy(() => import("./Vendors"));
+const PurchaseOrders = React.lazy(() => import("./PurchaseOrders"));
+const MaterialIn = React.lazy(() => import("./MaterialIn"));
+const MaterialOut = React.lazy(() => import("./MaterialOut"));
+const InventoryStock = React.lazy(() => import("./InventoryStock"));
+const MaterialReports = React.lazy(() => import("./MaterialReports"));
 
 const LoadingSpinner = () => (
   <div className="loading-spinner">
@@ -1330,6 +1336,12 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                   <Route path="batteries" element={<Batteries baseUrl={baseUrl} />} />
                   <Route path="warranty-claims" element={<WarrantyClaims baseUrl={baseUrl} />} />
                   <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="vendors" element={<Vendors baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="purchase-orders" element={<PurchaseOrders baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="material-in" element={<MaterialIn baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="material-out" element={<MaterialOut baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="inventory-stock" element={<InventoryStock baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="material-reports" element={<MaterialReports baseUrl={baseUrl} userRole={userRole} />} />
                 </>
               )}
 
@@ -1357,6 +1369,12 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                   {allowedPages.includes("dealers") && <Route path="dealers" element={<Dealers baseUrl={baseUrl} />} />}
                   {allowedPages.includes("cafes") && <Route path="cafes" element={<CafeConfig baseUrl={baseUrl} />} />}
                   {allowedPages.includes("orders") && <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />}
+                  {allowedPages.includes("vendors") && <Route path="vendors" element={<Vendors baseUrl={baseUrl} userRole={userRole} />} />}
+                  {allowedPages.includes("purchase-orders") && <Route path="purchase-orders" element={<PurchaseOrders baseUrl={baseUrl} userRole={userRole} />} />}
+                  {allowedPages.includes("material-in") && <Route path="material-in" element={<MaterialIn baseUrl={baseUrl} userRole={userRole} />} />}
+                  {allowedPages.includes("material-out") && <Route path="material-out" element={<MaterialOut baseUrl={baseUrl} userRole={userRole} />} />}
+                  {allowedPages.includes("inventory-stock") && <Route path="inventory-stock" element={<InventoryStock baseUrl={baseUrl} userRole={userRole} />} />}
+                  {allowedPages.includes("material-reports") && <Route path="material-reports" element={<MaterialReports baseUrl={baseUrl} userRole={userRole} />} />}
                 </>
               )}
 
@@ -1372,7 +1390,25 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                 </>
               )}
 
-              {(userRole === "SALES_ADMIN" || userRole === "SALES" || userRole === "PRODUCTION_ADMIN" || userRole === "PRODUCTION" || userRole === "SCM_ADMIN" || userRole === "SCM") && (
+              {(userRole === "SALES_ADMIN" || userRole === "SALES") && (
+                <>
+                  <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
+                </>
+              )}
+
+              {(userRole === "SCM_ADMIN" || userRole === "SCM") && (
+                <>
+                  <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="vendors" element={<Vendors baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="purchase-orders" element={<PurchaseOrders baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="material-in" element={<MaterialIn baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="material-out" element={<MaterialOut baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="inventory-stock" element={<InventoryStock baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="material-reports" element={<MaterialReports baseUrl={baseUrl} userRole={userRole} />} />
+                </>
+              )}
+
+              {(userRole === "PRODUCTION_ADMIN" || userRole === "PRODUCTION") && (
                 <>
                   <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
                 </>

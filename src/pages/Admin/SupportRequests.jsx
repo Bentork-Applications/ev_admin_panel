@@ -14,13 +14,13 @@ function AnimatedCounter({ value }) {
     const frameRate = 1000 / 60; // 60fps
     const totalFrames = Math.round(duration / frameRate);
     let frame = 0;
-    
+
     const counter = setInterval(() => {
       frame++;
       const progress = frame / totalFrames;
       // Ease out quad
       const currentCount = Math.round(end * (progress * (2 - progress)));
-      
+
       if (frame >= totalFrames) {
         setCount(end);
         clearInterval(counter);
@@ -28,7 +28,7 @@ function AnimatedCounter({ value }) {
         setCount(currentCount);
       }
     }, frameRate);
-    
+
     return () => clearInterval(counter);
   }, [value]);
 
@@ -513,7 +513,7 @@ export default function SupportRequests({ baseUrl: propBaseUrl, userRole }) {
   const pendingCount = requests.filter(r => r.status === "pending").length;
   const approvedCount = requests.filter(r => r.status === "approved").length;
   const inProgressCount = requests.filter(r => r.status === "in_progress").length;
-const completedCount = requests.filter(r => r.status === "completed").length;
+  const completedCount = requests.filter(r => r.status === "completed").length;
 
   const currentRequestsList = filteredRequests;
 
@@ -1736,9 +1736,9 @@ const completedCount = requests.filter(r => r.status === "completed").length;
                   const s = (selectedRequest.status || "pending").toLowerCase();
                   const progressPercent =
                     s === "pending" ? "0%" :
-                    s === "approved" ? "33.3%" :
-                    s === "in_progress" ? "66.6%" :
-                    s === "completed" ? "100%" : "0%";
+                      s === "approved" ? "33.3%" :
+                        s === "in_progress" ? "66.6%" :
+                          s === "completed" ? "100%" : "0%";
 
                   return (
                     <div className="stepper-container" style={{ margin: "10px 0 24px 0" }}>
@@ -1938,7 +1938,7 @@ const completedCount = requests.filter(r => r.status === "completed").length;
                   </div>
                 </div>
               </div>
-              
+
               <div className="stat-card">
                 <div className="stat-card-left">
                   <div className="stat-icon-circle" style={{ background: "rgba(245, 158, 11, 0.08)", borderColor: "rgba(245, 158, 11, 0.15)" }}>
@@ -2001,319 +2001,319 @@ const completedCount = requests.filter(r => r.status === "completed").length;
               </div>
             </div>
 
-        {/* Advanced Filters */}
-        <div className="filters-section animate-filters">
-          <div className="filter-group">
-            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <svg style={{ width: 14, height: 14, color: "#6B7280" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-              </svg>
-              Date Range
-            </label>
-            <select
-              className="filter-select"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-            >
-              <option value="All">All Time</option>
-              <option value="7days">Last 7 Days</option>
-              <option value="1month">Last 1 Month</option>
-              <option value="6months">Last 6 Months</option>
-            </select>
-          </div>
-
-          {!isDealer && (
-            <>
+            {/* Advanced Filters */}
+            <div className="filters-section animate-filters">
               <div className="filter-group">
                 <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <svg style={{ width: 14, height: 14, color: "#6B7280" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
                   </svg>
-                  Status
+                  Date Range
                 </label>
                 <select
                   className="filter-select"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
                 >
-                  <option value="All">All Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
+                  <option value="All">All Time</option>
+                  <option value="7days">Last 7 Days</option>
+                  <option value="1month">Last 1 Month</option>
+                  <option value="6months">Last 6 Months</option>
                 </select>
               </div>
 
-              <div className="filter-group">
-                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <svg style={{ width: 14, height: 14, color: "#6B7280" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  User Type
-                </label>
-                <select
-                  className="filter-select"
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                >
-                  <option value="All">All Submitters</option>
-                  <option value="DEALER">Dealer Only</option>
-                  <option value="END_USER">End User Only</option>
-                </select>
-              </div>
-            </>
-          )}
-        </div>
+              {!isDealer && (
+                <>
+                  <div className="filter-group">
+                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <svg style={{ width: 14, height: 14, color: "#6B7280" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                      Status
+                    </label>
+                    <select
+                      className="filter-select"
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                    >
+                      <option value="All">All Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
 
-        {/* Records Table */}
-        <div className="records-section animate-table">
-          <div className="records-header">
-          </div>
+                  <div className="filter-group">
+                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <svg style={{ width: 14, height: 14, color: "#6B7280" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                      </svg>
+                      User Type
+                    </label>
+                    <select
+                      className="filter-select"
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                    >
+                      <option value="All">All Submitters</option>
+                      <option value="DEALER">Dealer Only</option>
+                      <option value="END_USER">End User Only</option>
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
 
-          {loading ? (
-            <div className="skeleton-container">
-              <div className="skeleton-row skeleton-header">
-                <div className="skeleton-bar" style={{ width: "8%" }}></div>
-                <div className="skeleton-bar" style={{ width: "22%" }}></div>
-                <div className="skeleton-bar" style={{ width: "18%" }}></div>
-                <div className="skeleton-bar" style={{ width: "14%" }}></div>
-                <div className="skeleton-bar" style={{ width: "12%" }}></div>
-                <div className="skeleton-bar" style={{ width: "10%" }}></div>
+            {/* Records Table */}
+            <div className="records-section animate-table">
+              <div className="records-header">
               </div>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="skeleton-row">
-                  <div className="skeleton-bar" style={{ width: "8%" }}></div>
-                  <div className="skeleton-bar" style={{ width: "22%" }}></div>
-                  <div className="skeleton-bar" style={{ width: "18%" }}></div>
-                  <div className="skeleton-bar" style={{ width: "14%" }}></div>
-                  <div className="skeleton-bar" style={{ width: "12%" }}></div>
-                  <div className="skeleton-bar" style={{ width: "10%" }}></div>
+
+              {loading ? (
+                <div className="skeleton-container">
+                  <div className="skeleton-row skeleton-header">
+                    <div className="skeleton-bar" style={{ width: "8%" }}></div>
+                    <div className="skeleton-bar" style={{ width: "22%" }}></div>
+                    <div className="skeleton-bar" style={{ width: "18%" }}></div>
+                    <div className="skeleton-bar" style={{ width: "14%" }}></div>
+                    <div className="skeleton-bar" style={{ width: "12%" }}></div>
+                    <div className="skeleton-bar" style={{ width: "10%" }}></div>
+                  </div>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="skeleton-row">
+                      <div className="skeleton-bar" style={{ width: "8%" }}></div>
+                      <div className="skeleton-bar" style={{ width: "22%" }}></div>
+                      <div className="skeleton-bar" style={{ width: "18%" }}></div>
+                      <div className="skeleton-bar" style={{ width: "14%" }}></div>
+                      <div className="skeleton-bar" style={{ width: "12%" }}></div>
+                      <div className="skeleton-bar" style={{ width: "10%" }}></div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div style={{ padding: 30, textAlign: 'center', color: '#ef4444', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 16 }}>
-              <div>{error}</div>
-              <button onClick={fetchRequests} style={{ marginTop: 12, padding: '6px 14px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Retry</button>
-            </div>
-          ) : (
-            <div className="table-wrapper">
-              <table className="records-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Customer Name</th>
-                    <th>Product</th>
-                    <th>Date Created</th>
-                    {!isDealer && <th>User Type</th>}
-                    {!isDealer && <th>Submitter Email</th>}
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentRequestsList.length > 0 ? (
-                    currentRequestsList.map((req, idx) => (
-                       <tr key={`${req.customerType || 'REQ'}_${req.id || idx}_${idx}`}>
-                        <td style={{ fontWeight: 600 }}>
-                          {req.customerType === "DEALER" ? `D${req.id}` : `EU${req.id}`}
-                        </td>
-                        <td>{req.customerFullName || "-"}</td>
-                        <td>{req.product || "-"}</td>
-                        <td>{formatDate(req.createdAt)}</td>
-                        {!isDealer && (
-                          <td>
-                            <span className={`type-badge ${req.customerType === "DEALER" ? "type-dealer" : "type-user"}`}>
-                              {req.customerType === "DEALER" ? "DEALER" : "END USER"}
-                            </span>
-                          </td>
-                        )}
-                        {!isDealer && (
-                          <td style={{ fontSize: '13px', color: '#555' }}>
-                            {req.submitterEmail || "-"}
-                          </td>
-                        )}
-                        <td>
-                          <span className={`status-badge status-${req.status}`}>
-                            {req.status === "pending" && (
-                              <svg className="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6 }}>
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <polyline points="12 6 12 12 16 14"></polyline>
-                              </svg>
-                            )}
-                            {req.status === "approved" && (
-                              <svg className="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6 }}>
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                              </svg>
-                            )}
-                            {req.status === "in_progress" && (
-                              <svg className="badge-icon animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6, animation: "spin 2s linear infinite" }}>
-                                <polyline points="23 4 23 10 17 10"></polyline>
-                                <polyline points="1 20 1 14 7 14"></polyline>
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                              </svg>
-                            )}
-                            {req.status === "completed" && (
-                              <svg className="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6 }}>
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                              </svg>
-                            )}
-                            {req.status?.replace("_", " ")}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            className="action-btn"
-                            onClick={() => handleOpenDetails(req)}
-                          >
-                            View Details
-                          </button>
-                        </td>
+              ) : error ? (
+                <div style={{ padding: 30, textAlign: 'center', color: '#ef4444', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 16 }}>
+                  <div>{error}</div>
+                  <button onClick={fetchRequests} style={{ marginTop: 12, padding: '6px 14px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>Retry</button>
+                </div>
+              ) : (
+                <div className="table-wrapper">
+                  <table className="records-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Customer Name</th>
+                        <th>Product</th>
+                        <th>Date Created</th>
+                        {!isDealer && <th>User Type</th>}
+                        {!isDealer && <th>Submitter Email</th>}
+                        <th>Status</th>
+                        <th>Actions</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={isDealer ? 6 : 8}>
-                        <div className="empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
-                          <svg className="empty-state-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ width: 80, height: 80, color: '#9CA3AF', marginBottom: 16 }}>
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="8" y1="12" x2="16" y2="12"></line>
-                          </svg>
-                          <h3 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 600, color: '#374151' }}>No Requests Found</h3>
-                          <p style={{ margin: 0, fontSize: 13, color: '#6B7280' }}>Try adjusting your filters or raise a new support request.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {currentRequestsList.length > 0 ? (
+                        currentRequestsList.map((req, idx) => (
+                          <tr key={`${req.customerType || 'REQ'}_${req.id || idx}_${idx}`}>
+                            <td style={{ fontWeight: 600 }}>
+                              {req.customerType === "DEALER" ? `D${req.id}` : `EU${req.id}`}
+                            </td>
+                            <td>{req.customerFullName || "-"}</td>
+                            <td>{req.product || "-"}</td>
+                            <td>{formatDate(req.createdAt)}</td>
+                            {!isDealer && (
+                              <td>
+                                <span className={`type-badge ${req.customerType === "DEALER" ? "type-dealer" : "type-user"}`}>
+                                  {req.customerType === "DEALER" ? "DEALER" : "END USER"}
+                                </span>
+                              </td>
+                            )}
+                            {!isDealer && (
+                              <td style={{ fontSize: '13px', color: '#555' }}>
+                                {req.submitterEmail || "-"}
+                              </td>
+                            )}
+                            <td>
+                              <span className={`status-badge status-${req.status}`}>
+                                {req.status === "pending" && (
+                                  <svg className="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6 }}>
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                  </svg>
+                                )}
+                                {req.status === "approved" && (
+                                  <svg className="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6 }}>
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                  </svg>
+                                )}
+                                {req.status === "in_progress" && (
+                                  <svg className="badge-icon animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6, animation: "spin 2s linear infinite" }}>
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                  </svg>
+                                )}
+                                {req.status === "completed" && (
+                                  <svg className="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, marginRight: 6 }}>
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                  </svg>
+                                )}
+                                {req.status?.replace("_", " ")}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                className="action-btn"
+                                onClick={() => handleOpenDetails(req)}
+                              >
+                                View Details
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={isDealer ? 6 : 8}>
+                            <div className="empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
+                              <svg className="empty-state-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ width: 80, height: 80, color: '#9CA3AF', marginBottom: 16 }}>
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="8" y1="12" x2="16" y2="12"></line>
+                              </svg>
+                              <h3 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 600, color: '#374151' }}>No Requests Found</h3>
+                              <p style={{ margin: 0, fontSize: 13, color: '#6B7280' }}>Try adjusting your filters or raise a new support request.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* CREATE MODAL (Dealer Only) */}
-        {showCreateModal && isDealer && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h3>Raise Support Request</h3>
-                <button className="close-icon-btn" onClick={() => setShowCreateModal(false)}>×</button>
+            {/* CREATE MODAL (Dealer Only) */}
+            {showCreateModal && isDealer && (
+              <div className="modal-overlay">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h3>Raise Support Request</h3>
+                    <button className="close-icon-btn" onClick={() => setShowCreateModal(false)}>×</button>
+                  </div>
+
+                  <form onSubmit={handleCreateSubmit}>
+                    {formError && <div className="error-banner">{formError}</div>}
+
+                    <div className="form-group">
+                      <label>Customer Full Name</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Enter customer full name"
+                        value={formData.customerFullName}
+                        onChange={(e) => setFormData({ ...formData, customerFullName: e.target.value })}
+                        required
+                        disabled={submitting}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Product</label>
+                      <select
+                        className="form-select"
+                        value={formData.product}
+                        onChange={(e) => setFormData({ ...formData, product: e.target.value })}
+                        disabled={submitting}
+                      >
+                        <option value="AC Fast Charger">AC Fast Charger</option>
+                        <option value="DC Dual Charger">DC Dual Charger</option>
+                        <option value="RFID Card">RFID Card</option>
+                        <option value="Mobile App">Mobile App</option>
+                        <option value="Wallet Payment">Wallet Payment</option>
+                        <option value="Bentork Battery">Bentork Battery</option>
+                        <option value="Others Battery">Others Battery</option>
+                        <option value="Other">Other (Custom Product)</option>
+                      </select>
+                    </div>
+
+                    {formData.product === "Bentork Battery" && (
+                      <div className="form-group">
+                        <label>Invoice Number</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Enter invoice number"
+                          value={formData.invoiceNumber}
+                          onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                          required
+                          disabled={submitting}
+                        />
+                      </div>
+                    )}
+
+                    {formData.product === "Other" && (
+                      <div className="form-group">
+                        <label>Custom Product Name</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Enter custom product name"
+                          value={formData.customProduct}
+                          onChange={(e) => setFormData({ ...formData, customProduct: e.target.value })}
+                          required
+                          disabled={submitting}
+                        />
+                      </div>
+                    )}
+
+                    <div className="form-group">
+                      <label>Issue Description (Max 1000 characters)</label>
+                      <textarea
+                        className="form-textarea"
+                        placeholder="Describe the issue in detail..."
+                        value={formData.issueDescription}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 1000) {
+                            setFormData({ ...formData, issueDescription: e.target.value });
+                          }
+                        }}
+                        required
+                        disabled={submitting}
+                      />
+                      <span className="char-counter">
+                        {formData.issueDescription.length} / 1000 characters
+                      </span>
+                    </div>
+
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="sec-btn"
+                        onClick={() => setShowCreateModal(false)}
+                        disabled={submitting}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="primary-btn" disabled={submitting}>
+                        {submitting && <span className="action-spinner"></span>}
+                        Submit Request
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
-
-              <form onSubmit={handleCreateSubmit}>
-                {formError && <div className="error-banner">{formError}</div>}
-
-                <div className="form-group">
-                  <label>Customer Full Name</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Enter customer full name"
-                    value={formData.customerFullName}
-                    onChange={(e) => setFormData({ ...formData, customerFullName: e.target.value })}
-                    required
-                    disabled={submitting}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Product</label>
-                  <select
-                    className="form-select"
-                    value={formData.product}
-                    onChange={(e) => setFormData({ ...formData, product: e.target.value })}
-                    disabled={submitting}
-                  >
-                    <option value="AC Fast Charger">AC Fast Charger</option>
-                    <option value="DC Dual Charger">DC Dual Charger</option>
-                    <option value="RFID Card">RFID Card</option>
-                    <option value="Mobile App">Mobile App</option>
-                    <option value="Wallet Payment">Wallet Payment</option>
-                    <option value="Bentork Battery">Bentork Battery</option>
-                    <option value="Others Battery">Others Battery</option>
-                    <option value="Other">Other (Custom Product)</option>
-                  </select>
-                </div>
-
-                {formData.product === "Bentork Battery" && (
-                  <div className="form-group">
-                    <label>Invoice Number</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Enter invoice number"
-                      value={formData.invoiceNumber}
-                      onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                      required
-                      disabled={submitting}
-                    />
-                  </div>
-                )}
-
-                {formData.product === "Other" && (
-                  <div className="form-group">
-                    <label>Custom Product Name</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Enter custom product name"
-                      value={formData.customProduct}
-                      onChange={(e) => setFormData({ ...formData, customProduct: e.target.value })}
-                      required
-                      disabled={submitting}
-                    />
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label>Issue Description (Max 1000 characters)</label>
-                  <textarea
-                    className="form-textarea"
-                    placeholder="Describe the issue in detail..."
-                    value={formData.issueDescription}
-                    onChange={(e) => {
-                      if (e.target.value.length <= 1000) {
-                        setFormData({ ...formData, issueDescription: e.target.value });
-                      }
-                    }}
-                    required
-                    disabled={submitting}
-                  />
-                  <span className="char-counter">
-                    {formData.issueDescription.length} / 1000 characters
-                  </span>
-                </div>
-
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="sec-btn"
-                    onClick={() => setShowCreateModal(false)}
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="primary-btn" disabled={submitting}>
-                    {submitting && <span className="action-spinner"></span>}
-                    Submit Request
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+            )}
+          </>
         )}
-      </>
-    )}
-  </div>
+      </div>
 
       {/* Lightbox / Image Preview Modal */}
       {lightboxState.isOpen && (
