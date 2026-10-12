@@ -33,6 +33,10 @@ export default function App() {
               path="/dashboard/*"
               element={<Dashboard />}
             />
+            <Route
+              path="/crm/*"
+              element={<Dashboard />}
+            />
           </Routes>
         </Suspense>
       </BrowserRouter>

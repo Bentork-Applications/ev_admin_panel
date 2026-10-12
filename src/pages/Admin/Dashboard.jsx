@@ -46,6 +46,22 @@ const MaterialIn = React.lazy(() => import("./MaterialIn"));
 const MaterialOut = React.lazy(() => import("./MaterialOut"));
 const InventoryStock = React.lazy(() => import("./InventoryStock"));
 const MaterialReports = React.lazy(() => import("./MaterialReports"));
+const CrmDashboardPage = React.lazy(() => import("./crm/CrmDashboardPage"));
+const CrmNewCallPage = React.lazy(() => import("./crm/CrmNewCallPage"));
+const CrmLeadsPage = React.lazy(() => import("./crm/CrmLeadsPage"));
+const CrmCompaniesPage = React.lazy(() => import("./crm/CrmCompaniesPage"));
+const CrmContactsPage = React.lazy(() => import("./crm/CrmContactsPage"));
+const CrmCompaniesContactsPage = React.lazy(() => import("./crm/CrmCompaniesContactsPage"));
+const CrmActivitiesPage = React.lazy(() => import("./crm/CrmActivitiesPage"));
+const CrmRequirementsPage = React.lazy(() => import("./crm/CrmRequirementsPage"));
+const CrmOpportunitiesPage = React.lazy(() => import("./crm/CrmOpportunitiesPage"));
+const CrmQuotationsPage = React.lazy(() => import("./crm/CrmQuotationsPage"));
+const CrmOrdersPaymentsPage = React.lazy(() => import("./crm/CrmOrdersPaymentsPage"));
+const CrmCampaignsPage = React.lazy(() => import("./crm/CrmCampaignsPage"));
+const CrmAudienceBuilderPage = React.lazy(() => import("./crm/CrmAudienceBuilderPage"));
+const CrmIndiaMartPage = React.lazy(() => import("./crm/CrmIndiaMartPage"));
+const CrmReportsPage = React.lazy(() => import("./crm/CrmReportsPage"));
+const CrmSettingsPage = React.lazy(() => import("./crm/CrmSettingsPage"));
 
 const LoadingSpinner = () => (
   <div className="loading-spinner">
@@ -599,10 +615,24 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
     { name: "Sales Admin", path: "sales-admin", roles: ["ADMIN"] },
     { name: "Production Admin", path: "production-admin", roles: ["ADMIN"] },
     { name: "SCM Admin", path: "scm-admin", roles: ["ADMIN"] },
+    { name: "CRM Dashboard", path: "crm/dashboard", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "New Call / Add Lead", path: "crm/new-call", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "CRM Leads", path: "crm/leads", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Companies & Contacts", path: "crm/companies-contacts", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Activities & Follow-ups", path: "crm/activities", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Requirements", path: "crm/requirements", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Opportunities", path: "crm/opportunities", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Quotations", path: "crm/quotations", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Orders & Payments", path: "crm/orders-payments", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Campaigns / Posts", path: "crm/campaigns", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Audience Builder", path: "crm/audience-builder", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "IndiaMART", path: "crm/indiamart", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Reports", path: "crm/reports", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
+    { name: "Settings", path: "crm/settings", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
     { name: "Dealers Management", path: "dealers", roles: ["ADMIN"] },
     { name: "Café Configuration", path: "cafes", roles: ["ADMIN"] },
     { name: "Dealer Profile", path: "profile", roles: ["DEALER"] },
-    { name: "Log Out", path: null, roles: ["ADMIN", "DEALER", "ADMIN_STAFF"] },
+    { name: "Log Out", path: null, roles: ["ADMIN", "DEALER", "ADMIN_STAFF", "SALES_ADMIN", "SALES"] },
   ];
 
   const cardRouteMap = {
@@ -1030,7 +1060,7 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                 index
                 element={
                   userRole === "SALES_ADMIN" ? (
-                    <SalesDashboard />
+                    <CrmDashboardPage />
                   ) : userRole === "PRODUCTION_ADMIN" ? (
                     <ProductionDashboard />
                   ) : userRole === "SCM_ADMIN" ? (
@@ -1342,6 +1372,30 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                   <Route path="material-out" element={<MaterialOut baseUrl={baseUrl} userRole={userRole} />} />
                   <Route path="inventory-stock" element={<InventoryStock baseUrl={baseUrl} userRole={userRole} />} />
                   <Route path="material-reports" element={<MaterialReports baseUrl={baseUrl} userRole={userRole} />} />
+                  {/* Sales CRM & Marketing Routes for Admin */}
+                  <Route path="crm" element={<Navigate to="/dashboard/crm/dashboard" replace />} />
+                  <Route path="crm/dashboard" element={<CrmDashboardPage />} />
+                  <Route path="crm/new-call" element={<CrmNewCallPage />} />
+                  <Route path="crm/leads" element={<CrmLeadsPage />} />
+                  <Route path="crm/companies" element={<CrmCompaniesContactsPage />} />
+                  <Route path="crm/contacts" element={<CrmContactsPage />} />
+                  <Route path="crm/companies-contacts" element={<CrmCompaniesContactsPage />} />
+                  <Route path="crm/activities" element={<CrmActivitiesPage />} />
+                  <Route path="crm/requirements" element={<CrmRequirementsPage />} />
+                  <Route path="crm/opportunities" element={<CrmOpportunitiesPage />} />
+                  <Route path="crm/quotations" element={<CrmQuotationsPage />} />
+                  <Route path="crm/orders-payments" element={<CrmOrdersPaymentsPage />} />
+                  <Route path="crm/campaigns" element={<CrmCampaignsPage />} />
+                  <Route path="crm/audience-builder" element={<CrmAudienceBuilderPage />} />
+                  <Route path="crm/indiamart" element={<CrmIndiaMartPage />} />
+                  <Route path="crm/reports" element={<CrmReportsPage />} />
+                  <Route path="crm/settings" element={<CrmSettingsPage />} />
+                  <Route path="dashboard" element={<CrmDashboardPage />} />
+                  <Route path="leads" element={<CrmLeadsPage />} />
+                  <Route path="companies" element={<CrmCompaniesContactsPage />} />
+                  <Route path="contacts" element={<CrmContactsPage />} />
+                  <Route path="opportunities" element={<CrmOpportunitiesPage />} />
+                  <Route path="quotations" element={<CrmQuotationsPage />} />
                 </>
               )}
 
@@ -1393,6 +1447,30 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
               {(userRole === "SALES_ADMIN" || userRole === "SALES") && (
                 <>
                   <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
+                  <Route path="sales-dashboard" element={<SalesDashboard />} />
+                  <Route path="crm" element={<Navigate to="/dashboard/crm/dashboard" replace />} />
+                  <Route path="crm/dashboard" element={<CrmDashboardPage />} />
+                  <Route path="crm/new-call" element={<CrmNewCallPage />} />
+                  <Route path="crm/leads" element={<CrmLeadsPage />} />
+                  <Route path="crm/companies" element={<CrmCompaniesContactsPage />} />
+                  <Route path="crm/contacts" element={<CrmContactsPage />} />
+                  <Route path="crm/companies-contacts" element={<CrmCompaniesContactsPage />} />
+                  <Route path="crm/activities" element={<CrmActivitiesPage />} />
+                  <Route path="crm/requirements" element={<CrmRequirementsPage />} />
+                  <Route path="crm/opportunities" element={<CrmOpportunitiesPage />} />
+                  <Route path="crm/quotations" element={<CrmQuotationsPage />} />
+                  <Route path="crm/orders-payments" element={<CrmOrdersPaymentsPage />} />
+                  <Route path="crm/campaigns" element={<CrmCampaignsPage />} />
+                  <Route path="crm/audience-builder" element={<CrmAudienceBuilderPage />} />
+                  <Route path="crm/indiamart" element={<CrmIndiaMartPage />} />
+                  <Route path="crm/reports" element={<CrmReportsPage />} />
+                  <Route path="crm/settings" element={<CrmSettingsPage />} />
+                  <Route path="dashboard" element={<CrmDashboardPage />} />
+                  <Route path="leads" element={<CrmLeadsPage />} />
+                  <Route path="companies" element={<CrmCompaniesContactsPage />} />
+                  <Route path="contacts" element={<CrmContactsPage />} />
+                  <Route path="opportunities" element={<CrmOpportunitiesPage />} />
+                  <Route path="quotations" element={<CrmQuotationsPage />} />
                 </>
               )}
 

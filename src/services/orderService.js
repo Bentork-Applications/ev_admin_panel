@@ -189,7 +189,7 @@ export const orderService = {
 
   // ==================== ORDER TRACKING (FULL ADMIN CRUD) ====================
   getOrderTracking: async (orderId) => {
-    return await apiClient.get(`/orders/${orderId}/tracking`);
+    return await apiClient.get(`/orders/admin/${orderId}/tracking`);
   },
 
   addOrderTracking: async (orderId, trackingData) => {

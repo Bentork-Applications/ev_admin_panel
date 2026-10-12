@@ -32,7 +32,7 @@ export default function SalesDashboard() {
   const completedCount = orders.filter((o) => o.orderStatus === "scm_complete" || o.orderStatus === "dispatched").length;
 
   const totalPipelineRevenue = orders.reduce((sum, o) => {
-    const amt = parseFloat(o.totalAmount || o.totalPrice || 0);
+    const amt = parseFloat(o.totalInvoiceAmount || o.totalAmount || o.totalPrice || 0);
     return sum + (isNaN(amt) ? 0 : amt);
   }, 0);
 
@@ -58,18 +58,9 @@ export default function SalesDashboard() {
     const month = d.toLocaleString("default", { month: "short" });
     if (!monthlyDataMap[month]) monthlyDataMap[month] = { month, count: 0, revenue: 0 };
     monthlyDataMap[month].count += 1;
-    monthlyDataMap[month].revenue += parseFloat(o.totalAmount || 0) || 0;
+    monthlyDataMap[month].revenue += parseFloat(o.totalInvoiceAmount || o.totalAmount || 0) || 0;
   });
   const monthlyChartData = Object.values(monthlyDataMap).slice(-6);
-  if (monthlyChartData.length === 0) {
-    monthlyChartData.push(
-      { month: "Jan", count: 4, revenue: 45000 },
-      { month: "Feb", count: 7, revenue: 82000 },
-      { month: "Mar", count: 12, revenue: 135000 },
-      { month: "Apr", count: 16, revenue: 190000 },
-      { month: "May", count: 22, revenue: 275000 }
-    );
-  }
 
   // Sort orders newest first
   const sortedOrders = useMemo(() => {

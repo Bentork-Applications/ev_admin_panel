@@ -1,25 +1,77 @@
-import React, { useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { X } from "lucide-react";
 import { OrderItemsEditor } from "./OrderItemsEditor";
+import { orderService } from "../../services/orderService";
+import { userService } from "../../services/userService";
+import { createDefaultOrderItem } from "../../utils/formatters";
 
 export const CreateSalesOrderModal = React.memo(({
   showCreateModal,
+  isOpen,
   onClose,
-  salesFormData,
-  setSalesFormData,
-  salesFormErrors,
-  handleCreateSalesOrder,
-  submitting,
-  customerSearchTerm,
-  setCustomerSearchTerm,
-  showCustomerDropdown,
-  setShowCustomerDropdown,
-  registeredUsers
+  onSuccess,
+  showToast,
+  salesFormData: externalFormData,
+  setSalesFormData: externalSetFormData,
+  salesFormErrors: externalFormErrors,
+  handleCreateSalesOrder: externalHandleCreate,
+  submitting: externalSubmitting,
+  customerSearchTerm: externalSearchTerm,
+  setCustomerSearchTerm: externalSetSearchTerm,
+  showCustomerDropdown: externalShowDropdown,
+  setShowCustomerDropdown: externalSetShowDropdown,
+  registeredUsers: externalRegisteredUsers
 }) => {
+  const visible = showCreateModal !== undefined ? showCreateModal : isOpen;
+
+  // Standalone mode internal state
+  const [internalFormData, setInternalFormData] = useState({
+    assignedUserId: null,
+    customerName: "",
+    customerEmail: "",
+    mobileNumber: "",
+    piNumber: "",
+    orderItems: [createDefaultOrderItem()],
+    expectedDeliveryDate: "",
+    totalInvoiceAmount: "",
+    receivedAmount: "",
+    priority: "medium",
+    address: ""
+  });
+  const [internalFormErrors, setInternalFormErrors] = useState({});
+  const [internalSubmitting, setInternalSubmitting] = useState(false);
+  const [internalCustomerSearchTerm, setInternalCustomerSearchTerm] = useState("");
+  const [internalShowCustomerDropdown, setInternalShowCustomerDropdown] = useState(false);
+  const [internalRegisteredUsers, setInternalRegisteredUsers] = useState([]);
+
+  // Determine whether to use external or internal state
+  const isControlled = !!externalFormData && !!externalSetFormData;
+
+  const formData = isControlled ? externalFormData : internalFormData;
+  const setFormData = isControlled ? externalSetFormData : setInternalFormData;
+  const formErrors = isControlled ? (externalFormErrors || {}) : internalFormErrors;
+  const isSubmitting = isControlled ? (externalSubmitting || false) : internalSubmitting;
+  const searchTerm = isControlled ? (externalSearchTerm || "") : internalCustomerSearchTerm;
+  const setSearchTerm = isControlled ? externalSetSearchTerm : setInternalCustomerSearchTerm;
+  const showDropdown = isControlled ? (externalShowDropdown || false) : internalShowCustomerDropdown;
+  const setShowDropdown = isControlled ? externalSetShowDropdown : setInternalShowCustomerDropdown;
+  const userList = isControlled ? (externalRegisteredUsers || []) : internalRegisteredUsers;
+
+  // Load registered users if not provided externally
+  useEffect(() => {
+    if (visible && !isControlled && internalRegisteredUsers.length === 0) {
+      userService.getAllUsers()
+        .then((users) => {
+          setInternalRegisteredUsers(Array.isArray(users) ? users : Array.isArray(users?.data) ? users.data : []);
+        })
+        .catch(() => {});
+    }
+  }, [visible, isControlled, internalRegisteredUsers.length]);
+
   const filteredCustomerList = useMemo(() => {
-    if (!customerSearchTerm.trim()) return [];
-    const term = customerSearchTerm.toLowerCase();
-    return (registeredUsers || [])
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    return (userList || [])
       .filter((u) => {
         return (
           (u.name || "").toLowerCase().includes(term) ||
@@ -28,16 +80,67 @@ export const CreateSalesOrderModal = React.memo(({
         );
       })
       .slice(0, 6);
-  }, [registeredUsers, customerSearchTerm]);
+  }, [userList, searchTerm]);
 
-  if (!showCreateModal) return null;
+  const handleInternalSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    const errors = {};
+    if (!formData.customerName?.trim()) errors.customerName = "Customer Name is required";
+    if (!formData.piNumber?.trim()) errors.piNumber = "P.I. Number is required";
+    if (!formData.mobileNumber?.trim() || !/^[0-9]{10}$/.test(formData.mobileNumber.trim())) {
+      errors.mobileNumber = "Valid 10-digit mobile number is required";
+    }
+    if (!formData.expectedDeliveryDate) errors.expectedDeliveryDate = "Expected Delivery Date is required";
+    if (!formData.totalInvoiceAmount || parseFloat(formData.totalInvoiceAmount) <= 0) {
+      errors.totalInvoiceAmount = "Total Invoice Amount must be greater than 0";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setInternalFormErrors(errors);
+      showToast?.("Please resolve form errors", "error");
+      return;
+    }
+
+    setInternalSubmitting(true);
+    try {
+      const payload = {
+        customerName: formData.customerName.trim(),
+        assignedUserId: formData.assignedUserId ? Number(formData.assignedUserId) : 1,
+        piNumber: formData.piNumber.trim(),
+        mobileNumber: formData.mobileNumber.trim(),
+        expectedDeliveryDate: formData.expectedDeliveryDate,
+        totalInvoiceAmount: parseFloat(formData.totalInvoiceAmount),
+        receivedAmount: formData.receivedAmount ? parseFloat(formData.receivedAmount) : 0.0,
+        priority: formData.priority || "medium",
+        orderItems: (formData.orderItems || []).map((it) => ({
+          productDetails: it.productDetails?.trim() || "EV Battery Pack",
+          quantity: parseInt(it.quantity, 10) || 1,
+          warrantyStartDate: it.warrantyStartDate || null,
+          warrantyEndDate: it.warrantyEndDate || null
+        }))
+      };
+
+      await orderService.salesCreateOrder(payload);
+      showToast?.("Sales order created successfully", "success");
+      onSuccess?.();
+      onClose?.();
+    } catch (err) {
+      showToast?.(err.message || "Failed to create sales order", "error");
+    } finally {
+      setInternalSubmitting(false);
+    }
+  }, [formData, showToast, onSuccess, onClose]);
+
+  if (!visible) return null;
+
+  const handleSubmit = isControlled ? externalHandleCreate : handleInternalSubmit;
 
   return (
-    <div className="modal-overlay" onClick={() => !submitting && onClose()}>
+    <div className="modal-overlay" onClick={() => !isSubmitting && onClose()}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Create New Sales Order</h2>
-          <button className="close-btn" onClick={onClose} disabled={submitting}>
+          <button className="close-btn" onClick={onClose} disabled={isSubmitting}>
             <X size={20} />
           </button>
         </div>
@@ -46,8 +149,8 @@ export const CreateSalesOrderModal = React.memo(({
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (!submitting) {
-              handleCreateSalesOrder(e);
+            if (!isSubmitting) {
+              handleSubmit(e);
             }
           }}
           autoComplete="off"
@@ -62,14 +165,14 @@ export const CreateSalesOrderModal = React.memo(({
               <input
                 type="text"
                 placeholder="Search by customer name, email, or mobile..."
-                value={customerSearchTerm}
+                value={searchTerm}
                 onChange={(e) => {
-                  setCustomerSearchTerm(e.target.value);
-                  setShowCustomerDropdown(true);
+                  setSearchTerm(e.target.value);
+                  setShowDropdown(true);
                 }}
-                onFocus={() => setShowCustomerDropdown(true)}
+                onFocus={() => setShowDropdown(true)}
               />
-              {showCustomerDropdown && customerSearchTerm.trim() && (
+              {showDropdown && searchTerm.trim() && (
                 <div
                   style={{
                     position: "absolute",
@@ -95,15 +198,15 @@ export const CreateSalesOrderModal = React.memo(({
                         borderBottom: "1px solid #F3F4F6"
                       }}
                       onMouseDown={() => {
-                        setSalesFormData((prev) => ({
+                        setFormData((prev) => ({
                           ...prev,
                           assignedUserId: u.id || u.userId || null,
                           customerName: u.name || "",
                           mobileNumber: u.mobile || u.mobileNumber || u.phone || prev.mobileNumber,
                           customerEmail: u.email || "",
                         }));
-                        setCustomerSearchTerm(`${u.name} (${u.email || u.mobile || ""})`);
-                        setShowCustomerDropdown(false);
+                        setSearchTerm(`${u.name} (${u.email || u.mobile || ""})`);
+                        setShowDropdown(false);
                       }}
                     >
                       <div style={{ fontWeight: 600, fontSize: "13px", color: "#111827" }}>{u.name}</div>
@@ -126,10 +229,10 @@ export const CreateSalesOrderModal = React.memo(({
               <input
                 type="text"
                 placeholder="e.g. John Doe"
-                value={salesFormData.customerName}
-                onChange={(e) => setSalesFormData({ ...salesFormData, customerName: e.target.value })}
+                value={formData.customerName || ""}
+                onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
               />
-              {salesFormErrors.customerName && <span className="field-error">{salesFormErrors.customerName}</span>}
+              {formErrors.customerName && <span className="field-error">{formErrors.customerName}</span>}
             </div>
 
             <div className="form-row">
@@ -138,10 +241,10 @@ export const CreateSalesOrderModal = React.memo(({
                 <input
                   type="text"
                   placeholder="e.g. PI-2026-001"
-                  value={salesFormData.piNumber}
-                  onChange={(e) => setSalesFormData({ ...salesFormData, piNumber: e.target.value })}
+                  value={formData.piNumber || ""}
+                  onChange={(e) => setFormData({ ...formData, piNumber: e.target.value })}
                 />
-                {salesFormErrors.piNumber && <span className="field-error">{salesFormErrors.piNumber}</span>}
+                {formErrors.piNumber && <span className="field-error">{formErrors.piNumber}</span>}
               </div>
 
               <div className="form-group">
@@ -150,26 +253,26 @@ export const CreateSalesOrderModal = React.memo(({
                   type="text"
                   maxLength={10}
                   placeholder="e.g. 9876543210"
-                  value={salesFormData.mobileNumber}
-                  onChange={(e) => setSalesFormData({ ...salesFormData, mobileNumber: e.target.value })}
+                  value={formData.mobileNumber || ""}
+                  onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
                 />
-                {salesFormErrors.mobileNumber && <span className="field-error">{salesFormErrors.mobileNumber}</span>}
+                {formErrors.mobileNumber && <span className="field-error">{formErrors.mobileNumber}</span>}
               </div>
             </div>
 
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <label>Product Line Items & Quantities *</label>
-              <OrderItemsEditor data={salesFormData} onChange={setSalesFormData} errors={salesFormErrors} />
+              <OrderItemsEditor data={formData} onChange={setFormData} errors={formErrors} />
             </div>
 
             <div className="form-group">
               <label>Expected Delivery Date *</label>
               <input
                 type="date"
-                value={salesFormData.expectedDeliveryDate}
-                onChange={(e) => setSalesFormData({ ...salesFormData, expectedDeliveryDate: e.target.value })}
+                value={formData.expectedDeliveryDate || ""}
+                onChange={(e) => setFormData({ ...formData, expectedDeliveryDate: e.target.value })}
               />
-              {salesFormErrors.expectedDeliveryDate && <span className="field-error">{salesFormErrors.expectedDeliveryDate}</span>}
+              {formErrors.expectedDeliveryDate && <span className="field-error">{formErrors.expectedDeliveryDate}</span>}
             </div>
 
             <div className="form-row">
@@ -180,10 +283,10 @@ export const CreateSalesOrderModal = React.memo(({
                   step="any"
                   min="0.01"
                   placeholder="e.g. 50000"
-                  value={salesFormData.totalInvoiceAmount}
-                  onChange={(e) => setSalesFormData({ ...salesFormData, totalInvoiceAmount: e.target.value })}
+                  value={formData.totalInvoiceAmount || ""}
+                  onChange={(e) => setFormData({ ...formData, totalInvoiceAmount: e.target.value })}
                 />
-                {salesFormErrors.totalInvoiceAmount && <span className="field-error">{salesFormErrors.totalInvoiceAmount}</span>}
+                {formErrors.totalInvoiceAmount && <span className="field-error">{formErrors.totalInvoiceAmount}</span>}
               </div>
 
               <div className="form-group">
@@ -193,10 +296,10 @@ export const CreateSalesOrderModal = React.memo(({
                   step="any"
                   min="0"
                   placeholder="e.g. 20000 (Defaults to 0)"
-                  value={salesFormData.receivedAmount}
-                  onChange={(e) => setSalesFormData({ ...salesFormData, receivedAmount: e.target.value })}
+                  value={formData.receivedAmount || ""}
+                  onChange={(e) => setFormData({ ...formData, receivedAmount: e.target.value })}
                 />
-                {salesFormErrors.receivedAmount && <span className="field-error">{salesFormErrors.receivedAmount}</span>}
+                {formErrors.receivedAmount && <span className="field-error">{formErrors.receivedAmount}</span>}
               </div>
 
               <div className="form-group">
@@ -206,8 +309,8 @@ export const CreateSalesOrderModal = React.memo(({
                   readOnly
                   disabled
                   value={(() => {
-                    const total = parseFloat(salesFormData.totalInvoiceAmount) || 0;
-                    const received = parseFloat(salesFormData.receivedAmount) || 0;
+                    const total = parseFloat(formData.totalInvoiceAmount) || 0;
+                    const received = parseFloat(formData.receivedAmount) || 0;
                     const pending = Math.max(0, total - received);
                     return `₹ ${pending.toLocaleString("en-IN")}`;
                   })()}
@@ -219,22 +322,22 @@ export const CreateSalesOrderModal = React.memo(({
             <div className="form-group">
               <label>Priority *</label>
               <select
-                value={salesFormData.priority}
-                onChange={(e) => setSalesFormData({ ...salesFormData, priority: e.target.value })}
+                value={formData.priority || "medium"}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
               >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
               </select>
-              {salesFormErrors.priority && <span className="field-error">{salesFormErrors.priority}</span>}
+              {formErrors.priority && <span className="field-error">{formErrors.priority}</span>}
             </div>
 
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <label>Customer Address (Optional)</label>
               <textarea
                 placeholder="Enter customer address..."
-                value={salesFormData.address || ""}
-                onChange={(e) => setSalesFormData({ ...salesFormData, address: e.target.value })}
+                value={formData.address || ""}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 rows={2}
                 style={{ width: "100%", padding: "8px 12px", border: "1px solid #D1D5DB", borderRadius: "6px", fontSize: "14px" }}
               />
@@ -242,11 +345,11 @@ export const CreateSalesOrderModal = React.memo(({
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="sec-btn" onClick={onClose} disabled={submitting}>
+            <button type="button" className="sec-btn" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </button>
-            <button type="submit" className="primary-action-btn" disabled={submitting}>
-              {submitting ? "Creating..." : "Submit Order"}
+            <button type="submit" className="primary-action-btn" disabled={isSubmitting}>
+              {isSubmitting ? "Creating..." : "Submit Order"}
             </button>
           </div>
         </form>
