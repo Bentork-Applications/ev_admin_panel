@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { X, FileText, Send, CheckCircle2, XCircle, Printer, Calendar, Building, DollarSign } from "lucide-react";
+import { X, FileText, Send, CheckCircle2, XCircle, Printer, Calendar, Building, DollarSign, ShoppingBag } from "lucide-react";
 import { crmService } from "../../services/crmService";
 import { QuotationStatusBadge } from "./CrmBadge";
 
@@ -13,6 +13,8 @@ export const QuotationDetailModal = ({
   const [quotation, setQuotation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const fetchQuotation = useCallback(async () => {
     if (!quotationId) return;
@@ -78,6 +80,23 @@ export const QuotationDetailModal = ({
       showToast?.(err.message || "Failed to reject quotation", "error");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleConvertToOrder = async () => {
+    setConverting(true);
+    try {
+      const res = await crmService.convertToOrder(quotationId);
+      const msg = typeof res === "string" ? res : res?.message || `Quotation converted to Order successfully${res?.orderId ? ` (Order ID: ${res.orderId})` : ""}`;
+      showToast?.(msg, "success");
+      setShowConvertModal(false);
+      await fetchQuotation();
+      onQuotationUpdated?.();
+    } catch (err) {
+      console.error("Error converting quotation to order:", err);
+      showToast?.(err.message || "Failed to convert quotation to order", "error");
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -418,38 +437,162 @@ export const QuotationDetailModal = ({
                 </>
               )}
 
-              {status === "ACCEPTED" && (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "12px", color: "#16A34A", fontWeight: 600 }}>
-                    Quotation Accepted
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      showToast(
-                        "Backend Required: Convert-to-Order endpoint (POST /api/crm/quotations/{id}/convert-order) is pending backend implementation.",
-                        "info"
-                      )
-                    }
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: "8px",
-                      backgroundColor: "#F8FAFC",
-                      border: "1px dashed #CBD5E1",
-                      color: "#64748B",
-                      fontSize: "12px",
-                      fontWeight: 500,
-                      cursor: "pointer"
-                    }}
-                  >
-                    Convert to Order (Backend Req.)
-                  </button>
-                </div>
-              )}
+              {/* Convert to Order Action - Prominent green button enabled ONLY for ACCEPTED */}
+              <button
+                type="button"
+                disabled={status !== "ACCEPTED" || actionLoading}
+                onClick={() => setShowConvertModal(true)}
+                title={status === "ACCEPTED" ? "Convert Quotation into a Production Order" : "Quotation must be in ACCEPTED status to convert to order"}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "8px",
+                  backgroundColor: status === "ACCEPTED" ? "#16A34A" : "#F1F5F9",
+                  color: status === "ACCEPTED" ? "#ffffff" : "#94A3B8",
+                  border: status === "ACCEPTED" ? "none" : "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: status === "ACCEPTED" ? "pointer" : "not-allowed",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: status === "ACCEPTED" ? "0 2px 4px rgba(22, 163, 74, 0.25)" : "none"
+                }}
+              >
+                <ShoppingBag size={14} />
+                <span>Convert to Order</span>
+              </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal for Quotation -> Order Conversion */}
+      {showConvertModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => setShowConvertModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "460px",
+              padding: "24px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{
+                  width: "44px",
+                  height: "44px",
+                  borderRadius: "12px",
+                  backgroundColor: "#DCFCE7",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#16A34A"
+                }}
+              >
+                <ShoppingBag size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                  Convert Quotation to Order
+                </h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                  Confirm commercial conversion
+                </p>
+              </div>
+            </div>
+
+            <p style={{ margin: 0, fontSize: "13px", color: "#334155", lineHeight: "1.5" }}>
+              Convert Quotation <strong style={{ color: "#0F172A" }}>{quotation?.quoteNumber || `QT-${quotationId}`}</strong> into a Production Order?
+            </p>
+
+            <div
+              style={{
+                backgroundColor: "#F8FAFC",
+                border: "1px solid #E2E8F0",
+                borderRadius: "8px",
+                padding: "12px",
+                fontSize: "12px",
+                color: "#64748B",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px"
+              }}
+            >
+              <div>Company: <strong style={{ color: "#0F172A" }}>{quotation?.companyName || "—"}</strong></div>
+              <div>Opportunity: <strong style={{ color: "#0F172A" }}>{quotation?.opportunityTitle || "—"}</strong></div>
+              <div>Order Value: <strong style={{ color: "#16A34A" }}>₹{(quotation?.finalAmount ?? quotation?.totalAmount ?? 0).toLocaleString("en-IN")}</strong></div>
+              <div>Status on Creation: <span style={{ color: "#2563EB", fontWeight: 600 }}>SALES_REGISTERED</span></div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+              <button
+                type="button"
+                onClick={() => setShowConvertModal(false)}
+                disabled={converting}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  backgroundColor: "#ffffff",
+                  color: "#475569",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={converting}
+                onClick={handleConvertToOrder}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "8px",
+                  backgroundColor: "#16A34A",
+                  color: "#ffffff",
+                  border: "none",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: converting ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                {converting ? (
+                  <span>Converting...</span>
+                ) : (
+                  <>
+                    <CheckCircle2 size={15} />
+                    <span>Confirm Conversion</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

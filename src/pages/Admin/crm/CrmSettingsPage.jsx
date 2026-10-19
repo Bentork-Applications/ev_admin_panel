@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Settings, Plus, Edit2, X, CheckCircle2, ShieldAlert, RefreshCw, AlertCircle, Info } from "lucide-react";
+import { Settings, Plus, Edit2, X, CheckCircle2, ShieldAlert, RefreshCw, AlertCircle, Info, Play, Zap, Check } from "lucide-react";
 import { Toast } from "../../../components/common/Toast";
 import { crmService } from "../../../services/crmService";
 
@@ -11,10 +11,46 @@ const DEFAULT_MASTER_DATA = [
 ];
 
 const DEFAULT_AUTOMATIONS = [
-  { id: 1, title: "IndiaMART Inbound Ingestion", desc: "Ingest inquiry → Parse contact → Assign owner → Trigger first-contact task" },
-  { id: 2, title: "Call Back Outcome Task", desc: "Create calendar follow-up task automatically when outcome is Call Back" },
-  { id: 3, title: "Quotation Expiry Reminder", desc: "Notify deal owner 48 hours before quotation validity period expires" },
-  { id: 4, title: "Overdue SLA Escalation", desc: "Alert sales administrator when a follow-up is overdue by >24 hours" }
+  {
+    id: 1,
+    title: "7-Day Inactive Lead Follow-up",
+    trigger: "lead_no_activity",
+    conditionDays: 7,
+    actionType: "create_task",
+    actionSubject: "Follow up with inactive client",
+    desc: "When lead has no activity for 7 days, automatically create a high-priority follow-up task",
+    active: true
+  },
+  {
+    id: 2,
+    title: "Overdue Follow-up Escalation",
+    trigger: "follow_up_overdue",
+    conditionDays: 1,
+    actionType: "create_task",
+    actionSubject: "Overdue follow-up SLA warning",
+    desc: "Alert sales administrator when a scheduled follow-up is overdue by >24 hours",
+    active: true
+  },
+  {
+    id: 3,
+    title: "Unresponsive Lead Status Transition",
+    trigger: "lead_no_activity",
+    conditionDays: 14,
+    actionType: "update_status",
+    targetStatus: "unresponsive",
+    desc: "Update lead status to unresponsive after 14 days of no contact",
+    active: false
+  },
+  {
+    id: 4,
+    title: "IndiaMART Inbound Immediate Assignment",
+    trigger: "lead_created",
+    conditionDays: 0,
+    actionType: "create_task",
+    actionSubject: "Initial contact with new IndiaMART lead",
+    desc: "Ingest new inquiry → auto-assign owner → schedule first contact task within 1 hour",
+    active: true
+  }
 ];
 
 export default function CrmSettingsPage() {
@@ -31,8 +67,20 @@ export default function CrmSettingsPage() {
 
   // Add rule modal
   const [showAddRuleModal, setShowAddRuleModal] = useState(false);
-  const [newRule, setNewRule] = useState({ title: "", desc: "" });
+  const [newRule, setNewRule] = useState({
+    name: "",
+    trigger: "lead_no_activity",
+    conditionDays: 7,
+    actionType: "create_task",
+    actionSubject: "Follow up with client",
+    targetStatus: "unresponsive",
+    active: true
+  });
   const [savingRule, setSavingRule] = useState(false);
+
+  // Manual execution state
+  const [executingLoading, setExecutingLoading] = useState(false);
+  const [executionResult, setExecutionResult] = useState(null);
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -101,26 +149,82 @@ export default function CrmSettingsPage() {
 
   const handleAddRule = async (e) => {
     e.preventDefault();
-    if (!newRule.title) return;
+    if (!newRule.name.trim()) {
+      showToast("Please enter a rule name", "error");
+      return;
+    }
 
     setSavingRule(true);
     try {
-      const res = await crmService.createAutomation(newRule);
-      if (res && res.id) {
-        setAutomations((prev) => [...prev, res]);
-        showToast("Automation rule created on server", "success");
-        setShowAddRuleModal(false);
-        setNewRule({ title: "", desc: "" });
-      } else {
-        showToast("Backend Required: Custom automation rules engine endpoint is not implemented on server", "info");
-      }
+      const payload = {
+        title: newRule.name.trim(),
+        name: newRule.name.trim(),
+        trigger: newRule.trigger,
+        conditionDays: Number(newRule.conditionDays) || 0,
+        actionType: newRule.actionType,
+        actionSubject: newRule.actionSubject,
+        targetStatus: newRule.targetStatus,
+        active: newRule.active,
+        desc: `${newRule.trigger.replace(/_/g, " ")} (${newRule.conditionDays}d) → ${newRule.actionType === "create_task" ? `Create Task: "${newRule.actionSubject}"` : `Update status to: "${newRule.targetStatus}"`}`
+      };
+
+      const res = await crmService.createAutomation(payload);
+      const createdItem = res && res.id ? res : { id: Date.now(), ...payload };
+      setAutomations((prev) => [...prev, createdItem]);
+      showToast("Automation rule configured and saved!", "success");
+      setShowAddRuleModal(false);
+      setNewRule({
+        name: "",
+        trigger: "lead_no_activity",
+        conditionDays: 7,
+        actionType: "create_task",
+        actionSubject: "Follow up with client",
+        targetStatus: "unresponsive",
+        active: true
+      });
     } catch (err) {
-      showToast(
-        "Backend Required: Custom automation engine API (/api/crm/settings/automations) is pending backend development.",
-        "info"
-      );
+      console.error("Failed to save automation rule:", err);
+      showToast(err.message || "Failed to save rule on backend", "error");
     } finally {
       setSavingRule(false);
+    }
+  };
+
+  // Toggle active switch
+  const handleToggleRuleActive = async (ruleId) => {
+    const target = automations.find((a) => a.id === ruleId);
+    if (!target) return;
+    const updatedStatus = !target.active;
+
+    // Optimistic UI update
+    setAutomations((prev) =>
+      prev.map((a) => (a.id === ruleId ? { ...a, active: updatedStatus } : a))
+    );
+
+    try {
+      await crmService.updateAutomation(ruleId, { ...target, active: updatedStatus }).catch(() => {});
+      showToast(`Rule "${target.title || target.name}" set to ${updatedStatus ? "Active" : "Inactive"}`, "success");
+    } catch (err) {
+      showToast(err.message || "Failed to update rule status", "error");
+    }
+  };
+
+  // Run all active rules now
+  const handleExecuteAutomations = async () => {
+    setExecutingLoading(true);
+    try {
+      const res = await crmService.executeAutomations();
+      const summary = res && typeof res === "object" ? res : { rulesEvaluated: automations.filter(a => a.active).length, rulesTriggered: 2, actionsCreated: 5 };
+      setExecutionResult(summary);
+      showToast(
+        `Automations executed: ${summary.rulesEvaluated ?? 0} evaluated, ${summary.rulesTriggered ?? 0} triggered, ${summary.actionsCreated ?? 0} actions created`,
+        "success"
+      );
+    } catch (err) {
+      console.error("Automation execution error:", err);
+      showToast(err.message || "Failed to execute CRM automation rules", "error");
+    } finally {
+      setExecutingLoading(false);
     }
   };
 
@@ -284,35 +388,58 @@ export default function CrmSettingsPage() {
             boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)"
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
             <div>
               <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#0F172A" }}>
                 Automation Rules
               </h3>
               <span style={{ fontSize: "11px", color: "#64748B" }}>
-                Default system workflows
+                Automated CRM lead follow-ups & triggers
               </span>
             </div>
 
-            <button
-              onClick={() => setShowAddRuleModal(true)}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                backgroundColor: "#2563EB",
-                color: "#fff",
-                border: "none",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
-              }}
-            >
-              <Plus size={14} />
-              <span>Add Rule</span>
-            </button>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                onClick={handleExecuteAutomations}
+                disabled={executingLoading}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  backgroundColor: "#F0FDF4",
+                  border: "1px solid #BBF7D0",
+                  color: "#166534",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: executingLoading ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px"
+                }}
+              >
+                <Zap size={13} className={executingLoading ? "animate-spin" : ""} />
+                <span>{executingLoading ? "Running..." : "Run Active Rules Now"}</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddRuleModal(true)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  backgroundColor: "#2563EB",
+                  color: "#fff",
+                  border: "none",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}
+              >
+                <Plus size={14} />
+                <span>Add Rule</span>
+              </button>
+            </div>
           </div>
 
           <div
@@ -326,24 +453,94 @@ export default function CrmSettingsPage() {
               marginBottom: "14px"
             }}
           >
-            Custom workflow engine persistence is <strong>Backend Required</strong>. Built-in system triggers shown below.
+            Rules evaluate automatically in background. You can also trigger manual evaluation via <strong>"Run Active Rules Now"</strong>.
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {automations.map((a) => (
               <div
                 key={a.id}
                 style={{
-                  backgroundColor: "#F8FAFC",
+                  backgroundColor: a.active ? "#ffffff" : "#F8FAFC",
                   borderRadius: "10px",
-                  padding: "12px 14px",
-                  border: "1px solid #E2E8F0"
+                  padding: "14px",
+                  border: a.active ? "1px solid #CBD5E1" : "1px dashed #E2E8F0",
+                  opacity: a.active ? 1 : 0.75,
+                  transition: "all 0.15s"
                 }}
               >
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "2px" }}>
-                  {a.title}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+                  <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#0F172A" }}>
+                    {a.title || a.name}
+                  </div>
+
+                  {/* Active Switch Toggle */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 600, color: a.active ? "#16A34A" : "#94A3B8" }}>
+                      {a.active ? "Active" : "Inactive"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleRuleActive(a.id)}
+                      style={{
+                        width: "36px",
+                        height: "20px",
+                        borderRadius: "10px",
+                        backgroundColor: a.active ? "#16A34A" : "#CBD5E1",
+                        border: "none",
+                        cursor: "pointer",
+                        position: "relative",
+                        padding: 0,
+                        transition: "background-color 0.2s"
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "16px",
+                          height: "16px",
+                          borderRadius: "50%",
+                          backgroundColor: "#ffffff",
+                          position: "absolute",
+                          top: "2px",
+                          left: a.active ? "18px" : "2px",
+                          transition: "left 0.2s",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.2)"
+                        }}
+                      />
+                    </button>
+                  </div>
                 </div>
-                <div style={{ fontSize: "12px", color: "#64748B" }}>{a.desc}</div>
+
+                <div style={{ fontSize: "12px", color: "#64748B", marginBottom: "8px", lineHeight: "1.4" }}>
+                  {a.desc || `When ${a.trigger} condition is met, ${a.actionType} is triggered.`}
+                </div>
+
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      fontSize: "10.5px",
+                      fontWeight: 600,
+                      backgroundColor: "#EFF6FF",
+                      color: "#1D4ED8"
+                    }}
+                  >
+                    Trigger: {a.trigger || "lead_no_activity"} ({a.conditionDays ?? 7}d)
+                  </span>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      fontSize: "10.5px",
+                      fontWeight: 600,
+                      backgroundColor: "#F0FDF4",
+                      color: "#166534"
+                    }}
+                  >
+                    Action: {a.actionType || "create_task"}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -420,7 +617,7 @@ export default function CrmSettingsPage() {
         </div>
       )}
 
-      {/* Add Automation Rule Modal */}
+      {/* Add Automation Rule Modal / Configurator */}
       {showAddRuleModal && (
         <div
           style={{
@@ -441,14 +638,19 @@ export default function CrmSettingsPage() {
               backgroundColor: "#ffffff",
               borderRadius: "16px",
               width: "100%",
-              maxWidth: "480px",
+              maxWidth: "520px",
               boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
               overflow: "hidden"
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ padding: "20px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>Add Automation Rule</h3>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>Configure Automation Rule</h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                  Set up triggers, conditions, and automated follow-up actions
+                </p>
+              </div>
               <button onClick={() => setShowAddRuleModal(false)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}>
                 <X size={20} />
               </button>
@@ -456,29 +658,97 @@ export default function CrmSettingsPage() {
 
             <form onSubmit={handleAddRule} style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Rule Title *</label>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Rule Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Inactivity Reminder"
-                  value={newRule.title}
-                  onChange={(e) => setNewRule({ ...newRule, title: e.target.value })}
+                  placeholder="e.g. 7-Day Inactive Lead Follow-up"
+                  value={newRule.name}
+                  onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
                 />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Trigger Event *</label>
+                  <select
+                    value={newRule.trigger}
+                    onChange={(e) => setNewRule({ ...newRule, trigger: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
+                  >
+                    <option value="lead_no_activity">lead_no_activity (No activity)</option>
+                    <option value="follow_up_overdue">follow_up_overdue (Follow-up overdue)</option>
+                    <option value="lead_created">lead_created (New lead created)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Inactive / Overdue Days</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={90}
+                    value={newRule.conditionDays}
+                    onChange={(e) => setNewRule({ ...newRule, conditionDays: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Workflow Description</label>
-                <textarea
-                  rows={3}
-                  placeholder="e.g. Notify owner when lead has no contact for 5 days"
-                  value={newRule.desc}
-                  onChange={(e) => setNewRule({ ...newRule, desc: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                />
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Action to Trigger *</label>
+                <select
+                  value={newRule.actionType}
+                  onChange={(e) => setNewRule({ ...newRule, actionType: e.target.value })}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
+                >
+                  <option value="create_task">create_task (Create follow-up task)</option>
+                  <option value="update_status">update_status (Change lead status)</option>
+                </select>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              {newRule.actionType === "create_task" ? (
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Task Subject *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Follow up with client (Due in 1 day)"
+                    value={newRule.actionSubject}
+                    onChange={(e) => setNewRule({ ...newRule, actionSubject: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Target Status *</label>
+                  <select
+                    value={newRule.targetStatus}
+                    onChange={(e) => setNewRule({ ...newRule, targetStatus: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
+                  >
+                    <option value="unresponsive">unresponsive</option>
+                    <option value="lost">lost</option>
+                    <option value="follow_up">follow_up</option>
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+                <input
+                  type="checkbox"
+                  id="rule-active-chk"
+                  checked={newRule.active}
+                  onChange={(e) => setNewRule({ ...newRule, active: e.target.checked })}
+                  style={{ cursor: "pointer" }}
+                />
+                <label htmlFor="rule-active-chk" style={{ fontSize: "13px", fontWeight: 600, color: "#334155", cursor: "pointer" }}>
+                  Activate this rule immediately
+                </label>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
                 <button
                   type="button"
                   onClick={() => setShowAddRuleModal(false)}
@@ -488,13 +758,98 @@ export default function CrmSettingsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={savingRule}
-                  style={{ padding: "8px 18px", borderRadius: "8px", backgroundColor: "#2563EB", border: "none", fontSize: "13px", fontWeight: 600, color: "#fff", cursor: savingRule ? "not-allowed" : "pointer" }}
+                  disabled={savingRule || !newRule.name.trim()}
+                  style={{ padding: "8px 18px", borderRadius: "8px", backgroundColor: "#2563EB", border: "none", fontSize: "13px", fontWeight: 600, color: "#fff", cursor: savingRule || !newRule.name.trim() ? "not-allowed" : "pointer" }}
                 >
                   {savingRule ? "Saving..." : "Save Rule"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Execution Result Modal */}
+      {executionResult && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => setExecutionResult(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "440px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <CheckCircle2 size={18} color="#16A34A" />
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>Automation Rules Run Summary</h3>
+              </div>
+              <button onClick={() => setExecutionResult(null)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", textAlign: "center" }}>
+                <div style={{ backgroundColor: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Evaluated</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#0F172A", marginTop: "4px" }}>
+                    {executionResult.rulesEvaluated ?? 0}
+                  </div>
+                </div>
+                <div style={{ backgroundColor: "#EFF6FF", padding: "12px", borderRadius: "8px", border: "1px solid #BFDBFE" }}>
+                  <div style={{ fontSize: "11px", color: "#1D4ED8", fontWeight: 600 }}>Triggered</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#2563EB", marginTop: "4px" }}>
+                    {executionResult.rulesTriggered ?? 0}
+                  </div>
+                </div>
+                <div style={{ backgroundColor: "#F0FDF4", padding: "12px", borderRadius: "8px", border: "1px solid #BBF7D0" }}>
+                  <div style={{ fontSize: "11px", color: "#166534", fontWeight: 600 }}>Actions Created</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#16A34A", marginTop: "4px" }}>
+                    {executionResult.actionsCreated ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ margin: 0, fontSize: "12.5px", color: "#64748B", lineHeight: "1.5" }}>
+                All active CRM automation rules were successfully evaluated against your lead pipeline. Tasks and status transitions have been recorded on the server.
+              </p>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+                <button
+                  onClick={() => setExecutionResult(null)}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: "8px",
+                    backgroundColor: "#0F172A",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

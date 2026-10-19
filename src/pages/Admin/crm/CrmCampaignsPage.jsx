@@ -13,7 +13,12 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  Info
+  Info,
+  Mail,
+  MessageSquare,
+  Users,
+  Layers,
+  ArrowRight
 } from "lucide-react";
 import { Toast } from "../../../components/common/Toast";
 import { crmService } from "../../../services/crmService";
@@ -30,13 +35,27 @@ export default function CrmCampaignsPage() {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Saved Audience Segments for targeting
+  const [segments, setSegments] = useState([]);
+
+  // Campaign Detail & Live Dispatch modal state
+  const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [recipients, setRecipients] = useState([]);
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [sendingLoading, setSendingLoading] = useState(false);
+  const [attachSegmentId, setAttachSegmentId] = useState("");
+  const [attachingLoading, setAttachingLoading] = useState(false);
+
+  // Campaign Form State
   const [newCampaign, setNewCampaign] = useState({
     name: "",
-    type: "Post",
-    targetAudience: "All Automotive / EV",
+    type: "OFFER",
+    channel: "BOTH", // "EMAIL", "WHATSAPP", "BOTH"
+    subject: "",
+    targetAudience: "",
+    segmentId: "",
     scheduledDate: "",
-    content: "",
-    description: ""
+    content: ""
   });
 
   const showToast = useCallback((message, type = "success") => {
@@ -58,9 +77,49 @@ export default function CrmCampaignsPage() {
     }
   }, [showToast]);
 
+  // Load audience segments
+  const fetchSegments = useCallback(async () => {
+    try {
+      const data = await crmService.getAudienceSegments();
+      setSegments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load audience segments:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchCampaigns();
-  }, [fetchCampaigns]);
+    fetchSegments();
+  }, [fetchCampaigns, fetchSegments]);
+
+  // Load recipients when a campaign is selected
+  const fetchRecipients = useCallback(async (campaignId) => {
+    if (!campaignId) return;
+    setRecipientsLoading(true);
+    try {
+      const data = await crmService.getCampaignRecipients(campaignId);
+      setRecipients(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load campaign recipients:", err);
+      setRecipients([]);
+    } finally {
+      setRecipientsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedCampaign?.id) {
+      fetchRecipients(selectedCampaign.id);
+    }
+  }, [selectedCampaign, fetchRecipients]);
+
+  // Insert tag into campaign message
+  const handleInsertTag = (tag) => {
+    setNewCampaign((prev) => ({
+      ...prev,
+      content: prev.content ? `${prev.content} ${tag}` : tag
+    }));
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -73,9 +132,12 @@ export default function CrmCampaignsPage() {
       const payload = {
         name: newCampaign.name,
         type: newCampaign.type,
-        targetAudience: newCampaign.targetAudience,
+        channel: newCampaign.channel,
+        subject: newCampaign.subject,
+        targetAudience: newCampaign.targetAudience || (newCampaign.segmentId ? `Segment #${newCampaign.segmentId}` : "All Contacts"),
+        segmentId: newCampaign.segmentId ? Number(newCampaign.segmentId) : null,
         scheduledDate: newCampaign.scheduledDate || null,
-        description: newCampaign.description || newCampaign.content,
+        description: newCampaign.subject || newCampaign.content,
         content: newCampaign.content,
         status: newCampaign.scheduledDate ? "SCHEDULED" : "DRAFT"
       };
@@ -86,42 +148,99 @@ export default function CrmCampaignsPage() {
           ? res
           : {
               id: Date.now(),
-              name: newCampaign.name,
-              type: newCampaign.type,
-              targetAudience: newCampaign.targetAudience,
-              date: newCampaign.scheduledDate || "Draft",
+              ...payload,
               recipients: "0",
               responses: "0",
-              quotes: "0",
-              status: newCampaign.scheduledDate ? "SCHEDULED" : "DRAFT"
+              quotes: "0"
             };
+
+      // If segment selected, automatically attach it
+      if (newCampaign.segmentId && createdItem.id) {
+        await crmService.attachAudienceSegment(createdItem.id, newCampaign.segmentId).catch(() => {});
+      }
 
       setCampaigns((prev) => [createdItem, ...prev]);
       showToast("Campaign created successfully", "success");
       setShowCreateModal(false);
       setNewCampaign({
         name: "",
-        type: "Post",
-        targetAudience: "All Automotive / EV",
+        type: "OFFER",
+        channel: "BOTH",
+        subject: "",
+        targetAudience: "",
+        segmentId: "",
         scheduledDate: "",
-        content: "",
-        description: ""
+        content: ""
       });
+      fetchCampaigns();
     } catch (err) {
       console.error("Failed to create campaign:", err);
       showToast(err.message || "Failed to create campaign", "error");
     }
   };
 
-  const handleStatusUpdate = async (id, newStatus) => {
+  // Live Dispatch
+  const handleSendCampaign = async (campaignId) => {
+    setSendingLoading(true);
     try {
-      await crmService.updateCampaignStatus(id, newStatus);
-      setCampaigns((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c))
+      const res = await crmService.sendCampaign(campaignId);
+      const updatedCampaign = res && res.campaignId ? res : null;
+      showToast(
+        `Campaign dispatched! Total: ${res?.totalRecipients ?? 0}, Emails: ${res?.emailsSent ?? 0}, WhatsApp: ${res?.whatsAppSent ?? 0}, Failed: ${res?.failedCount ?? 0}`,
+        "success"
       );
-      showToast(`Campaign status recorded as ${newStatus}`, "success");
+      // Update local campaign list & selected campaign
+      setCampaigns((prev) =>
+        prev.map((c) =>
+          c.id === campaignId
+            ? {
+                ...c,
+                status: "COMPLETED",
+                recipients: res?.totalRecipients ?? c.recipients,
+                emailsSent: res?.emailsSent,
+                whatsAppSent: res?.whatsAppSent,
+                failedCount: res?.failedCount
+              }
+            : c
+        )
+      );
+      if (selectedCampaign?.id === campaignId) {
+        setSelectedCampaign((prev) => ({
+          ...prev,
+          status: "COMPLETED",
+          totalRecipients: res?.totalRecipients ?? prev?.totalRecipients,
+          emailsSent: res?.emailsSent,
+          whatsAppSent: res?.whatsAppSent,
+          failedCount: res?.failedCount
+        }));
+        fetchRecipients(campaignId);
+      }
     } catch (err) {
-      showToast(err.message || "Failed to update campaign status", "error");
+      console.error("Failed to dispatch campaign:", err);
+      showToast(err.message || "Failed to send campaign", "error");
+    } finally {
+      setSendingLoading(false);
+    }
+  };
+
+  // Attach Audience Segment
+  const handleAttachSegment = async () => {
+    if (!selectedCampaign?.id || !attachSegmentId) {
+      showToast("Please select a segment to attach", "error");
+      return;
+    }
+    setAttachingLoading(true);
+    try {
+      const res = await crmService.attachAudienceSegment(selectedCampaign.id, attachSegmentId);
+      showToast(typeof res === "string" ? res : "Audience segment attached successfully", "success");
+      setAttachSegmentId("");
+      fetchRecipients(selectedCampaign.id);
+      fetchCampaigns();
+    } catch (err) {
+      console.error("Failed to attach segment:", err);
+      showToast(err.message || "Failed to attach audience segment", "error");
+    } finally {
+      setAttachingLoading(false);
     }
   };
 
@@ -455,25 +574,46 @@ export default function CrmCampaignsPage() {
                       <td style={{ padding: "12px 16px", color: "#334155" }}>{c.recipients ?? "—"}</td>
                       <td style={{ padding: "12px 16px", color: "#334155" }}>{c.responses ?? "—"}</td>
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                        {status === "DRAFT" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px" }}>
                           <button
-                            onClick={() => handleStatusUpdate(c.id, "SENT")}
+                            onClick={() => setSelectedCampaign(c)}
                             style={{
                               padding: "4px 10px",
                               borderRadius: "6px",
-                              backgroundColor: "#2563EB",
-                              color: "#fff",
-                              border: "none",
+                              backgroundColor: "#EFF6FF",
+                              color: "#2563EB",
+                              border: "1px solid #BFDBFE",
                               fontSize: "11px",
                               fontWeight: 600,
-                              cursor: "pointer"
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px"
                             }}
                           >
-                            Mark Sent
+                            <Send size={11} />
+                            <span>Dispatch / Stats</span>
                           </button>
-                        ) : (
-                          <span style={{ fontSize: "11px", color: "#94A3B8" }}>Dispatched</span>
-                        )}
+
+                          {status === "DRAFT" && (
+                            <button
+                              onClick={() => handleSendCampaign(c.id)}
+                              disabled={sendingLoading}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: "6px",
+                                backgroundColor: "#16A34A",
+                                color: "#fff",
+                                border: "none",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                cursor: sendingLoading ? "not-allowed" : "pointer"
+                              }}
+                            >
+                              Send Now
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -533,7 +673,7 @@ export default function CrmCampaignsPage() {
         )}
       </div>
 
-      {/* Create Campaign Modal */}
+      {/* Step 1: Create Campaign Modal */}
       {showCreateModal && (
         <div
           style={{
@@ -554,26 +694,34 @@ export default function CrmCampaignsPage() {
               backgroundColor: "#ffffff",
               borderRadius: "16px",
               width: "100%",
-              maxWidth: "520px",
+              maxWidth: "560px",
               boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-              overflow: "hidden"
+              overflow: "hidden",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column"
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>Create Campaign / Post</h3>
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>Create Campaign & Message</h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                  Configure dispatch channel, messaging template, and audience
+                </p>
+              </div>
               <button onClick={() => setShowCreateModal(false)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}>
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreate} style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            <form onSubmit={handleCreate} style={{ padding: "20px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Campaign Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. 72V 100Ah High-Performance Launch"
+                  placeholder="e.g. Festive Fleet Promotion 2026"
                   value={newCampaign.name}
                   onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
@@ -588,14 +736,14 @@ export default function CrmCampaignsPage() {
                     onChange={(e) => setNewCampaign({ ...newCampaign, type: e.target.value })}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
                   >
-                    <option value="Post">Post</option>
-                    <option value="Offer">Offer</option>
-                    <option value="Email">Email</option>
+                    <option value="OFFER">Offer</option>
+                    <option value="NEWSLETTER">Newsletter</option>
+                    <option value="POST">Post</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Scheduled Date</label>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Scheduled Date (Optional)</label>
                   <input
                     type="date"
                     value={newCampaign.scheduledDate}
@@ -605,32 +753,120 @@ export default function CrmCampaignsPage() {
                 </div>
               </div>
 
+              {/* Channel Toggle (Radio / Pills) */}
               <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Target Audience Segment</label>
-                <select
-                  value={newCampaign.targetAudience}
-                  onChange={(e) => setNewCampaign({ ...newCampaign, targetAudience: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
-                >
-                  <option value="All Automotive / EV">All Automotive / EV OEMs</option>
-                  <option value="BESS Operators">BESS Operators & Storage</option>
-                  <option value="Solar Integrators">Solar & Renewable Integrators</option>
-                  <option value="All Leads & Customers">All Leads & Customers</option>
-                </select>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                  Delivery Channel
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                  {[
+                    { id: "EMAIL", label: "✉️ Email Only" },
+                    { id: "WHATSAPP", label: "💬 WhatsApp Only" },
+                    { id: "BOTH", label: "🚀 Both (Email + WA)" }
+                  ].map((ch) => (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => setNewCampaign({ ...newCampaign, channel: ch.id })}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        border: newCampaign.channel === ch.id ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                        backgroundColor: newCampaign.channel === ch.id ? "#EFF6FF" : "#ffffff",
+                        color: newCampaign.channel === ch.id ? "#1D4ED8" : "#475569",
+                        cursor: "pointer",
+                        transition: "all 0.15s"
+                      }}
+                    >
+                      {ch.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Campaign Content / Note</label>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Subject / Header</label>
+                <input
+                  type="text"
+                  placeholder="Email subject or WhatsApp alert headline"
+                  value={newCampaign.subject}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, subject: e.target.value })}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Message Template</label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      type="button"
+                      onClick={() => handleInsertTag("{{contactName}}")}
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        backgroundColor: "#F1F5F9",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "11px",
+                        color: "#2563EB",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      + Contact Name
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleInsertTag("{{companyName}}")}
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        backgroundColor: "#F1F5F9",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "11px",
+                        color: "#2563EB",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      + Company Name
+                    </button>
+                  </div>
+                </div>
                 <textarea
-                  rows={3}
-                  placeholder="Marketing copy, key specifications, promo message..."
+                  rows={4}
+                  placeholder="Hi {{contactName}}, check out our new high-density battery solutions for {{companyName}}..."
                   value={newCampaign.content}
                   onChange={(e) => setNewCampaign({ ...newCampaign, content: e.target.value })}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
                 />
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "6px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Target Audience Segment
+                </label>
+                <select
+                  value={newCampaign.segmentId}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, segmentId: e.target.value, targetAudience: e.target.selectedOptions[0]?.text })}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
+                >
+                  <option value="">-- Select Saved Audience Segment or Preset --</option>
+                  {segments.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Saved Segment: {s.name} ({s.matchedCount ?? s.count ?? "Ready"})
+                    </option>
+                  ))}
+                  <option value="">All Automotive / EV OEMs</option>
+                  <option value="">BESS Operators & Storage</option>
+                  <option value="">Solar & Renewable Integrators</option>
+                  <option value="">All Leads & Contacts</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
@@ -646,6 +882,315 @@ export default function CrmCampaignsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Campaign Detail & Live Dispatch View Modal */}
+      {selectedCampaign && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => setSelectedCampaign(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "840px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: "20px 24px",
+                borderBottom: "1px solid #E2E8F0",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                backgroundColor: "#FAFBFD"
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                    {selectedCampaign.name || selectedCampaign.title}
+                  </h3>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      backgroundColor: "#EFF6FF",
+                      color: "#1D4ED8"
+                    }}
+                  >
+                    {selectedCampaign.type || "CAMPAIGN"}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      backgroundColor:
+                        selectedCampaign.status === "COMPLETED" || selectedCampaign.status === "SENT"
+                          ? "#DCFCE7"
+                          : "#FEF3C7",
+                      color:
+                        selectedCampaign.status === "COMPLETED" || selectedCampaign.status === "SENT"
+                          ? "#16A34A"
+                          : "#D97706"
+                    }}
+                  >
+                    {selectedCampaign.status || "DRAFT"}
+                  </span>
+                </div>
+                <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                  Channel: <strong>{selectedCampaign.channel || "Both (Email + WhatsApp)"}</strong> · Target: {selectedCampaign.targetAudience || "All Segment Contacts"}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setSelectedCampaign(null)}
+                style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: "20px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Action Buttons Bar */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                  padding: "14px 18px",
+                  borderRadius: "12px",
+                  backgroundColor: "#F8FAFC",
+                  border: "1px solid #E2E8F0"
+                }}
+              >
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <select
+                    value={attachSegmentId}
+                    onChange={(e) => setAttachSegmentId(e.target.value)}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #CBD5E1",
+                      fontSize: "12.5px",
+                      backgroundColor: "#fff"
+                    }}
+                  >
+                    <option value="">-- Choose Segment to Attach --</option>
+                    {segments.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.matchedCount ?? "Ready"})
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={handleAttachSegment}
+                    disabled={attachingLoading || !attachSegmentId}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #CBD5E1",
+                      fontSize: "12.5px",
+                      fontWeight: 600,
+                      color: "#334155",
+                      cursor: attachingLoading || !attachSegmentId ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    {attachingLoading ? "Attaching..." : "Attach Audience Segment"}
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => handleSendCampaign(selectedCampaign.id)}
+                  disabled={sendingLoading}
+                  style={{
+                    padding: "9px 20px",
+                    borderRadius: "8px",
+                    backgroundColor: "#16A34A",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: sendingLoading ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 2px 4px rgba(22, 163, 74, 0.25)"
+                  }}
+                >
+                  <Send size={15} />
+                  <span>{sendingLoading ? "Dispatching..." : "Send Campaign Now"}</span>
+                </button>
+              </div>
+
+              {/* Live Stats Counters */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
+                <div style={{ backgroundColor: "#F8FAFC", borderRadius: "10px", padding: "12px 14px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#64748B" }}>Total Recipients</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#0F172A", marginTop: "2px" }}>
+                    {selectedCampaign.totalRecipients ?? selectedCampaign.recipients ?? recipients.length}
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: "#F0FDF4", borderRadius: "10px", padding: "12px 14px", border: "1px solid #BBF7D0" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#166534" }}>Emails Sent</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#16A34A", marginTop: "2px" }}>
+                    {selectedCampaign.emailsSent ?? (selectedCampaign.status === "COMPLETED" ? recipients.length : 0)}
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: "#F0FDF4", borderRadius: "10px", padding: "12px 14px", border: "1px solid #BBF7D0" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#166534" }}>WhatsApp Sent</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#16A34A", marginTop: "2px" }}>
+                    {selectedCampaign.whatsAppSent ?? (selectedCampaign.status === "COMPLETED" ? recipients.length : 0)}
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: "#FEF2F2", borderRadius: "10px", padding: "12px 14px", border: "1px solid #FECACA" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#991B1B" }}>Failed</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#DC2626", marginTop: "2px" }}>
+                    {selectedCampaign.failedCount ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Recipient Delivery Table */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
+                    Recipient Delivery Report ({recipients.length})
+                  </h4>
+                  <button
+                    onClick={() => fetchRecipients(selectedCampaign.id)}
+                    style={{ background: "none", border: "none", color: "#2563EB", fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                  >
+                    <RefreshCw size={12} className={recipientsLoading ? "animate-spin" : ""} />
+                    <span>Refresh List</span>
+                  </button>
+                </div>
+
+                <div style={{ border: "1px solid #E2E8F0", borderRadius: "10px", overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#F8FAFC", borderBottom: "1px solid #E2E8F0", textAlign: "left", color: "#64748B" }}>
+                        <th style={{ padding: "10px 12px", fontWeight: 600 }}>CONTACT NAME</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 600 }}>COMPANY</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 600 }}>EMAIL / PHONE</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 600 }}>CHANNEL</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 600 }}>STATUS</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>SENT AT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipientsLoading ? (
+                        <tr>
+                          <td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#64748B" }}>
+                            Loading recipients report...
+                          </td>
+                        </tr>
+                      ) : recipients.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#64748B" }}>
+                            No recipient list generated yet. Click <strong>"Attach Audience Segment"</strong> or <strong>"Send Campaign Now"</strong>.
+                          </td>
+                        </tr>
+                      ) : (
+                        recipients.map((r, i) => {
+                          const rStatus = (r.status || "PENDING").toUpperCase();
+                          return (
+                            <tr key={r.id || i} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                              <td style={{ padding: "10px 12px", fontWeight: 600, color: "#0F172A" }}>
+                                {r.contactName || r.name || "—"}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#334155" }}>
+                                {r.companyName || r.company || "—"}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#64748B" }}>
+                                {r.email || r.phone || "—"}
+                              </td>
+                              <td style={{ padding: "10px 12px" }}>
+                                <span style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>
+                                  {r.channel || selectedCampaign.channel || "BOTH"}
+                                </span>
+                              </td>
+                              <td style={{ padding: "10px 12px" }}>
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "2px 8px",
+                                    borderRadius: "10px",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    backgroundColor:
+                                      rStatus === "SENT" ? "#DCFCE7" : rStatus === "FAILED" ? "#FEE2E2" : "#F1F5F9",
+                                    color:
+                                      rStatus === "SENT" ? "#16A34A" : rStatus === "FAILED" ? "#DC2626" : "#64748B"
+                                  }}
+                                  title={r.errorMessage || ""}
+                                >
+                                  {rStatus}
+                                </span>
+                              </td>
+                              <td style={{ padding: "10px 12px", textAlign: "right", color: "#64748B" }}>
+                                {r.sentAt ? new Date(r.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                <button
+                  onClick={() => setSelectedCampaign(null)}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: "8px",
+                    backgroundColor: "#0F172A",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

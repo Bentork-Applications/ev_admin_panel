@@ -118,6 +118,14 @@ export const crmService = {
   },
 
   // ==================== QUOTATIONS ====================
+  getQuotationsPaged: async (page = 0, size = 20) => {
+    return await apiClient.get(`/crm/quotations/all?paged=true&page=${page}&size=${size}`);
+  },
+
+  getAllQuotations: async () => {
+    return await apiClient.get("/crm/quotations/all");
+  },
+
   createQuotation: async (quotationData) => {
     return await apiClient.post("/crm/quotations/create", quotationData);
   },
@@ -138,13 +146,60 @@ export const crmService = {
     return await apiClient.put(`/crm/quotations/${id}/reject`, {});
   },
 
+  convertToOrder: async (quotationId) => {
+    return await apiClient.post(`/crm/quotations/${quotationId}/convert-to-order`, {});
+  },
+
   getQuotationsForOpportunity: async (oppId) => {
     return await apiClient.get(`/crm/quotations/opportunity/${oppId}`);
+  },
+
+  // ==================== ORDERS & PAYMENTS ====================
+  recordOrderPayment: async (orderId, payload) => {
+    // payload: { amount, paymentMethod, referenceNumber, notes }
+    return await apiClient.post(`/crm/orders/${orderId}/payments`, payload);
   },
 
   // ==================== ACTIVITIES ====================
   logActivity: async (activityData) => {
     return await apiClient.post("/crm/activities/log", activityData);
+  },
+
+  getActivitySummary: async (myOnly = false, adminId = null) => {
+    const params = new URLSearchParams();
+    if (myOnly) params.append("myOnly", "true");
+    if (adminId) params.append("adminId", adminId);
+    const qs = params.toString();
+    return await apiClient.get(`/crm/activities/summary${qs ? `?${qs}` : ""}`);
+  },
+
+  getFollowUps: async (bucket = "all", page = 0, size = 20, myOnly = false, adminId = null) => {
+    const params = new URLSearchParams();
+    if (bucket) params.append("bucket", bucket);
+    params.append("page", String(page));
+    params.append("size", String(size));
+    if (myOnly) params.append("myOnly", "true");
+    if (adminId) params.append("adminId", adminId);
+    return await apiClient.get(`/crm/activities/follow-ups?${params.toString()}`);
+  },
+
+  getAllActivities: async (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        params.append(key, String(val));
+      }
+    });
+    const qs = params.toString();
+    return await apiClient.get(`/crm/activities/all${qs ? `?${qs}` : ""}`);
+  },
+
+  rescheduleActivity: async (id, payload) => {
+    return await apiClient.put(`/crm/activities/${id}/reschedule`, payload);
+  },
+
+  completeActivity: async (id, payload = {}) => {
+    return await apiClient.put(`/crm/activities/${id}/complete`, payload);
   },
 
   getActivitiesForLead: async (leadId) => {
@@ -172,9 +227,27 @@ export const crmService = {
     }
   },
 
+  completeTask: async (activityId, payload = {}) => {
+    return await apiClient.put(`/crm/activities/${activityId}/complete`, payload);
+  },
+
   updateTaskStatus: async (activityId, status) => {
-    // In-memory or client task completion acknowledgement
-    return { success: true, id: activityId, status };
+    return await apiClient.put(`/crm/activities/${activityId}/status`, { status });
+  },
+
+  // ==================== BULK LEAD ACTIONS & IMPORT ====================
+  bulkAssignLeads: async (leadIds, targetOwnerAdminId) => {
+    return await apiClient.post("/crm/leads/bulk-assign", { leadIds, targetOwnerAdminId });
+  },
+
+  bulkTagLeads: async (leadIds, tags) => {
+    return await apiClient.post("/crm/leads/bulk-tag", { leadIds, tags });
+  },
+
+  importLeadsCsv: async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return await apiClient.upload("/crm/leads/import", formData);
   },
 
   // ==================== REQUIREMENTS ====================
@@ -230,6 +303,18 @@ export const crmService = {
     return await apiClient.put(`/crm/campaigns/${id}/status`, { status });
   },
 
+  sendCampaign: async (id) => {
+    return await apiClient.post(`/crm/campaigns/${id}/send`, {});
+  },
+
+  attachAudienceSegment: async (campaignId, segmentId) => {
+    return await apiClient.post(`/crm/campaigns/${campaignId}/add-from-segment/${segmentId}`, {});
+  },
+
+  getCampaignRecipients: async (id) => {
+    return await apiClient.get(`/crm/campaigns/${id}/recipients`);
+  },
+
   addCampaignRecipients: async (id, recipientsData) => {
     return await apiClient.post(`/crm/campaigns/${id}/recipients`, recipientsData);
   },
@@ -237,6 +322,19 @@ export const crmService = {
   // ==================== AUDIENCE ====================
   buildAudience: async (filterData) => {
     return await apiClient.post("/crm/audience/build", filterData);
+  },
+
+  getAudienceSegments: async () => {
+    try {
+      const res = await apiClient.get("/crm/audience/segments");
+      return Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+    } catch {
+      return [];
+    }
+  },
+
+  saveAudienceSegment: async (segmentData) => {
+    return await apiClient.post("/crm/audience/segments", segmentData);
   },
 
   // ==================== INDIAMART ====================
@@ -256,11 +354,7 @@ export const crmService = {
   },
 
   syncIndiaMart: async () => {
-    try {
-      return await apiClient.post("/crm/indiamart/sync", {});
-    } catch {
-      return { success: true, message: "Sync executed successfully" };
-    }
+    return await apiClient.post("/crm/indiamart/sync", {});
   },
 
   // ==================== REPORTS & ANALYTICS ====================
@@ -306,7 +400,7 @@ export const crmService = {
   getAutomations: async () => {
     try {
       const res = await apiClient.get("/crm/settings/automations");
-      return Array.isArray(res) ? res : [];
+      return Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
     } catch {
       return [];
     }
@@ -314,5 +408,20 @@ export const crmService = {
 
   createAutomation: async (ruleData) => {
     return await apiClient.post("/crm/settings/automations", ruleData);
+  },
+
+  updateAutomation: async (id, ruleData) => {
+    return await apiClient.put(`/crm/settings/automations/${id}`, ruleData);
+  },
+
+  executeAutomations: async () => {
+    try {
+      return await apiClient.post("/crm/settings/automation/execute", {});
+    } catch (err) {
+      if (err.status === 404) {
+        return await apiClient.post("/crm/settings/automations/execute", {});
+      }
+      throw err;
+    }
   }
 };

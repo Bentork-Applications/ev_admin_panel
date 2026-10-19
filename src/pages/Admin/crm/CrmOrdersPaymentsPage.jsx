@@ -12,9 +12,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  CreditCard
+  CreditCard,
+  X,
+  FileText
 } from "lucide-react";
 import { orderService } from "../../../services/orderService";
+import { crmService } from "../../../services/crmService";
 import { Toast } from "../../../components/common/Toast";
 import { CreateSalesOrderModal } from "../../../components/orders/CreateSalesOrderModal";
 
@@ -27,6 +30,17 @@ export default function CrmOrdersPaymentsPage() {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
+
+  // Selected Order for Detail/Payment Drawer & Payment Modal
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentPayload, setPaymentPayload] = useState({
+    amount: "",
+    paymentMethod: "NEFT",
+    referenceNumber: "",
+    notes: ""
+  });
 
   // Filters & Pagination
   const [searchQuery, setSearchQuery] = useState("");
@@ -119,11 +133,64 @@ export default function CrmOrdersPaymentsPage() {
     return filteredOrders.slice(start, start + PAGE_SIZE);
   }, [filteredOrders, currentPage]);
 
-  const handleRecordPaymentClick = (order) => {
-    showToast(
-      `Backend Required: Direct payment ledger recording for Order #${order.piNumber || order.orderNumber || order.id} requires payment gateway API implementation.`,
-      "info"
-    );
+  const openRecordPaymentModal = (order) => {
+    const val = parseFloat(order.totalInvoiceAmount || order.totalAmount || order.totalPrice || 0);
+    const rec = parseFloat(order.receivedAmount || 0);
+    const pending = Math.max(0, val - rec);
+
+    setSelectedOrder(order);
+    setPaymentPayload({
+      amount: pending > 0 ? String(pending) : "",
+      paymentMethod: "NEFT",
+      referenceNumber: `TXN-${Date.now().toString().slice(-6)}`,
+      notes: ""
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handleRecordPaymentSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+    const amt = parseFloat(paymentPayload.amount);
+    if (isNaN(amt) || amt <= 0) {
+      showToast("Please enter a valid positive payment amount", "error");
+      return;
+    }
+    if (!paymentPayload.referenceNumber.trim()) {
+      showToast("Please enter transaction / reference number", "error");
+      return;
+    }
+
+    setPaymentSubmitting(true);
+    try {
+      const payload = {
+        amount: amt,
+        paymentMethod: paymentPayload.paymentMethod,
+        referenceNumber: paymentPayload.referenceNumber.trim(),
+        notes: paymentPayload.notes.trim() || undefined
+      };
+      const res = await crmService.recordOrderPayment(selectedOrder.id, payload);
+      showToast(
+        `Payment of ₹${amt.toLocaleString("en-IN")} recorded successfully for Order #${selectedOrder.piNumber || selectedOrder.orderNumber || selectedOrder.id}!`,
+        "success"
+      );
+      setShowPaymentModal(false);
+      // Update selected order if open
+      if (res && (res.pendingAmount !== undefined || res.paymentStatus)) {
+        setSelectedOrder((prev) => ({
+          ...prev,
+          pendingAmount: res.pendingAmount,
+          paymentStatus: res.paymentStatus,
+          receivedAmount: (parseFloat(prev?.receivedAmount || 0) + amt)
+        }));
+      }
+      await fetchOrders();
+    } catch (err) {
+      console.error("Payment recording error:", err);
+      showToast(err.message || "Failed to record payment on server", "error");
+    } finally {
+      setPaymentSubmitting(false);
+    }
   };
 
   return (
@@ -447,8 +514,51 @@ export default function CrmOrdersPaymentsPage() {
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
                           <button
+                            onClick={() => setSelectedOrder(o)}
+                            title="View Financial Summary"
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              backgroundColor: "#F8FAFC",
+                              border: "1px solid #CBD5E1",
+                              color: "#334155",
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "3px"
+                            }}
+                          >
+                            <FileText size={12} />
+                            <span>Details</span>
+                          </button>
+
+                          <button
+                            onClick={() => openRecordPaymentModal(o)}
+                            title="Record live payment"
+                            style={{
+                              padding: "4px 9px",
+                              borderRadius: "6px",
+                              backgroundColor: isPaid ? "#F1F5F9" : "#16A34A",
+                              border: isPaid ? "1px solid #CBD5E1" : "none",
+                              color: isPaid ? "#64748B" : "#ffffff",
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "3px",
+                              boxShadow: isPaid ? "none" : "0 1px 3px rgba(22, 163, 74, 0.25)"
+                            }}
+                          >
+                            <CreditCard size={12} />
+                            <span>{isPaid ? "Add Payment" : "Record Payment"}</span>
+                          </button>
+
+                          <button
                             onClick={() => navigate("/dashboard/orders")}
-                            title="Open in Order Tracking"
+                            title="Open in Production & Logistics Tracking"
                             style={{
                               padding: "4px 8px",
                               borderRadius: "6px",
@@ -465,27 +575,6 @@ export default function CrmOrdersPaymentsPage() {
                           >
                             <ExternalLink size={12} />
                             <span>Track</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleRecordPaymentClick(o)}
-                            title="Backend API required for direct payment gateway recording"
-                            style={{
-                              padding: "4px 8px",
-                              borderRadius: "6px",
-                              backgroundColor: "#F8FAFC",
-                              border: "1px dashed #CBD5E1",
-                              color: "#64748B",
-                              fontSize: "11px",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "3px"
-                            }}
-                          >
-                            <CreditCard size={12} />
-                            <span>Pay (Backend Req.)</span>
                           </button>
                         </div>
                       </td>
@@ -552,6 +641,297 @@ export default function CrmOrdersPaymentsPage() {
           </div>
         )}
       </div>
+
+      {/* Order Details & Financial Summary Modal */}
+      {selectedOrder && !showPaymentModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => setSelectedOrder(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "600px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FAFBFD" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", backgroundColor: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center", color: "#2563EB" }}>
+                  <ShoppingCart size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    Order #{selectedOrder.piNumber || selectedOrder.orderNumber || selectedOrder.id}
+                  </h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                    {selectedOrder.customerName || selectedOrder.companyName || "Commercial Customer"}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedOrder(null)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Content: Financial Summary Card & Progress Bar */}
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}>
+              {(() => {
+                const total = parseFloat(selectedOrder.totalInvoiceAmount || selectedOrder.totalAmount || selectedOrder.totalPrice || 0);
+                const rec = parseFloat(selectedOrder.receivedAmount || 0);
+                const pending = Math.max(0, total - rec);
+                const pct = total > 0 ? Math.min(100, Math.round((rec / total) * 100)) : 0;
+                const statusBadge = pending === 0 || (selectedOrder.paymentStatus || "").toLowerCase() === "paid"
+                  ? "PAID"
+                  : rec > 0
+                  ? "PARTIAL"
+                  : "PENDING";
+
+                return (
+                  <>
+                    {/* Financial Summary Card */}
+                    <div
+                      style={{
+                        backgroundColor: "#F8FAFC",
+                        borderRadius: "14px",
+                        border: "1px solid #E2E8F0",
+                        padding: "20px"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                        <span style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>
+                          Financial Summary
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            padding: "3px 10px",
+                            borderRadius: "12px",
+                            backgroundColor:
+                              statusBadge === "PAID" ? "#DCFCE7" : statusBadge === "PARTIAL" ? "#FEF3C7" : "#FEE2E2",
+                            color:
+                              statusBadge === "PAID" ? "#16A34A" : statusBadge === "PARTIAL" ? "#D97706" : "#DC2626"
+                          }}
+                        >
+                          {statusBadge}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+                        <div>
+                          <div style={{ fontSize: "11px", color: "#64748B" }}>Total Invoice</div>
+                          <div style={{ fontSize: "18px", fontWeight: 700, color: "#0F172A", marginTop: "2px" }}>
+                            ₹{total.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: "11px", color: "#64748B" }}>Received</div>
+                          <div style={{ fontSize: "18px", fontWeight: 700, color: "#16A34A", marginTop: "2px" }}>
+                            ₹{rec.toLocaleString("en-IN")}{" "}
+                            <span style={{ fontSize: "12px", fontWeight: 600 }}>({pct}%)</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: "11px", color: "#64748B" }}>Pending</div>
+                          <div style={{ fontSize: "18px", fontWeight: 700, color: pending > 0 ? "#DC2626" : "#0F172A", marginTop: "2px" }}>
+                            ₹{pending.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar: Paid vs Pending */}
+                      <div style={{ marginTop: "16px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#64748B", marginBottom: "6px" }}>
+                          <span>Collection Progress</span>
+                          <span>{pct}% collected</span>
+                        </div>
+                        <div style={{ width: "100%", height: "10px", backgroundColor: "#E2E8F0", borderRadius: "9999px", overflow: "hidden", display: "flex" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", backgroundColor: "#16A34A", transition: "width 0.4s ease" }} />
+                          <div style={{ width: `${100 - pct}%`, height: "100%", backgroundColor: pending > 0 ? "#FCA5A5" : "transparent" }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Action Button */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                      <button
+                        type="button"
+                        onClick={() => openRecordPaymentModal(selectedOrder)}
+                        style={{
+                          padding: "10px 18px",
+                          borderRadius: "8px",
+                          backgroundColor: "#16A34A",
+                          color: "#ffffff",
+                          border: "none",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          boxShadow: "0 2px 4px rgba(22, 163, 74, 0.25)"
+                        }}
+                      >
+                        <CreditCard size={15} />
+                        <span>Record Payment</span>
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record Payment Form Modal */}
+      {showPaymentModal && selectedOrder && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => setShowPaymentModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "500px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FAFBFD" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", backgroundColor: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center", color: "#16A34A" }}>
+                  <CreditCard size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    Record Payment
+                  </h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                    Order #{selectedOrder.piNumber || selectedOrder.orderNumber || selectedOrder.id}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowPaymentModal(false)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordPaymentSubmit} style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                  Payment Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  required
+                  placeholder="e.g. 50000"
+                  value={paymentPayload.amount}
+                  onChange={(e) => setPaymentPayload({ ...paymentPayload, amount: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                  Payment Method *
+                </label>
+                <select
+                  value={paymentPayload.paymentMethod}
+                  onChange={(e) => setPaymentPayload({ ...paymentPayload, paymentMethod: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                >
+                  <option value="NEFT">NEFT (Bank Transfer)</option>
+                  <option value="RTGS">RTGS (Bank Transfer)</option>
+                  <option value="UPI">UPI</option>
+                  <option value="CHEQUE">CHEQUE</option>
+                  <option value="CASH">CASH</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                  Reference / UTR / Txn Number *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. UTR1948201847 or Cheque# 002914"
+                  value={paymentPayload.referenceNumber}
+                  onChange={(e) => setPaymentPayload({ ...paymentPayload, referenceNumber: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                  Notes / Remarks
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Optional internal remarks..."
+                  value={paymentPayload.notes}
+                  onChange={(e) => setPaymentPayload({ ...paymentPayload, notes: e.target.value })}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentModal(false)}
+                  disabled={paymentSubmitting}
+                  style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", backgroundColor: "#ffffff", color: "#475569", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={paymentSubmitting}
+                  style={{ padding: "8px 20px", borderRadius: "8px", border: "none", backgroundColor: "#16A34A", color: "#ffffff", fontSize: "13px", fontWeight: 600, cursor: paymentSubmitting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  {paymentSubmitting ? "Submitting..." : "Save Payment"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showCreateOrderModal && (
         <CreateSalesOrderModal

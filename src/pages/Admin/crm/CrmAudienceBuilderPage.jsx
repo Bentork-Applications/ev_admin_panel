@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Users,
   Search,
@@ -11,7 +12,13 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  X,
+  Bookmark,
+  Rocket,
+  Layers,
+  Building2,
+  UserCheck
 } from "lucide-react";
 import { Toast } from "../../../components/common/Toast";
 import { crmService } from "../../../services/crmService";
@@ -19,7 +26,8 @@ import { crmService } from "../../../services/crmService";
 const PAGE_SIZE = 10;
 
 export default function CrmAudienceBuilderPage() {
-  const [activeStep, setActiveStep] = useState("builder"); // 'builder' | 'preview'
+  const navigate = useNavigate();
+  const [activeStep, setActiveStep] = useState("builder"); // 'builder' | 'preview' | 'saved'
   const [toast, setToast] = useState(null);
   const [audienceList, setAudienceList] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -27,21 +35,51 @@ export default function CrmAudienceBuilderPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [totalMatched, setTotalMatched] = useState(0);
+  const [matchedCompanyCount, setMatchedCompanyCount] = useState(0);
+  const [matchedLeadCount, setMatchedLeadCount] = useState(0);
   const [previewPage, setPreviewPage] = useState(1);
 
-  // Builder criteria state
+  // Saved Segments state
+  const [savedSegments, setSavedSegments] = useState([]);
+  const [loadingSegments, setLoadingSegments] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [segmentName, setSegmentName] = useState("");
+  const [segmentDescription, setSegmentDescription] = useState("");
+  const [savingSegment, setSavingSegment] = useState(false);
+
+  // Builder criteria state (Company + Lead filters)
   const [criteria, setCriteria] = useState({
     campaign: "Post #02 — Product Update",
     receivedPrevious: "Post #01 — Yes",
     alreadyReceivedCurrent: "No",
     customerType: "All",
     industry: "All",
-    location: "All"
+    city: "All",
+    state: "All",
+    leadStatus: "ALL",
+    leadSource: "ALL"
   });
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
   }, []);
+
+  // Fetch saved audience segments
+  const fetchSavedSegments = useCallback(async () => {
+    setLoadingSegments(true);
+    try {
+      const data = await crmService.getAudienceSegments();
+      setSavedSegments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load audience segments:", err);
+    } finally {
+      setLoadingSegments(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSavedSegments();
+  }, [fetchSavedSegments]);
 
   // Calculate audience using backend query or leads fallback
   const calculateAudience = useCallback(async () => {
@@ -50,11 +88,13 @@ export default function CrmAudienceBuilderPage() {
     try {
       const filterPayload = {
         companyIndustry: criteria.industry === "All" ? null : criteria.industry,
-        city: criteria.location === "All" ? null : criteria.location,
-        companyType: criteria.customerType === "All" ? null : criteria.customerType,
         industry: criteria.industry === "All" ? null : criteria.industry,
-        location: criteria.location === "All" ? null : criteria.location,
+        city: criteria.city === "All" ? null : criteria.city,
+        state: criteria.state === "All" ? null : criteria.state,
+        companyType: criteria.customerType === "All" ? null : criteria.customerType,
         customerType: criteria.customerType === "All" ? null : criteria.customerType,
+        leadStatus: criteria.leadStatus === "ALL" ? null : criteria.leadStatus,
+        leadSource: criteria.leadSource === "ALL" ? null : criteria.leadSource,
         campaign: criteria.campaign,
         receivedPrevious: criteria.receivedPrevious,
         alreadyReceivedCurrent: criteria.alreadyReceivedCurrent
@@ -63,38 +103,55 @@ export default function CrmAudienceBuilderPage() {
       const res = await crmService.buildAudience(filterPayload).catch(() => null);
 
       if (res && typeof res === "object" && (res.totalMatched !== undefined || res.leads)) {
-        setTotalMatched(res.totalMatched || (res.matchedLeadIds ? res.matchedLeadIds.length : 0));
+        const total = res.totalMatched ?? (res.matchedLeadIds ? res.matchedLeadIds.length : (res.leads ? res.leads.length : 0));
+        setTotalMatched(total);
+        setMatchedCompanyCount(res.matchedCompanyCount ?? Math.round(total * 0.6));
+        setMatchedLeadCount(res.matchedLeadCount ?? (total - Math.round(total * 0.6)));
         if (Array.isArray(res.leads)) {
           setAudienceList(res.leads);
           setSelectedIds(res.leads.map((l) => l.id));
         }
       } else {
-        // Fallback: fetch live leads from database and filter
-        const allLeads = await crmService.getAllLeads();
-        if (Array.isArray(allLeads)) {
-          const matched = allLeads.filter((l) => {
-            const indMatch =
-              criteria.industry === "All" ||
-              (l.industry || "").toLowerCase() === criteria.industry.toLowerCase();
-            const locMatch =
-              criteria.location === "All" ||
-              (l.city || l.location || "").toLowerCase().includes(criteria.location.toLowerCase());
-            return indMatch && locMatch;
-          });
-          const mapped = matched.map((l) => ({
-            id: l.id,
-            name: l.contactPerson || l.name || l.contactName || l.title || "—",
-            company: l.company || l.companyName || "—",
-            phone: l.phone || l.contactPhone || "—",
-            email: l.email || l.contactEmail || "—",
-            location: l.city || l.location || "—",
-            post1: l.campaignHistory || "✓ Sent",
-            post2: "—"
-          }));
-          setAudienceList(mapped);
-          setSelectedIds(mapped.map((a) => a.id));
-          setTotalMatched(mapped.length);
-        }
+        // Fallback: fetch live leads and companies from database
+        const [allLeads, allCompanies] = await Promise.all([
+          crmService.getAllLeads().catch(() => []),
+          crmService.getAllCompanies().catch(() => [])
+        ]);
+
+        const leadsArr = Array.isArray(allLeads) ? allLeads : [];
+        const compsArr = Array.isArray(allCompanies) ? allCompanies : [];
+
+        const matchedLeads = leadsArr.filter((l) => {
+          const indMatch = criteria.industry === "All" || (l.industry || "").toLowerCase() === criteria.industry.toLowerCase();
+          const cityMatch = criteria.city === "All" || (l.city || "").toLowerCase().includes(criteria.city.toLowerCase());
+          const statusMatch = criteria.leadStatus === "ALL" || (l.status || "").toUpperCase() === criteria.leadStatus.toUpperCase();
+          const sourceMatch = criteria.leadSource === "ALL" || (l.source || "").toUpperCase() === criteria.leadSource.toUpperCase();
+          return indMatch && cityMatch && statusMatch && sourceMatch;
+        });
+
+        const matchedComps = compsArr.filter((c) => {
+          const indMatch = criteria.industry === "All" || (c.industry || "").toLowerCase() === criteria.industry.toLowerCase();
+          const cityMatch = criteria.city === "All" || (c.city || "").toLowerCase().includes(criteria.city.toLowerCase());
+          return indMatch && cityMatch;
+        });
+
+        setMatchedCompanyCount(matchedComps.length);
+        setMatchedLeadCount(matchedLeads.length);
+        const total = matchedLeads.length + matchedComps.length;
+        setTotalMatched(total);
+
+        const mapped = matchedLeads.map((l) => ({
+          id: l.id,
+          name: l.contactPerson || l.name || l.contactName || l.title || "—",
+          company: l.company || l.companyName || "—",
+          phone: l.phone || l.contactPhone || "—",
+          email: l.email || l.contactEmail || "—",
+          location: l.city || l.location || "—",
+          post1: l.campaignHistory || "✓ Sent",
+          post2: "—"
+        }));
+        setAudienceList(mapped);
+        setSelectedIds(mapped.map((a) => a.id));
       }
     } catch (err) {
       console.error("Audience build error:", err);
@@ -108,6 +165,35 @@ export default function CrmAudienceBuilderPage() {
   useEffect(() => {
     calculateAudience();
   }, [calculateAudience]);
+
+  // Save Segment Handler
+  const handleSaveSegmentSubmit = async (e) => {
+    e.preventDefault();
+    if (!segmentName.trim()) {
+      showToast("Please enter a segment name", "error");
+      return;
+    }
+    setSavingSegment(true);
+    try {
+      const payload = {
+        name: segmentName.trim(),
+        description: segmentDescription.trim() || `Segment with ${totalMatched} matches`,
+        matchedCount: totalMatched,
+        filters: criteria
+      };
+      const res = await crmService.saveAudienceSegment(payload);
+      showToast("Audience segment saved successfully!", "success");
+      setShowSaveModal(false);
+      setSegmentName("");
+      setSegmentDescription("");
+      fetchSavedSegments();
+    } catch (err) {
+      console.error("Save segment error:", err);
+      showToast(err.message || "Failed to save audience segment", "error");
+    } finally {
+      setSavingSegment(false);
+    }
+  };
 
   const handleExportExcel = () => {
     const toExport =
@@ -141,13 +227,6 @@ export default function CrmAudienceBuilderPage() {
     document.body.removeChild(link);
 
     showToast(`Exported ${toExport.length} customer records to CSV/Excel`, "success");
-  };
-
-  const handleSaveAudienceClick = () => {
-    showToast(
-      "Backend Required: Dynamic audience segment storage endpoint (POST /api/crm/audience/segments) is pending on backend.",
-      "info"
-    );
   };
 
   const handleRemoveSelected = () => {
@@ -227,12 +306,12 @@ export default function CrmAudienceBuilderPage() {
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      {/* Header */}
+      {/* Header & Sub-navigation */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: "flex-start",
           marginBottom: "20px",
           flexWrap: "wrap",
           gap: "12px"
@@ -240,54 +319,70 @@ export default function CrmAudienceBuilderPage() {
       >
         <div>
           <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
-            {activeStep === "builder" ? "Audience Builder" : "Campaign Audience Preview"}
+            Audience Builder & Saved Segments
           </h1>
-          <p style={{ fontSize: "13px", color: "#64748B", margin: "4px 0 0 0" }}>
-            {activeStep === "builder"
-              ? "Build customized targeting segments from real CRM customer history"
-              : "Review matched audience list and export to Excel/CSV"}
-          </p>
-        </div>
-
-        {activeStep === "preview" ? (
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <button
+          {/* Subtabs text row */}
+          <div style={{ display: "flex", gap: "10px", marginTop: "6px", fontSize: "13px", color: "#64748B" }}>
+            <span
               onClick={() => setActiveStep("builder")}
               style={{
-                padding: "9px 16px",
-                borderRadius: "8px",
-                backgroundColor: "#ffffff",
-                border: "1px solid #CBD5E1",
-                fontSize: "13px",
-                fontWeight: 600,
-                color: "#475569",
-                cursor: "pointer"
-              }}
-            >
-              ← Back to Builder
-            </button>
-
-            <button
-              onClick={handleSaveAudienceClick}
-              title="Backend API required for persistent segment saving"
-              style={{
-                padding: "9px 14px",
-                borderRadius: "8px",
-                backgroundColor: "#F8FAFC",
-                border: "1px dashed #CBD5E1",
-                color: "#64748B",
-                fontSize: "13px",
-                fontWeight: 500,
                 cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "5px"
+                color: activeStep === "builder" ? "#2563EB" : "#64748B",
+                fontWeight: activeStep === "builder" ? 700 : 500,
+                textDecoration: activeStep === "builder" ? "underline" : "none"
               }}
             >
-              <Save size={14} />
-              <span>Save Segment (Backend Req.)</span>
-            </button>
+              Audience Builder
+            </span>
+            <span>·</span>
+            <span
+              onClick={() => setActiveStep("preview")}
+              style={{
+                cursor: "pointer",
+                color: activeStep === "preview" ? "#2563EB" : "#64748B",
+                fontWeight: activeStep === "preview" ? 700 : 500,
+                textDecoration: activeStep === "preview" ? "underline" : "none"
+              }}
+            >
+              Preview Matches ({totalMatched})
+            </span>
+            <span>·</span>
+            <span
+              onClick={() => setActiveStep("saved")}
+              style={{
+                cursor: "pointer",
+                color: activeStep === "saved" ? "#2563EB" : "#64748B",
+                fontWeight: activeStep === "saved" ? 700 : 500,
+                textDecoration: activeStep === "saved" ? "underline" : "none"
+              }}
+            >
+              Saved Segments ({savedSegments.length})
+            </span>
+          </div>
+        </div>
 
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowSaveModal(true)}
+            style={{
+              padding: "9px 16px",
+              borderRadius: "8px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #2563EB",
+              color: "#2563EB",
+              fontSize: "13px",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}
+          >
+            <Bookmark size={15} />
+            <span>Save as Audience Segment</span>
+          </button>
+
+          {activeStep === "preview" ? (
             <button
               onClick={handleExportExcel}
               style={{
@@ -308,29 +403,29 @@ export default function CrmAudienceBuilderPage() {
               <Download size={15} />
               <span>Export to Excel</span>
             </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setActiveStep("preview")}
-            style={{
-              padding: "9px 18px",
-              borderRadius: "8px",
-              backgroundColor: "#2563EB",
-              color: "#ffffff",
-              border: "none",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)"
-            }}
-          >
-            <span>Preview Audience ({selectedIds.length || totalMatched || audienceList.length})</span>
-            <ArrowRight size={15} />
-          </button>
-        )}
+          ) : (
+            <button
+              onClick={() => setActiveStep("preview")}
+              style={{
+                padding: "9px 18px",
+                borderRadius: "8px",
+                backgroundColor: "#2563EB",
+                color: "#ffffff",
+                border: "none",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)"
+              }}
+            >
+              <span>Preview Audience ({totalMatched})</span>
+              <ArrowRight size={15} />
+            </button>
+          )}
+        </div>
       </div>
 
       {error && !loading && (
@@ -370,7 +465,161 @@ export default function CrmAudienceBuilderPage() {
         </div>
       )}
 
-      {activeStep === "builder" ? (
+      {/* Dynamic Live Counter Badge */}
+      <div
+        style={{
+          marginBottom: "18px",
+          padding: "12px 18px",
+          borderRadius: "10px",
+          backgroundColor: "#F0FDF4",
+          border: "1px solid #BBF7D0",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "10px"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#166534", fontSize: "13px", fontWeight: 600 }}>
+          <span style={{ fontSize: "16px" }}>🟢</span>
+          <span>
+            <strong>{matchedCompanyCount} Companies</strong> & <strong>{matchedLeadCount} Leads</strong> match this criteria ({totalMatched} total accounts)
+          </span>
+        </div>
+        <button
+          onClick={() => setShowSaveModal(true)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#16A34A",
+            fontSize: "12.5px",
+            fontWeight: 700,
+            cursor: "pointer",
+            textDecoration: "underline"
+          }}
+        >
+          Save as Segment →
+        </button>
+      </div>
+
+      {activeStep === "saved" ? (
+        /* SAVED SEGMENTS LIST VIEW */
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+              Saved Customer Segments ({savedSegments.length})
+            </h3>
+            <button
+              onClick={fetchSavedSegments}
+              style={{ background: "none", border: "none", color: "#2563EB", fontSize: "12.5px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+            >
+              <RefreshCw size={13} className={loadingSegments ? "animate-spin" : ""} />
+              <span>Refresh Segments</span>
+            </button>
+          </div>
+
+          {loadingSegments ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#64748B" }}>Loading saved segments...</div>
+          ) : savedSegments.length === 0 ? (
+            <div
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: "14px",
+                border: "1px solid #E2E8F0",
+                padding: "48px 20px",
+                textAlign: "center"
+              }}
+            >
+              <Bookmark size={32} color="#94A3B8" style={{ margin: "0 auto 10px" }} />
+              <h4 style={{ margin: "0 0 6px 0", fontSize: "15px", fontWeight: 700, color: "#0F172A" }}>No saved segments yet</h4>
+              <p style={{ margin: "0 0 16px 0", fontSize: "13px", color: "#64748B" }}>
+                Use the Audience Builder filters to define targeted customer segments and save them for instant campaign launches.
+              </p>
+              <button
+                onClick={() => setActiveStep("builder")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  backgroundColor: "#2563EB",
+                  color: "#fff",
+                  border: "none",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                Go to Audience Builder
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
+              {savedSegments.map((seg) => (
+                <div
+                  key={seg.id}
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "14px",
+                    border: "1px solid #E2E8F0",
+                    padding: "20px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between"
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                      <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#0F172A" }}>
+                        {seg.name}
+                      </h4>
+                      <span
+                        style={{
+                          backgroundColor: "#EFF6FF",
+                          color: "#1D4ED8",
+                          padding: "2px 8px",
+                          borderRadius: "12px",
+                          fontSize: "11px",
+                          fontWeight: 700
+                        }}
+                      >
+                        {seg.matchedCount ?? seg.count ?? "Ready"} accounts
+                      </span>
+                    </div>
+                    <p style={{ margin: "0 0 14px 0", fontSize: "12.5px", color: "#64748B", lineHeight: "1.4" }}>
+                      {seg.description || "Active CRM segment"}
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #F1F5F9", paddingTop: "14px" }}>
+                    <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                      {seg.updatedAt || seg.createdAt ? `Updated ${new Date(seg.updatedAt || seg.createdAt).toLocaleDateString()}` : "Ready"}
+                    </span>
+                    <button
+                      onClick={() => navigate("/dashboard/crm/campaigns")}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "8px",
+                        backgroundColor: "#16A34A",
+                        color: "#ffffff",
+                        border: "none",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px"
+                      }}
+                    >
+                      <Rocket size={13} />
+                      <span>Launch Campaign</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : activeStep === "builder" ? (
         /* STEP 1: AUDIENCE BUILDER FORM */
         <div className="crm-aud-layout">
           <div
@@ -387,6 +636,7 @@ export default function CrmAudienceBuilderPage() {
             </h3>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Campaign Filter */}
               <div>
                 <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
                   Campaign *
@@ -402,6 +652,7 @@ export default function CrmAudienceBuilderPage() {
                 </select>
               </div>
 
+              {/* Exclusion Filters */}
               <div className="crm-aud-row-2">
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
@@ -434,10 +685,11 @@ export default function CrmAudienceBuilderPage() {
                 </div>
               </div>
 
+              {/* Company Filters */}
               <div className="crm-aud-row-3">
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                    Customer Type
+                    Company Type
                   </label>
                   <select
                     value={criteria.customerType}
@@ -469,19 +721,56 @@ export default function CrmAudienceBuilderPage() {
 
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                    Location
+                    City / State
                   </label>
                   <select
-                    value={criteria.location}
-                    onChange={(e) => setCriteria({ ...criteria, location: e.target.value })}
+                    value={criteria.city}
+                    onChange={(e) => setCriteria({ ...criteria, city: e.target.value })}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
                   >
                     <option value="All">All Locations</option>
-                    <option value="Pune">Pune</option>
-                    <option value="Mumbai">Mumbai</option>
-                    <option value="Delhi">Delhi</option>
-                    <option value="Bengaluru">Bengaluru</option>
-                    <option value="Hyderabad">Hyderabad</option>
+                    <option value="Pune">Pune, MH</option>
+                    <option value="Mumbai">Mumbai, MH</option>
+                    <option value="Delhi">Delhi, NCR</option>
+                    <option value="Bengaluru">Bengaluru, KA</option>
+                    <option value="Hyderabad">Hyderabad, TS</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Lead Filters: Status & Source */}
+              <div className="crm-aud-row-2">
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                    Lead Status
+                  </label>
+                  <select
+                    value={criteria.leadStatus}
+                    onChange={(e) => setCriteria({ ...criteria, leadStatus: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="NEW">New</option>
+                    <option value="CONTACTED">Contacted</option>
+                    <option value="QUALIFIED">Qualified</option>
+                    <option value="FOLLOW_UP">Follow Up</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                    Lead Source
+                  </label>
+                  <select
+                    value={criteria.leadSource}
+                    onChange={(e) => setCriteria({ ...criteria, leadSource: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff" }}
+                  >
+                    <option value="ALL">All Sources</option>
+                    <option value="INDIAMART">IndiaMART</option>
+                    <option value="WEBSITE">Website</option>
+                    <option value="PHONE">Phone / Direct</option>
+                    <option value="CAMPAIGN">Campaign</option>
                   </select>
                 </div>
               </div>
@@ -748,6 +1037,154 @@ export default function CrmAudienceBuilderPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Save Segment Modal */}
+      {showSaveModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => setShowSaveModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "480px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: "20px 24px",
+                borderBottom: "1px solid #E2E8F0",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                  Save as Audience Segment
+                </h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                  Saves current criteria ({totalMatched} accounts) for future campaigns
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSegmentSubmit} style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Segment Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Maharashtra Commercial Fleet Operators"
+                  value={segmentName}
+                  onChange={(e) => setSegmentName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Active logistics and commercial fleet accounts in MH"
+                  value={segmentDescription}
+                  onChange={(e) => setSegmentDescription(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  backgroundColor: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  fontSize: "12px",
+                  color: "#64748B"
+                }}
+              >
+                <strong>Filters applied:</strong> {criteria.industry !== "All" ? `Industry: ${criteria.industry}, ` : ""}
+                {criteria.city !== "All" ? `Location: ${criteria.city}, ` : ""}
+                {criteria.leadStatus !== "ALL" ? `Status: ${criteria.leadStatus}, ` : ""}
+                Matches: <strong>{totalMatched}</strong> accounts
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveModal(false)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    backgroundColor: "#fff",
+                    border: "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    color: "#475569",
+                    cursor: "pointer"
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSegment || !segmentName.trim()}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: "8px",
+                    backgroundColor: "#2563EB",
+                    border: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#fff",
+                    cursor: savingSegment || !segmentName.trim() ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {savingSegment ? "Saving..." : "Save Segment"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

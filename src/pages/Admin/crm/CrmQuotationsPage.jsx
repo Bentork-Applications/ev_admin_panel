@@ -29,8 +29,6 @@ const TABS = [
   { id: "ACCEPTED", label: "Accepted" }
 ];
 
-const PAGE_SIZE = 10;
-
 export default function CrmQuotationsPage() {
   const [quotations, setQuotations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +36,9 @@ export default function CrmQuotationsPage() {
   const [activeTab, setActiveTab] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalElements, setTotalElements] = useState(0);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
   const [toast, setToast] = useState(null);
 
   // Modals
@@ -52,33 +53,58 @@ export default function CrmQuotationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const allCompanies = await crmService.getAllCompanies().catch(() => []);
-      const companyPromises = (Array.isArray(allCompanies) ? allCompanies : []).map((comp) =>
-        crmService.getCompany360(comp.id).catch(() => ({ quotations: [] }))
-      );
-
-      const responses = await Promise.all(companyPromises);
-      const allQuotes = responses.flatMap((res) => res.quotations || []);
-
-      const quoteMap = new Map();
-      allQuotes.forEach((q) => {
-        if (q && q.id) quoteMap.set(q.id, q);
-      });
-
-      const list = Array.from(quoteMap.values());
-      setQuotations(list);
+      const res = await crmService.getQuotationsPaged(currentPage - 1, pageSize);
+      if (res && Array.isArray(res.content)) {
+        setQuotations(res.content);
+        setTotalElements(res.totalElements ?? res.content.length);
+        setServerTotalPages(res.totalPages || Math.ceil((res.totalElements ?? res.content.length) / pageSize) || 1);
+      } else if (Array.isArray(res)) {
+        setQuotations(res);
+        setTotalElements(res.length);
+        setServerTotalPages(Math.ceil(res.length / pageSize) || 1);
+      } else if (res && typeof res === "object") {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setQuotations(list);
+        setTotalElements(list.length);
+        setServerTotalPages(Math.ceil(list.length / pageSize) || 1);
+      } else {
+        setQuotations([]);
+        setTotalElements(0);
+        setServerTotalPages(1);
+      }
     } catch (err) {
       console.error("Failed to load quotations:", err);
-      setError(err.message || "Failed to load quotations");
-      showToast(err.message || "Failed to load quotations", "error");
+      // Fallback: try getAllQuotations if paged param not supported
+      try {
+        const all = await crmService.getAllQuotations();
+        const list = Array.isArray(all) ? all : [];
+        setQuotations(list);
+        setTotalElements(list.length);
+        setServerTotalPages(Math.ceil(list.length / pageSize) || 1);
+      } catch (fallbackErr) {
+        setError(err.message || "Failed to load quotations");
+        showToast(err.message || "Failed to load quotations", "error");
+      }
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [currentPage, pageSize, showToast]);
 
   useEffect(() => {
     fetchQuotations();
   }, [fetchQuotations]);
+
+  // Summary Metrics
+  const summaryMetrics = useMemo(() => {
+    const total = totalElements || quotations.length;
+    const accepted = quotations.filter((q) => (q.status || "").toUpperCase() === "ACCEPTED").length;
+    const pendingSent = quotations.filter((q) => {
+      const s = (q.status || "").toUpperCase();
+      return s === "SENT" || s === "DRAFT" || s === "APPROVAL" || s === "NEGOTIATION";
+    }).length;
+    const rejected = quotations.filter((q) => (q.status || "").toUpperCase() === "REJECTED").length;
+    return { total, accepted, pendingSent, rejected };
+  }, [quotations, totalElements]);
 
   const filteredQuotes = useMemo(() => {
     return quotations.filter((q) => {
@@ -95,16 +121,6 @@ export default function CrmQuotationsPage() {
       return true;
     });
   }, [quotations, activeTab, searchQuery]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeTab, searchQuery]);
-
-  const totalPages = Math.ceil(filteredQuotes.length / PAGE_SIZE) || 1;
-  const paginatedQuotes = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredQuotes.slice(start, start + PAGE_SIZE);
-  }, [filteredQuotes, currentPage]);
 
   return (
     <div style={{ maxWidth: "1480px", margin: "0 auto", padding: "16px 20px" }}>
@@ -225,6 +241,44 @@ export default function CrmQuotationsPage() {
         </div>
       )}
 
+      {/* 4 Summary Stat Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: "14px",
+          marginBottom: "20px"
+        }}
+      >
+        <div style={{ backgroundColor: "#ffffff", borderRadius: "12px", padding: "16px 18px", border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Total Quotes</span>
+          <div style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", marginTop: "4px" }}>
+            {summaryMetrics.total}
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: "#ffffff", borderRadius: "12px", padding: "16px 18px", border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <span style={{ fontSize: "12px", color: "#16A34A", fontWeight: 600 }}>Accepted</span>
+          <div style={{ fontSize: "24px", fontWeight: 700, color: "#16A34A", marginTop: "4px" }}>
+            {summaryMetrics.accepted}
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: "#ffffff", borderRadius: "12px", padding: "16px 18px", border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 600 }}>Pending / Sent</span>
+          <div style={{ fontSize: "24px", fontWeight: 700, color: "#2563EB", marginTop: "4px" }}>
+            {summaryMetrics.pendingSent}
+          </div>
+        </div>
+
+        <div style={{ backgroundColor: "#ffffff", borderRadius: "12px", padding: "16px 18px", border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <span style={{ fontSize: "12px", color: "#DC2626", fontWeight: 600 }}>Rejected</span>
+          <div style={{ fontSize: "24px", fontWeight: 700, color: "#DC2626", marginTop: "4px" }}>
+            {summaryMetrics.rejected}
+          </div>
+        </div>
+      </div>
+
       {/* Search and Tabs Bar */}
       <div
         style={{
@@ -258,23 +312,46 @@ export default function CrmQuotationsPage() {
           ))}
         </div>
 
-        {/* Search input */}
-        <div style={{ position: "relative", minWidth: "240px" }}>
-          <Search size={15} color="#94A3B8" style={{ position: "absolute", left: "10px", top: "10px" }} />
-          <input
-            type="text"
-            placeholder="Search quote#, company, opp..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+        {/* Search input and Page size */}
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <div style={{ position: "relative", minWidth: "220px" }}>
+            <Search size={15} color="#94A3B8" style={{ position: "absolute", left: "10px", top: "10px" }} />
+            <input
+              type="text"
+              placeholder="Search quote#, company, opp..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "8px 12px 8px 32px",
+                borderRadius: "8px",
+                border: "1px solid #CBD5E1",
+                fontSize: "13px",
+                boxSizing: "border-box"
+              }}
+            />
+          </div>
+
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setCurrentPage(1);
+            }}
             style={{
-              width: "100%",
-              padding: "8px 12px 8px 32px",
+              padding: "8px 10px",
               borderRadius: "8px",
               border: "1px solid #CBD5E1",
               fontSize: "13px",
-              boxSizing: "border-box"
+              backgroundColor: "#ffffff",
+              color: "#475569"
             }}
-          />
+            title="Items per page"
+          >
+            <option value={10}>10 / page</option>
+            <option value={20}>20 / page</option>
+            <option value={50}>50 / page</option>
+          </select>
         </div>
       </div>
 
@@ -317,69 +394,96 @@ export default function CrmQuotationsPage() {
                   </tr>
                 ))
               ) : filteredQuotes.length > 0 ? (
-                paginatedQuotes.map((q) => (
-                  <tr key={q.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                    <td style={{ padding: "12px 16px", fontWeight: 700, color: "#2563EB" }}>
-                      {q.quoteNumber || `Q-${q.id}`}
-                    </td>
-                    <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0F172A" }}>
-                      {q.companyName || q.customerName || "—"}
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#334155" }}>
-                      {q.opportunityTitle || "—"}
-                    </td>
-                    <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0F172A" }}>
-                      ₹{(q.finalAmount ?? q.totalAmount ?? 0).toLocaleString("en-IN")}
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#64748B" }}>
-                      {q.version || "v1"}
-                    </td>
-                    <td style={{ padding: "12px 16px" }}>
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          padding: "2px 8px",
-                          borderRadius: "12px",
-                          backgroundColor:
-                            (q.status || "").toUpperCase() === "ACCEPTED"
-                              ? "#DCFCE7"
-                              : (q.status || "").toUpperCase() === "SENT"
-                              ? "#DBEAFE"
-                              : "#FEF3C7",
-                          color:
-                            (q.status || "").toUpperCase() === "ACCEPTED"
-                              ? "#16A34A"
-                              : (q.status || "").toUpperCase() === "SENT"
-                              ? "#2563EB"
-                              : "#D97706"
-                        }}
-                      >
-                        {q.status || "Draft"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#64748B" }}>
-                      {q.validUntil || "—"}
-                    </td>
-                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      <button
-                        onClick={() => setSelectedQuoteId(q.id)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: "6px",
-                          backgroundColor: "#F1F5F9",
-                          color: "#2563EB",
-                          border: "1px solid #CBD5E1",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          cursor: "pointer"
-                        }}
-                      >
-                        Open
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                filteredQuotes.map((q) => {
+                  const isAccepted = (q.status || "").toUpperCase() === "ACCEPTED";
+                  return (
+                    <tr key={q.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 700, color: "#2563EB" }}>
+                        {q.quoteNumber || `Q-${q.id}`}
+                      </td>
+                      <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0F172A" }}>
+                        {q.companyName || q.customerName || "—"}
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#334155" }}>
+                        {q.opportunityTitle || "—"}
+                      </td>
+                      <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0F172A" }}>
+                        ₹{(q.finalAmount ?? q.totalAmount ?? 0).toLocaleString("en-IN")}
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#64748B" }}>
+                        {q.version || "v1"}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            backgroundColor:
+                              isAccepted
+                                ? "#DCFCE7"
+                                : (q.status || "").toUpperCase() === "SENT"
+                                ? "#DBEAFE"
+                                : (q.status || "").toUpperCase() === "REJECTED"
+                                ? "#FEE2E2"
+                                : "#FEF3C7",
+                            color:
+                              isAccepted
+                                ? "#16A34A"
+                                : (q.status || "").toUpperCase() === "SENT"
+                                ? "#2563EB"
+                                : (q.status || "").toUpperCase() === "REJECTED"
+                                ? "#DC2626"
+                                : "#D97706"
+                          }}
+                        >
+                          {q.status || "Draft"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#64748B" }}>
+                        {q.validUntil || "—"}
+                      </td>
+                      <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
+                          {isAccepted && (
+                            <button
+                              onClick={() => setSelectedQuoteId(q.id)}
+                              title="Convert to Order"
+                              style={{
+                                padding: "4px 8px",
+                                borderRadius: "6px",
+                                backgroundColor: "#DCFCE7",
+                                color: "#16A34A",
+                                border: "1px solid #BBF7D0",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                cursor: "pointer"
+                              }}
+                            >
+                              Convert
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setSelectedQuoteId(q.id)}
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              backgroundColor: "#F1F5F9",
+                              color: "#2563EB",
+                              border: "1px solid #CBD5E1",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer"
+                            }}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={8} style={{ padding: "40px", textAlign: "center", color: "#64748B" }}>
@@ -392,7 +496,7 @@ export default function CrmQuotationsPage() {
         </div>
 
         {/* Pagination Footer */}
-        {!loading && filteredQuotes.length > PAGE_SIZE && (
+        {!loading && (totalElements > 0 || filteredQuotes.length > 0) && (
           <div
             style={{
               padding: "10px 16px",
@@ -406,9 +510,9 @@ export default function CrmQuotationsPage() {
             }}
           >
             <div>
-              Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(filteredQuotes.length, currentPage * PAGE_SIZE)} of {filteredQuotes.length}
+              Showing {filteredQuotes.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(totalElements || filteredQuotes.length, currentPage * pageSize)} of {totalElements || filteredQuotes.length} quotations
             </div>
-            <div style={{ display: "flex", gap: "6px" }}>
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
@@ -422,16 +526,16 @@ export default function CrmQuotationsPage() {
               >
                 <ChevronLeft size={13} />
               </button>
-              <span style={{ padding: "0 6px", lineHeight: "26px", fontWeight: 600 }}>{currentPage} / {totalPages}</span>
+              <span style={{ padding: "0 6px", lineHeight: "26px", fontWeight: 600 }}>{currentPage} / {serverTotalPages}</span>
               <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(serverTotalPages, p + 1))}
+                disabled={currentPage >= serverTotalPages}
                 style={{
                   padding: "4px 8px",
                   borderRadius: "4px",
                   border: "1px solid #CBD5E1",
-                  backgroundColor: currentPage >= totalPages ? "#F1F5F9" : "#fff",
-                  cursor: currentPage >= totalPages ? "not-allowed" : "pointer"
+                  backgroundColor: currentPage >= serverTotalPages ? "#F1F5F9" : "#fff",
+                  cursor: currentPage >= serverTotalPages ? "not-allowed" : "pointer"
                 }}
               >
                 <ChevronRight size={13} />
@@ -447,6 +551,9 @@ export default function CrmQuotationsPage() {
           isOpen={!!selectedQuoteId}
           onClose={() => setSelectedQuoteId(null)}
           quotationId={selectedQuoteId}
+          onQuotationUpdated={() => {
+            fetchQuotations();
+          }}
           onStatusUpdated={() => {
             fetchQuotations();
             setSelectedQuoteId(null);

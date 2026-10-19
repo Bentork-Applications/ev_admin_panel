@@ -71,6 +71,21 @@ export default function CrmDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  const handleCompleteTask = async (activityId) => {
+    if (!activityId) return;
+    try {
+      await crmService.completeTask(activityId);
+      showToast("Task completed successfully!", "success");
+      setTodayActivities((prev) =>
+        prev.map((a) => (a.id === activityId ? { ...a, status: "completed", completedAt: new Date().toISOString() } : a))
+      );
+      await fetchDashboardData();
+    } catch (err) {
+      console.error("Complete task error:", err);
+      showToast(err.message || "Failed to complete task", "error");
+    }
+  };
+
   // Lead trend chart data dynamically derived from real activities and opportunities
   const leadTrendData = useMemo(() => {
     if (!todayActivities.length && !opportunities.length) {
@@ -456,16 +471,52 @@ export default function CrmDashboardPage() {
                   </div>
                 ))
               ) : todayActivities.length > 0 ? (
-                todayActivities.slice(0, 4).map((act, i) => (
-                  <div key={act.id || i} style={{ borderBottom: i < todayActivities.length - 1 ? "1px solid #F1F5F9" : "none", paddingBottom: "10px" }}>
-                    <div style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
-                      {act.subject || `${(act.activityType || "Activity").toUpperCase()} Log`}
+                todayActivities.slice(0, 4).map((act, i) => {
+                  const isCompleted = (act.status || "").toLowerCase() === "completed";
+                  return (
+                    <div
+                      key={act.id || i}
+                      style={{
+                        borderBottom: i < todayActivities.length - 1 ? "1px solid #F1F5F9" : "none",
+                        paddingBottom: "10px",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "10px"
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isCompleted}
+                        onChange={() => handleCompleteTask(act.id)}
+                        disabled={isCompleted}
+                        style={{ marginTop: "3px", cursor: isCompleted ? "default" : "pointer", accentColor: "#16A34A" }}
+                        title={isCompleted ? "Completed" : "Click to mark complete"}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: 600,
+                            color: isCompleted ? "#94A3B8" : "#0F172A",
+                            textDecoration: isCompleted ? "line-through" : "none"
+                          }}
+                        >
+                          {act.subject || `${(act.activityType || "Activity").toUpperCase()} Log`}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: isCompleted ? "#CBD5E1" : "#64748B",
+                            marginTop: "2px",
+                            textDecoration: isCompleted ? "line-through" : "none"
+                          }}
+                        >
+                          {new Date(act.activityDate || act.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {act.notes || act.outcome || "Activity logged"}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
-                      {new Date(act.activityDate || act.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {act.notes || act.outcome || "Activity logged"}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div style={{ padding: "20px 0", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
                   No recent activities logged today.

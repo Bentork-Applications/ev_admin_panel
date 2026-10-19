@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Phone,
@@ -17,10 +17,17 @@ import {
   Mail,
   Briefcase,
   MapPin,
-  Tag
+  Tag,
+  Upload,
+  FileSpreadsheet,
+  FileText,
+  Download,
+  Trash2,
+  AlertTriangle
 } from "lucide-react";
 import { crmService } from "../../../services/crmService";
 import { Toast } from "../../../components/common/Toast";
+import { BulkUploadFeedbackModal } from "../../../components/crm/BulkUploadFeedbackModal";
 
 const PRODUCT_INTEREST_OPTIONS = [
   "EV Battery Pack",
@@ -110,6 +117,32 @@ export default function CrmNewCallPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successInfo, setSuccessInfo] = useState({ title: "", description: "", type: "lead" });
+
+  // Tab mode: 'single' (default single-lead flow) or 'bulk' (bulk CSV/PDF lead upload)
+  const [activeTab, setActiveTab] = useState("single");
+
+  // Bulk Upload states
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkDragging, setBulkDragging] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+  const [bulkError, setBulkError] = useState(null);
+  const [bulkValidationWarning, setBulkValidationWarning] = useState(null);
+  const [showCsvGuide, setShowCsvGuide] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Bulk Upload Feedback Modal State
+  const [bulkFeedbackModal, setBulkFeedbackModal] = useState({
+    isOpen: false,
+    status: null, // "loading" | "success" | "partial" | "error"
+    importedCount: 0,
+    skippedCount: 0,
+    totalRows: 0,
+    errors: [],
+    details: [],
+    errorMessage: "",
+    canRetry: false
+  });
 
   // Custom Dropdown values
   const [customIndustry, setCustomIndustry] = useState("");
@@ -380,59 +413,429 @@ export default function CrmNewCallPage() {
     });
   };
 
+  // ==================== BULK UPLOAD HANDLERS ====================
+  const formatFileSize = (bytes) => {
+    if (bytes == null || isNaN(bytes)) return "0 B";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  };
+
+  const handleDownloadSampleCsv = () => {
+    const headers = "title,source,city,state,estimatedValue,notes,contactName,contactPhone,contactEmail,companyName\n";
+    const sampleRow1 = "EV Battery Fleet Inquiry,Website,Pune,Maharashtra,500000,Requires 72V 100Ah packs,Rahul Sharma,9876543210,rahul@example.com,Fleet Logistics Pvt Ltd\n";
+    const sampleRow2 = "Solar Storage Integration,IndiaMART,Bengaluru,Karnataka,1200000,BESS project 48V,Ananya Patel,9823456789,ananya@example.com,SolarTech Solutions\n";
+    const blob = new Blob([headers + sampleRow1 + sampleRow2], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "sample_leads_bentork.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast("Sample CSV template downloaded", "info");
+  };
+
+  const handleFileSelect = (file) => {
+    setBulkError(null);
+    setBulkResult(null);
+    setBulkValidationWarning(null);
+
+    if (!file) return;
+
+    // Backend Spring Boot limit: 10MB
+    const MAX_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setBulkError(`File size (${formatFileSize(file.size)}) exceeds the maximum 10MB limit allowed by the backend.`);
+      setBulkFile(null);
+      return;
+    }
+
+    if (file.size === 0) {
+      setBulkError("Selected file is empty (0 bytes). Please select a valid file with lead data.");
+      setBulkFile(null);
+      return;
+    }
+
+    const fileNameLower = file.name.toLowerCase();
+    const isCsv = fileNameLower.endsWith(".csv") || file.type === "text/csv" || file.type === "application/vnd.ms-excel";
+    const isPdf = fileNameLower.endsWith(".pdf") || file.type === "application/pdf";
+
+    if (!isCsv && !isPdf) {
+      setBulkError("Unsupported file format. Please select a CSV (.csv) or PDF (.pdf) file.");
+      setBulkFile(null);
+      return;
+    }
+
+    if (isPdf) {
+      setBulkValidationWarning(
+        "Notice: Bentork CRM's backend lead ingestion engine (/api/crm/leads/import) requires CSV structured tabular data. While PDF selection is supported here for inspection, binary PDF documents cannot be parsed by the CSV engine and will be rejected by the backend. We recommend downloading the sample CSV template."
+      );
+    }
+
+    setBulkFile(file);
+  };
+
+  const handleBulkUploadSubmit = async (e) => {
+    e?.preventDefault();
+
+    // Prevent duplicate submissions while upload is in progress
+    if (bulkUploading) return;
+
+    if (!bulkFile) {
+      setBulkFeedbackModal({
+        isOpen: true,
+        status: "error",
+        title: "No File Selected",
+        errorMessage: "No file selected. Please select a CSV file containing lead records to upload.",
+        details: ["Please select or drop a valid .csv file into the upload dropzone."],
+        canRetry: false
+      });
+      showToast("Please select a file to upload", "error");
+      return;
+    }
+
+    if (bulkFile.size === 0) {
+      setBulkFeedbackModal({
+        isOpen: true,
+        status: "error",
+        title: "Empty File",
+        errorMessage: "The selected file is empty (0 bytes).",
+        details: ["Uploaded file contains no data rows or header columns. Please select a valid file."],
+        canRetry: false
+      });
+      showToast("Selected file is empty", "error");
+      return;
+    }
+
+    // Check for PDF file selection
+    const fileNameLower = bulkFile.name.toLowerCase();
+    const isPdf = fileNameLower.endsWith(".pdf") || bulkFile.type === "application/pdf";
+    if (isPdf) {
+      setBulkFeedbackModal({
+        isOpen: true,
+        status: "error",
+        title: "Unsupported File Format",
+        errorMessage: "PDF documents cannot be parsed by the CSV lead ingestion engine.",
+        details: [
+          "Bentork CRM lead ingestion endpoint (/api/crm/leads/import) requires structured CSV data.",
+          "Binary PDF documents cannot be parsed as spreadsheet rows. Please convert your leads to CSV (.csv) or download our sample CSV template."
+        ],
+        canRetry: false
+      });
+      showToast("PDF files cannot be parsed as CSV. Please use a CSV file.", "error");
+      return;
+    }
+
+    setBulkUploading(true);
+    setBulkError(null);
+    setBulkResult(null);
+
+    // Immediately display loading modal and indicator
+    setBulkFeedbackModal({
+      isOpen: true,
+      status: "loading",
+      fileName: bulkFile.name,
+      fileSize: formatFileSize(bulkFile.size)
+    });
+
+    try {
+      const res = await crmService.importLeadsCsv(bulkFile);
+      setBulkResult(res);
+
+      const imported = Number(res?.importedCount ?? 0);
+      const skipped = Number(res?.skippedCount ?? 0);
+      const total = Number(res?.totalRows ?? (imported + skipped));
+      const errors = Array.isArray(res?.errors) ? res.errors : [];
+
+      if (imported > 0 && skipped === 0) {
+        // Full Success
+        setBulkFeedbackModal({
+          isOpen: true,
+          status: "success",
+          importedCount: imported,
+          skippedCount: 0,
+          totalRows: total,
+          errors: [],
+          details: [],
+          canRetry: false
+        });
+        showToast("Leads uploaded successfully!", "success");
+      } else if (imported > 0 && skipped > 0) {
+        // Partial Success
+        setBulkFeedbackModal({
+          isOpen: true,
+          status: "partial",
+          importedCount: imported,
+          skippedCount: skipped,
+          totalRows: total,
+          errors: errors,
+          details: errors,
+          canRetry: false
+        });
+        showToast(`Partial upload complete: ${imported} imported, ${skipped} skipped.`, "info");
+      } else {
+        // 0 Imported - Failure
+        const errMsg =
+          errors.length > 0
+            ? `Upload finished with 0 imported leads. All ${skipped || total} row(s) failed validation.`
+            : "No leads were imported from this file. Please verify CSV column headers and row data.";
+        setBulkError(errMsg);
+        setBulkFeedbackModal({
+          isOpen: true,
+          status: "error",
+          errorMessage: errMsg,
+          importedCount: 0,
+          skippedCount: skipped,
+          totalRows: total,
+          errors: errors,
+          details: errors.length > 0 ? errors : ["File did not contain any valid lead records or failed column mapping."],
+          canRetry: true
+        });
+        showToast(errMsg, "error");
+      }
+    } catch (err) {
+      console.error("Bulk leads upload error:", err);
+      const errMsg = err?.message || "Failed to process bulk upload. Please check backend connection and file format.";
+      let details = [];
+
+      if (err?.data) {
+        if (typeof err.data === "string") {
+          details.push(err.data);
+        } else if (Array.isArray(err.data.errors) && err.data.errors.length > 0) {
+          details = err.data.errors.map((e) => e.defaultMessage || e.message || String(e));
+        } else if (err.data.message) {
+          details.push(err.data.message);
+        }
+      }
+
+      if (details.length === 0 && errMsg) {
+        details.push(errMsg);
+      }
+
+      setBulkError(errMsg);
+      setBulkFeedbackModal({
+        isOpen: true,
+        status: "error",
+        errorMessage: errMsg,
+        details: details,
+        canRetry: true
+      });
+      showToast(errMsg, "error");
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const handleClearBulkFile = () => {
+    setBulkFile(null);
+    setBulkError(null);
+    setBulkResult(null);
+    setBulkValidationWarning(null);
+    setBulkFeedbackModal((prev) => ({ ...prev, isOpen: false }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCloseFeedbackModal = () => {
+    setBulkFeedbackModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const handleRetryBulkUpload = () => {
+    handleBulkUploadSubmit();
+  };
+
+  const handleViewLeadsInCrm = () => {
+    setBulkFeedbackModal((prev) => ({ ...prev, isOpen: false }));
+    navigate("/dashboard/crm/leads");
+  };
+
   const todayStr = new Date().toISOString().split("T")[0];
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px 24px", fontFamily: "inherit" }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      {/* Header */}
-      <div style={{ marginBottom: "20px" }}>
-        <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
-          New Call / Add Lead
-        </h1>
-        <p style={{ fontSize: "13px", color: "#64748B", margin: "4px 0 0 0" }}>
-          Search phone first. If existing, log call activity. If new, create company, contact, lead & Call #1 in one workflow.
-        </p>
-      </div>
-
-      {/* Interactive 4-Step Stepper Bar */}
+      {/* Header with Mode Switcher */}
       <div
         style={{
+          marginBottom: "20px",
           display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "12px 18px",
-          backgroundColor: "#F8FAFC",
-          borderRadius: "10px",
-          border: "1px solid #E2E8F0",
-          marginBottom: "24px",
-          fontSize: "13px",
-          fontWeight: 600,
-          overflowX: "auto"
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "16px"
         }}
       >
-        <span style={{ color: searchDone ? "#16A34A" : "#2563EB", display: "flex", alignItems: "center", gap: "4px" }}>
-          {searchDone ? <Check size={14} /> : null} 1. Find Existing Record
-        </span>
-        <span style={{ color: "#94A3B8" }}>→</span>
-        <span style={{ color: matchedContact ? "#16A34A" : searchDone ? "#2563EB" : "#475569" }}>
-          2. {matchedContact ? "Existing Contact" : "New Contact Info"}
-        </span>
-        <span style={{ color: "#94A3B8" }}>→</span>
-        <span style={{ color: searchDone ? "#2563EB" : "#475569" }}>3. Call Details & Outcome</span>
-        <span style={{ color: "#94A3B8" }}>→</span>
-        <span style={{ color: "#475569" }}>4. Follow-up & Next Action</span>
+        <div>
+          <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
+            New Call / Add Lead
+          </h1>
+          <p style={{ fontSize: "13px", color: "#64748B", margin: "4px 0 0 0" }}>
+            {activeTab === "single"
+              ? "Search phone first. If existing, log call activity. If new, create company, contact, lead & Call #1 in one workflow."
+              : "Bulk import leads, companies, and contacts directly into Bentork Sales CRM via CSV/PDF file upload."}
+          </p>
+        </div>
+
+        {/* Mode Selector Tabs */}
+        <div
+          style={{
+            display: "inline-flex",
+            backgroundColor: "#F1F5F9",
+            borderRadius: "10px",
+            padding: "4px",
+            border: "1px solid #CBD5E1"
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab("single")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: "none",
+              fontSize: "13px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+              backgroundColor: activeTab === "single" ? "#ffffff" : "transparent",
+              color: activeTab === "single" ? "#2563EB" : "#64748B",
+              boxShadow: activeTab === "single" ? "0 1px 3px rgba(0,0,0,0.08)" : "none"
+            }}
+          >
+            <Phone size={15} />
+            Single Call / Lead
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("bulk")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: "none",
+              fontSize: "13px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+              backgroundColor: activeTab === "bulk" ? "#ffffff" : "transparent",
+              color: activeTab === "bulk" ? "#2563EB" : "#64748B",
+              boxShadow: activeTab === "bulk" ? "0 1px 3px rgba(0,0,0,0.08)" : "none"
+            }}
+          >
+            <Upload size={15} />
+            Bulk Leads Upload
+            <span
+              style={{
+                fontSize: "10px",
+                fontWeight: 700,
+                padding: "2px 6px",
+                borderRadius: "10px",
+                backgroundColor: activeTab === "bulk" ? "#DBEAFE" : "#E2E8F0",
+                color: activeTab === "bulk" ? "#1D4ED8" : "#475569"
+              }}
+            >
+              CSV
+            </span>
+          </button>
+        </div>
       </div>
 
-      {/* Step 1: Search Input Bar */}
-      <div
-        style={{
-          backgroundColor: "#ffffff",
-          borderRadius: "12px",
-          padding: "20px",
-          border: "1px solid #E2E8F0",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      {/* ========================================================================= */}
+      {/* MODE 1: SINGLE CALL / LEAD ENTRY                                         */}
+      {/* ========================================================================= */}
+      {activeTab === "single" && (
+        <>
+          {/* Quick banner linking to Bulk Upload */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              backgroundColor: "#F8FAFC",
+              border: "1px dashed #CBD5E1",
+              borderRadius: "10px",
+              padding: "10px 16px",
+              marginBottom: "18px",
+              fontSize: "12px",
+              color: "#475569"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <FileSpreadsheet size={16} color="#2563EB" />
+              <span>Have a batch of leads from an exhibition, event, or IndiaMART?</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("bulk")}
+              style={{
+                backgroundColor: "#ffffff",
+                border: "1px solid #CBD5E1",
+                color: "#2563EB",
+                fontWeight: 600,
+                borderRadius: "6px",
+                padding: "4px 10px",
+                cursor: "pointer",
+                fontSize: "12px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px"
+              }}
+            >
+              <Upload size={12} />
+              Switch to Bulk Leads Upload →
+            </button>
+          </div>
+
+          {/* Interactive 4-Step Stepper Bar */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "12px 18px",
+              backgroundColor: "#F8FAFC",
+              borderRadius: "10px",
+              border: "1px solid #E2E8F0",
+              marginBottom: "24px",
+              fontSize: "13px",
+              fontWeight: 600,
+              overflowX: "auto"
+            }}
+          >
+            <span style={{ color: searchDone ? "#16A34A" : "#2563EB", display: "flex", alignItems: "center", gap: "4px" }}>
+              {searchDone ? <Check size={14} /> : null} 1. Find Existing Record
+            </span>
+            <span style={{ color: "#94A3B8" }}>→</span>
+            <span style={{ color: matchedContact ? "#16A34A" : searchDone ? "#2563EB" : "#475569" }}>
+              2. {matchedContact ? "Existing Contact" : "New Contact Info"}
+            </span>
+            <span style={{ color: "#94A3B8" }}>→</span>
+            <span style={{ color: searchDone ? "#2563EB" : "#475569" }}>3. Call Details & Outcome</span>
+            <span style={{ color: "#94A3B8" }}>→</span>
+            <span style={{ color: "#475569" }}>4. Follow-up & Next Action</span>
+          </div>
+
+          {/* Step 1: Search Input Bar */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "12px",
+              padding: "20px",
+              border: "1px solid #E2E8F0",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              marginBottom: "20px"
+            }}
+          >
           marginBottom: "20px"
         }}
       >
@@ -1168,6 +1571,693 @@ export default function CrmNewCallPage() {
           </button>
         </div>
       </form>
+        </>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODE 2: BULK LEADS UPLOAD                                                 */}
+      {/* ========================================================================= */}
+      {activeTab === "bulk" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {/* Top Info & Template Download Card */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "24px",
+              border: "1px solid #E2E8F0",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                gap: "16px"
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      backgroundColor: "#EFF6FF",
+                      color: "#2563EB",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    <FileSpreadsheet size={20} />
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: "17px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
+                      Bulk Leads Ingestion Engine
+                    </h2>
+                    <p style={{ fontSize: "13px", color: "#64748B", margin: "2px 0 0 0" }}>
+                      Upload your spreadsheet to create leads, companies, and contacts in a single batch operation.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Constraint & Engine Tags */}
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "14px" }}>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      backgroundColor: "#F1F5F9",
+                      color: "#334155",
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #E2E8F0"
+                    }}
+                  >
+                    Format: <strong>CSV (.csv)</strong> / PDF (.pdf)
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      backgroundColor: "#F1F5F9",
+                      color: "#334155",
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #E2E8F0"
+                    }}
+                  >
+                    Max File Size: <strong>10 MB</strong>
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      backgroundColor: "#F0FDF4",
+                      color: "#166534",
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #BBF7D0"
+                    }}
+                  >
+                    API: <code>POST /api/crm/leads/import</code>
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      backgroundColor: "#EFF6FF",
+                      color: "#1E40AF",
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #BFDBFE"
+                    }}
+                  >
+                    Auto-links: Company & Contacts
+                  </span>
+                </div>
+              </div>
+
+              {/* Template Download Button */}
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCsvGuide(!showCsvGuide)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "9px 14px",
+                    borderRadius: "8px",
+                    backgroundColor: "#F8FAFC",
+                    border: "1px solid #CBD5E1",
+                    color: "#334155",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  <Tag size={14} />
+                  {showCsvGuide ? "Hide Column Guide" : "View Column Guide"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleCsv}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "9px 16px",
+                    borderRadius: "8px",
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #2563EB",
+                    color: "#2563EB",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 2px rgba(37,99,235,0.06)"
+                  }}
+                >
+                  <Download size={15} />
+                  Download Sample CSV
+                </button>
+              </div>
+            </div>
+
+            {/* Expandable Column Guide */}
+            {showCsvGuide && (
+              <div
+                style={{
+                  marginTop: "18px",
+                  padding: "16px",
+                  borderRadius: "10px",
+                  backgroundColor: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  fontSize: "12px"
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>
+                  Expected Column Headers (case-insensitive, underscores or spaces allowed):
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "10px",
+                    marginTop: "8px"
+                  }}
+                >
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>title</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Lead title / enquiry description</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>contactPhone</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>10-digit mobile number (used for deduplication)</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>contactName</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Name of primary contact person</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>companyName</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Company name (created if not found)</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>contactEmail</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Contact email address</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>city</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Lead location city (e.g. Pune)</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>state</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>State (e.g. Maharashtra)</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>source</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Origin (e.g. Website, IndiaMART, Exhibition)</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>estimatedValue</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Numeric deal value in ₹ (e.g. 500000)</div>
+                  </div>
+                  <div style={{ padding: "8px 10px", backgroundColor: "#fff", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    <code style={{ color: "#2563EB", fontWeight: 700 }}>notes</code>
+                    <div style={{ color: "#64748B", fontSize: "11px", marginTop: "2px" }}>Requirement notes and discussion specs</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Drag & Drop Upload Zone */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "24px",
+              border: "1px solid #E2E8F0",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".csv,.pdf,text/csv,application/pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileSelect(file);
+              }}
+              style={{ display: "none" }}
+            />
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setBulkDragging(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setBulkDragging(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setBulkDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleFileSelect(file);
+              }}
+              onClick={() => {
+                if (!bulkUploading) fileInputRef.current?.click();
+              }}
+              style={{
+                border: `2px dashed ${bulkDragging ? "#2563EB" : bulkFile ? "#10B981" : "#CBD5E1"}`,
+                borderRadius: "12px",
+                padding: "36px 20px",
+                textAlign: "center",
+                backgroundColor: bulkDragging ? "#EFF6FF" : bulkFile ? "#F0FDF4" : "#F8FAFC",
+                cursor: bulkUploading ? "not-allowed" : "pointer",
+                transition: "all 0.2s ease"
+              }}
+            >
+              <div
+                style={{
+                  width: "56px",
+                  height: "56px",
+                  borderRadius: "50%",
+                  backgroundColor: bulkFile ? "#DCFCE7" : "#EFF6FF",
+                  color: bulkFile ? "#16A34A" : "#2563EB",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 14px auto"
+                }}
+              >
+                {bulkFile ? <CheckCircle2 size={30} /> : <Upload size={28} />}
+              </div>
+
+              <div style={{ fontSize: "15px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                {bulkDragging
+                  ? "Drop your file to select"
+                  : bulkFile
+                  ? "File selected — Click or drop to replace"
+                  : "Drag and drop your CSV or PDF file here, or click to browse"}
+              </div>
+
+              <p style={{ fontSize: "12px", color: "#64748B", margin: "4px 0 16px 0" }}>
+                Accepted formats: <strong>.csv</strong> (tabular leads data) or <strong>.pdf</strong> • Maximum size: <strong>10MB</strong>
+              </p>
+
+              <button
+                type="button"
+                disabled={bulkUploading}
+                style={{
+                  padding: "8px 20px",
+                  borderRadius: "8px",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#2563EB",
+                  cursor: bulkUploading ? "not-allowed" : "pointer",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                }}
+              >
+                Browse File from Device
+              </button>
+            </div>
+
+            {/* Selected File Details Box */}
+            {bulkFile && (
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "14px 16px",
+                  borderRadius: "10px",
+                  backgroundColor: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "12px"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      borderRadius: "8px",
+                      backgroundColor: bulkFile.name.toLowerCase().endsWith(".pdf") ? "#FEF3C7" : "#DCFCE7",
+                      color: bulkFile.name.toLowerCase().endsWith(".pdf") ? "#D97706" : "#16A34A",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    {bulkFile.name.toLowerCase().endsWith(".pdf") ? (
+                      <FileText size={22} />
+                    ) : (
+                      <FileSpreadsheet size={22} />
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span>{bulkFile.name}</span>
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          padding: "2px 8px",
+                          borderRadius: "12px",
+                          backgroundColor: bulkFile.name.toLowerCase().endsWith(".pdf") ? "#FEF3C7" : "#DCFCE7",
+                          color: bulkFile.name.toLowerCase().endsWith(".pdf") ? "#B45309" : "#166534"
+                        }}
+                      >
+                        {bulkFile.name.toLowerCase().endsWith(".pdf") ? "PDF Document" : "CSV Spreadsheet"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                      Size: <strong>{formatFileSize(bulkFile.size)}</strong> • Type: {bulkFile.type || "file"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={handleClearBulkFile}
+                    disabled={bulkUploading}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #FECACA",
+                      color: "#DC2626",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: bulkUploading ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Validation Warning Notice (e.g. for PDF format) */}
+            {bulkValidationWarning && (
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  backgroundColor: "#FFFBEB",
+                  border: "1px solid #FDE68A",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  fontSize: "12px",
+                  color: "#92400E"
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
+                <div>
+                  <div style={{ fontWeight: 700, marginBottom: "2px" }}>Backend Ingestion Engine Advisory</div>
+                  <div>{bulkValidationWarning}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Upload Error Banner */}
+            {bulkError && (
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  backgroundColor: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  fontSize: "12px",
+                  color: "#991B1B"
+                }}
+              >
+                <AlertCircle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
+                <div>
+                  <div style={{ fontWeight: 700, marginBottom: "2px" }}>Upload / Validation Error</div>
+                  <div>{bulkError}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Upload Action Buttons */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                marginTop: "24px",
+                paddingTop: "16px",
+                borderTop: "1px solid #E2E8F0"
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleClearBulkFile}
+                disabled={bulkUploading || !bulkFile}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#475569",
+                  cursor: bulkUploading || !bulkFile ? "not-allowed" : "pointer"
+                }}
+              >
+                Cancel / Clear
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBulkUploadSubmit}
+                disabled={bulkUploading || !bulkFile}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 24px",
+                  borderRadius: "8px",
+                  backgroundColor: bulkUploading || !bulkFile ? "#94A3B8" : "#2563EB",
+                  color: "#ffffff",
+                  border: "none",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: bulkUploading || !bulkFile ? "not-allowed" : "pointer",
+                  boxShadow: bulkUploading || !bulkFile ? "none" : "0 2px 4px rgba(37,99,235,0.2)"
+                }}
+              >
+                {bulkUploading ? (
+                  <>
+                    <RefreshCw size={15} className="animate-spin" />
+                    <span>Uploading & Parsing Leads...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={15} />
+                    <span>Upload Leads to CRM</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Results Summary Card */}
+          {bulkResult && (
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "14px",
+                padding: "24px",
+                border: "1px solid #E2E8F0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+              }}
+            >
+              <div
+                style={{
+                  padding: "14px 18px",
+                  borderRadius: "10px",
+                  backgroundColor: (bulkResult.importedCount ?? 0) > 0 ? "#F0FDF4" : "#FEF2F2",
+                  border: `1px solid ${(bulkResult.importedCount ?? 0) > 0 ? "#BBF7D0" : "#FECACA"}`,
+                  marginBottom: "20px"
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "15px",
+                    fontWeight: 700,
+                    color: (bulkResult.importedCount ?? 0) > 0 ? "#166534" : "#991B1B",
+                    marginBottom: "4px"
+                  }}
+                >
+                  {(bulkResult.importedCount ?? 0) > 0
+                    ? "Bulk Lead Ingestion Completed"
+                    : "Import Finished with Warnings / Skipped Rows"}
+                </div>
+                <div style={{ fontSize: "13px", color: "#334155" }}>
+                  {(bulkResult.importedCount ?? 0) > 0
+                    ? `Successfully created ${bulkResult.importedCount} new leads and synchronized contacts in Bentork CRM.`
+                    : "No leads were imported. Please check column format and headers against the expected schema."}
+                </div>
+              </div>
+
+              {/* Counters Grid */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "16px",
+                  marginBottom: "20px"
+                }}
+              >
+                <div
+                  style={{
+                    padding: "16px",
+                    borderRadius: "10px",
+                    backgroundColor: "#F8FAFC",
+                    border: "1px solid #E2E8F0",
+                    textAlign: "center"
+                  }}
+                >
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748B" }}>Total Rows Processed</div>
+                  <div style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", marginTop: "4px" }}>
+                    {bulkResult.totalRows ?? 0}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "16px",
+                    borderRadius: "10px",
+                    backgroundColor: "#F0FDF4",
+                    border: "1px solid #BBF7D0",
+                    textAlign: "center"
+                  }}
+                >
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#166534" }}>Imported Leads</div>
+                  <div style={{ fontSize: "24px", fontWeight: 700, color: "#16A34A", marginTop: "4px" }}>
+                    {bulkResult.importedCount ?? 0}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "16px",
+                    borderRadius: "10px",
+                    backgroundColor: (bulkResult.skippedCount ?? 0) > 0 ? "#FFFBEB" : "#F8FAFC",
+                    border: `1px solid ${(bulkResult.skippedCount ?? 0) > 0 ? "#FDE68A" : "#E2E8F0"}`,
+                    textAlign: "center"
+                  }}
+                >
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: (bulkResult.skippedCount ?? 0) > 0 ? "#B45309" : "#64748B" }}>
+                    Skipped / Failed Rows
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "24px",
+                      fontWeight: 700,
+                      color: (bulkResult.skippedCount ?? 0) > 0 ? "#D97706" : "#475569",
+                      marginTop: "4px"
+                    }}
+                  >
+                    {bulkResult.skippedCount ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Detailed Row Warnings / Errors */}
+              {Array.isArray(bulkResult.errors) && bulkResult.errors.length > 0 && (
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    borderRadius: "8px",
+                    backgroundColor: "#FEF2F2",
+                    border: "1px solid #FECACA",
+                    marginBottom: "20px"
+                  }}
+                >
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#991B1B", marginBottom: "6px" }}>
+                    Backend Parser Warnings / Row Errors ({bulkResult.errors.length}):
+                  </div>
+                  <div style={{ maxHeight: "140px", overflowY: "auto", fontSize: "12px", color: "#DC2626" }}>
+                    <ul style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {bulkResult.errors.map((err, i) => (
+                        <li key={i}>{typeof err === "string" ? err : JSON.stringify(err)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Post-Import Action Buttons */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={handleClearBulkFile}
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: "8px",
+                    backgroundColor: "#ffffff",
+                    border: "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#334155",
+                    cursor: "pointer"
+                  }}
+                >
+                  Upload Another File
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboard/crm/leads")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "9px 20px",
+                    borderRadius: "8px",
+                    backgroundColor: "#2563EB",
+                    border: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 4px rgba(37,99,235,0.2)"
+                  }}
+                >
+                  <span>View Leads Pipeline</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Success Modal */}
       {showSuccessModal && (
@@ -1258,6 +2348,25 @@ export default function CrmNewCallPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk Upload Feedback Modal */}
+      <BulkUploadFeedbackModal
+        isOpen={bulkFeedbackModal.isOpen}
+        status={bulkFeedbackModal.status}
+        fileName={bulkFile?.name}
+        fileSize={bulkFile ? formatFileSize(bulkFile.size) : ""}
+        importedCount={bulkFeedbackModal.importedCount}
+        skippedCount={bulkFeedbackModal.skippedCount}
+        totalRows={bulkFeedbackModal.totalRows}
+        errors={bulkFeedbackModal.errors}
+        errorMessage={bulkFeedbackModal.errorMessage}
+        details={bulkFeedbackModal.details}
+        canRetry={bulkFeedbackModal.canRetry}
+        onRetry={handleRetryBulkUpload}
+        onClose={handleCloseFeedbackModal}
+        onViewLeads={handleViewLeadsInCrm}
+        onDownloadSample={handleDownloadSampleCsv}
+      />
     </div>
   );
 }

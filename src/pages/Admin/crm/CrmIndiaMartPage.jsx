@@ -50,12 +50,23 @@ export default function CrmIndiaMartPage() {
     fetchIndiaMartLeads();
   }, [fetchIndiaMartLeads]);
 
-  // Honest on-demand sync handler
-  const handleSyncNow = () => {
-    showToast(
-      "Backend Required: On-demand polling API (/api/crm/indiamart/sync) is not implemented on the server. The backend ingests IndiaMART inquiries asynchronously via POST /api/webhooks/indiamart.",
-      "info"
-    );
+  const [syncing, setSyncing] = useState(false);
+
+  // Live on-demand sync handler
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    try {
+      const res = await crmService.syncIndiaMart();
+      const count = res?.syncedCount ?? res?.count ?? res?.importedCount;
+      const msg = typeof res === "string" ? res : res?.message || (count !== undefined ? `Successfully synced ${count} new leads from IndiaMART` : "Successfully synced new leads from IndiaMART");
+      showToast(msg, "success");
+      await fetchIndiaMartLeads();
+    } catch (err) {
+      console.error("IndiaMART sync error:", err);
+      showToast(err.message || "Failed to sync IndiaMART leads", "error");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const filteredLeads = useMemo(() => {
@@ -160,28 +171,30 @@ export default function CrmIndiaMartPage() {
 
           <button
             onClick={handleSyncNow}
-            title="Backend API required for on-demand pull sync"
+            disabled={syncing || loading}
+            title="Trigger on-demand sync from IndiaMART"
             style={{
               padding: "9px 18px",
               borderRadius: "8px",
-              backgroundColor: "#F8FAFC",
-              border: "1px dashed #CBD5E1",
-              color: "#64748B",
+              backgroundColor: "#16A34A",
+              border: "none",
+              color: "#ffffff",
               fontSize: "13px",
-              fontWeight: 500,
-              cursor: "pointer",
+              fontWeight: 600,
+              cursor: syncing ? "not-allowed" : "pointer",
               display: "flex",
               alignItems: "center",
-              gap: "6px"
+              gap: "6px",
+              boxShadow: "0 2px 4px rgba(22, 163, 74, 0.25)"
             }}
           >
-            <RefreshCw size={14} />
-            <span>Sync Now (Backend Req.)</span>
+            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+            <span>{syncing ? "Syncing IndiaMART..." : "Sync IndiaMART Leads"}</span>
           </button>
         </div>
       </div>
 
-      {/* Ingestion status notice */}
+      {/* Auto-Sync status badge */}
       <div
         style={{
           marginBottom: "16px",
@@ -191,14 +204,21 @@ export default function CrmIndiaMartPage() {
           border: "1px solid #BBF7D0",
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
           gap: "8px",
           fontSize: "12px",
           color: "#166534"
         }}
       >
-        <Info size={16} color="#16A34A" />
-        <span>
-          <strong>Live Webhook Ingestion:</strong> IndiaMART pushes new inquiries asynchronously to <code>/api/webhooks/indiamart</code>. Inquiries appear in this directory automatically upon webhook receipt.
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "14px" }}>🟢</span>
+          <span>
+            <strong>Auto-polling active:</strong> Live ingestion polling every 15m. Manual sync initiates an immediate pull.
+          </span>
+        </div>
+        <span style={{ fontSize: "11px", fontWeight: 600, backgroundColor: "#DCFCE7", padding: "2px 8px", borderRadius: "10px" }}>
+          Connected
         </span>
       </div>
 
