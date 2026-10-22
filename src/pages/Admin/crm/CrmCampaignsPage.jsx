@@ -184,7 +184,6 @@ export default function CrmCampaignsPage() {
     setSendingLoading(true);
     try {
       const res = await crmService.sendCampaign(campaignId);
-      const updatedCampaign = res && res.campaignId ? res : null;
       showToast(
         `Campaign dispatched! Total: ${res?.totalRecipients ?? 0}, Emails: ${res?.emailsSent ?? 0}, WhatsApp: ${res?.whatsAppSent ?? 0}, Failed: ${res?.failedCount ?? 0}`,
         "success"

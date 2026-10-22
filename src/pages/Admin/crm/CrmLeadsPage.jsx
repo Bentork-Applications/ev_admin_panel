@@ -1192,6 +1192,17 @@ export default function CrmLeadsPage() {
             ))}
           </select>
 
+          <select
+            value={industryFilter}
+            onChange={(e) => setIndustryFilter(e.target.value)}
+            style={{ padding: "8px 12px" }}
+          >
+            <option value="ALL">All Industries</option>
+            {industries.filter((ind) => ind !== "ALL").map((ind) => (
+              <option key={ind} value={ind}>{ind}</option>
+            ))}
+          </select>
+
           {/* Sort By Dropdown */}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 500 }}>Sort by:</span>

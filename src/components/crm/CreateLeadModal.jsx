@@ -293,8 +293,11 @@ export const CreateLeadModal = ({ isOpen, onClose, onLeadCreated, showToast }) =
                   fontSize: "13px",
                   backgroundColor: "#fff"
                 }}
+                disabled={loadingCompanies}
               >
-                <option value="">-- Select Company (Optional) --</option>
+                <option value="">
+                  {loadingCompanies ? "Loading companies..." : "-- Select Company (Optional) --"}
+                </option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

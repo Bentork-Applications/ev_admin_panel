@@ -81,7 +81,7 @@ export default function CrmQuotationsPage() {
         setQuotations(list);
         setTotalElements(list.length);
         setServerTotalPages(Math.ceil(list.length / pageSize) || 1);
-      } catch (fallbackErr) {
+      } catch {
         setError(err.message || "Failed to load quotations");
         showToast(err.message || "Failed to load quotations", "error");
       }

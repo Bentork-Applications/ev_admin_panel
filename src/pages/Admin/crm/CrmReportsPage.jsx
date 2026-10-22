@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Download,
   TrendingUp,
@@ -32,7 +32,6 @@ export default function CrmReportsPage() {
   const [error, setError] = useState(null);
   const [conversionReport, setConversionReport] = useState(null);
   const [revenueReport, setRevenueReport] = useState(null);
-  const [performanceReport, setPerformanceReport] = useState(null);
   const [pipelineData, setPipelineData] = useState([]);
   const [leadSources, setLeadSources] = useState([]);
   const [campaignData, setCampaignData] = useState([]);
@@ -45,10 +44,9 @@ export default function CrmReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [convRes, revRes, perfRes, leadsRes, oppsRes, campRes] = await Promise.all([
+      const [convRes, revRes, leadsRes, oppsRes, campRes] = await Promise.all([
         crmService.getConversionReport().catch(() => null),
         crmService.getRevenueReport().catch(() => null),
-        crmService.getPerformanceReport().catch(() => null),
         crmService.getAllLeads().catch(() => []),
         crmService.getAllOpportunities().catch(() => []),
         crmService.getAllCampaigns().catch(() => [])
@@ -56,7 +54,6 @@ export default function CrmReportsPage() {
 
       setConversionReport(convRes);
       setRevenueReport(revRes);
-      setPerformanceReport(perfRes);
 
       // Compute pipeline by stage from real opportunities
       const opps = Array.isArray(oppsRes) ? oppsRes : [];

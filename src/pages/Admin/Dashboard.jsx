@@ -1359,6 +1359,7 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                   <Route path="production-dashboard" element={<ProductionDashboard />} />
                   <Route path="scm-dashboard" element={<ScmDashboard />} />
                   <Route path="sales-admin" element={<SalesAdmin baseUrl={baseUrl} />} />
+                  <Route path="sales" element={<SalesAdmin baseUrl={baseUrl} />} />
                   <Route path="production-admin" element={<ProductionAdmin baseUrl={baseUrl} />} />
                   <Route path="scm-admin" element={<ScmAdmin baseUrl={baseUrl} />} />
                   <Route path="dealers" element={<Dealers baseUrl={baseUrl} />} />
@@ -1448,6 +1449,8 @@ export default function Dashboard({ onLogout, baseUrl: propBaseUrl }) {
                 <>
                   <Route path="orders" element={<Orders baseUrl={baseUrl} userRole={userRole} />} />
                   <Route path="sales-dashboard" element={<SalesDashboard />} />
+                  <Route path="sales-admin" element={<SalesAdmin baseUrl={baseUrl} />} />
+                  <Route path="sales" element={<SalesAdmin baseUrl={baseUrl} />} />
                   <Route path="crm" element={<Navigate to="/dashboard/crm/dashboard" replace />} />
                   <Route path="crm/dashboard" element={<CrmDashboardPage />} />
                   <Route path="crm/new-call" element={<CrmNewCallPage />} />

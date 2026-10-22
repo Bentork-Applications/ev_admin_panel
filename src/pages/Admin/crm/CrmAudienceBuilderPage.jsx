@@ -181,7 +181,7 @@ export default function CrmAudienceBuilderPage() {
         matchedCount: totalMatched,
         filters: criteria
       };
-      const res = await crmService.saveAudienceSegment(payload);
+      await crmService.saveAudienceSegment(payload);
       showToast("Audience segment saved successfully!", "success");
       setShowSaveModal(false);
       setSegmentName("");

@@ -89,7 +89,7 @@ const NEXT_ACTIONS = [
   "Send Brochure"
 ];
 
-export const formatINR = (amount) => {
+const formatINR = (amount) => {
   if (amount == null || amount === "" || isNaN(Number(amount))) return "₹0";
   const num = Number(amount);
   return "₹" + num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -98,8 +98,8 @@ export const formatINR = (amount) => {
 // Validation helpers
 const isValidIndianPhone = (phone) => {
   if (!phone) return false;
-  const cleaned = phone.replace(/[\s\-\+]/g, "");
-  return /^(?:(?:\+|0{0,2})91(\s*[\-]\s*)?|[0]?)?[6789]\d{9}$/.test(cleaned) || /^\d{10}$/.test(cleaned);
+  const cleaned = phone.replace(/[\s+-]/g, "");
+  return /^(?:(?:\+|0{0,2})91(\s*-?\s*)?|[0]?)?[6789]\d{9}$/.test(cleaned) || /^\d{10}$/.test(cleaned);
 };
 
 const isValidEmail = (email) => {
@@ -836,9 +836,6 @@ export default function CrmNewCallPage() {
               marginBottom: "20px"
             }}
           >
-          marginBottom: "20px"
-        }}
-      >
         <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>
           Step 1: Check If Contact Already Exists
         </label>

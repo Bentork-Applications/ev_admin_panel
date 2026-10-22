@@ -33,6 +33,7 @@ const ALL_GROUPS = [
     title: "SALES",
     icon: staffIcon,
     items: [
+      { name: "Sales Overview & Performance", icon: dashboardIcon, path: "/dashboard/sales-admin", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
       { name: "CRM Dashboard", icon: dashboardIcon, path: "/dashboard/crm/dashboard", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
       { name: "New Call / Add Lead", icon: staffIcon, path: "/dashboard/crm/new-call", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },
       { name: "Leads", icon: staffIcon, path: "/dashboard/crm/leads", roles: ["ADMIN", "SALES_ADMIN", "SALES"] },

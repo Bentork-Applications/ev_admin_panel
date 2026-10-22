@@ -24,6 +24,7 @@ export const ActivityDetailModal = ({
   onComplete,
   onRefresh
 }) => {
+  void onRefresh;
   const [historyList, setHistoryList] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 

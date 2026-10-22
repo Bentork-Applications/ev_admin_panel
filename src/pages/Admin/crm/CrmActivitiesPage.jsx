@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Clock,
   Calendar,
@@ -412,7 +412,6 @@ export default function CrmActivitiesPage() {
         <div
           onClick={() => handleTabChange("overdue")}
           style={{
-            backgroundColor: "#ffffff",
             borderRadius: "12px",
             padding: "16px 18px",
             border: activeTab === "overdue" ? "2px solid #EF4444" : "1px solid #E2E8F0",
@@ -439,7 +438,6 @@ export default function CrmActivitiesPage() {
         <div
           onClick={() => handleTabChange("today")}
           style={{
-            backgroundColor: "#ffffff",
             borderRadius: "12px",
             padding: "16px 18px",
             border: activeTab === "today" ? "2px solid #F59E0B" : "1px solid #E2E8F0",
@@ -466,7 +464,6 @@ export default function CrmActivitiesPage() {
         <div
           onClick={() => handleTabChange("upcoming")}
           style={{
-            backgroundColor: "#ffffff",
             borderRadius: "12px",
             padding: "16px 18px",
             border: activeTab === "upcoming" ? "2px solid #3B82F6" : "1px solid #E2E8F0",
@@ -516,7 +513,6 @@ export default function CrmActivitiesPage() {
         <div
           onClick={() => handleTabChange("completed")}
           style={{
-            backgroundColor: "#ffffff",
             borderRadius: "12px",
             padding: "16px 18px",
             border: activeTab === "completed" ? "2px solid #10B981" : "1px solid #E2E8F0",
