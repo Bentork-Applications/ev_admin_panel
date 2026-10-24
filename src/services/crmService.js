@@ -83,6 +83,10 @@ export const crmService = {
     return await apiClient.post("/crm/contacts/create", contactData);
   },
 
+  getAllContacts: async () => {
+    return await apiClient.get("/crm/contacts/all");
+  },
+
   getContactsByCompany: async (companyId) => {
     return await apiClient.get(`/crm/contacts/company/${companyId}`);
   },

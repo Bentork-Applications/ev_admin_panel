@@ -159,14 +159,37 @@ export default function CrmLeadsPage() {
     setLoading(true);
     setError(null);
     try {
-      let data = [];
-      if (activeSubView === "my") {
-        data = await crmService.getMyLeads();
-      } else {
-        data = await crmService.getAllLeads();
-      }
+      const [leadsData, companiesData, contactsData] = await Promise.all([
+        activeSubView === "my" ? crmService.getMyLeads() : crmService.getAllLeads(),
+        crmService.getAllCompanies().catch(() => []),
+        crmService.getAllContacts().catch(() => [])
+      ]);
 
-      let arr = Array.isArray(data) ? data : [];
+      const compList = Array.isArray(companiesData) ? companiesData : [];
+      const contList = Array.isArray(contactsData) ? contactsData : [];
+
+      const companyMap = new Map(compList.map((c) => [c.id, c]));
+      const contactMap = new Map(contList.map((ct) => [ct.id, ct]));
+      const contactPhoneMap = new Map(contList.map((ct) => [ct.phone, ct]));
+
+      let rawArr = Array.isArray(leadsData) ? leadsData : [];
+      let arr = rawArr.map((lead) => {
+        const comp = lead.companyId ? companyMap.get(lead.companyId) : null;
+        const cont =
+          (lead.contactId ? contactMap.get(lead.contactId) : null) ||
+          (lead.contactPhone ? contactPhoneMap.get(lead.contactPhone) : null);
+
+        return {
+          ...lead,
+          contactEmail: cont?.email || lead.contactEmail || lead.email || "",
+          designation: cont?.designation || lead.designation || "",
+          industry: comp?.industry || lead.industry || "",
+          companyWebsite: comp?.website || lead.companyWebsite || "",
+          gstin: comp?.gstNumber || lead.gstin || "",
+          companySize: comp?.companyType || lead.companySize || ""
+        };
+      });
+
       if (activeSubView === "indiamart") {
         arr = arr.filter((l) => (l.source || "").toLowerCase().includes("indiamart"));
       } else if (activeSubView === "unassigned") {

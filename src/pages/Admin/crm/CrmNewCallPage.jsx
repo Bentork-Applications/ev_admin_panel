@@ -420,6 +420,28 @@ export default function CrmNewCallPage() {
           companyId: matchedContact.companyId || null
         };
 
+        // Flow A: If existing contact has associated company, persist any updated company details
+        if (matchedContact?.companyId && (formData.companyWebsite || formData.gstin || (formData.companySize && formData.companySize !== "Select") || formData.address)) {
+          try {
+            const finalInd = formData.industry === "Other" ? (customIndustry.trim() || "Other") : formData.industry;
+            const finalCt = formData.city === "Other" ? (customCity.trim() || "Pune") : formData.city || "Pune";
+            await crmService.updateCompany(matchedContact.companyId, {
+              name: formData.companyName.trim() || matchedContact.companyName,
+              industry: finalInd,
+              companyType: formData.companySize && formData.companySize !== "Select" ? formData.companySize : "PRIVATE_LIMITED",
+              website: formData.companyWebsite.trim() || null,
+              gstNumber: formData.gstin.trim() || null,
+              address: formData.address.trim() || null,
+              city: finalCt,
+              state: formData.state || "Maharashtra",
+              phone: formData.phone.trim() || matchedContact.phone,
+              email: formData.email.trim() || matchedContact.email
+            });
+          } catch (compErr) {
+            console.warn("Failed to update existing company details:", compErr);
+          }
+        }
+
         await crmService.logActivity(activityPayload);
         showToast("Call activity logged successfully!", "success");
         setSuccessInfo({
@@ -448,10 +470,14 @@ export default function CrmNewCallPage() {
           enrichedNotes += `\n[Campaign/Event: ${formData.campaignName.trim()}]`;
         }
         if (formData.currentSolution) {
+          enrichedNotes += `\n[Current Solution: ${formData.currentSolution.trim()}]`;
           enrichedNotes += `\n[Current Solution/Competitor: ${formData.currentSolution.trim()}]`;
         }
         if (formData.companyWebsite || formData.gstin || (formData.companySize && formData.companySize !== "Select")) {
           enrichedNotes += `\n[Company Info: Web: ${formData.companyWebsite || "-"} | GSTIN: ${formData.gstin || "-"} | Size: ${formData.companySize || "-"}]`;
+        }
+        if (formData.expectedTimeline) {
+          enrichedNotes += `\n[Purchase Timeline: ${formData.expectedTimeline}]`;
         }
 
         const payload = {
@@ -461,7 +487,7 @@ export default function CrmNewCallPage() {
           contactDesignation: formData.designation.trim() || null,
           companyName: formData.companyName.trim() || null,
           industry: finalIndustry,
-          companyType: "PRIVATE_LIMITED",
+          companyType: formData.companySize && formData.companySize !== "Select" ? formData.companySize : "PRIVATE_LIMITED",
           city: finalCity,
           state: formData.state || "Maharashtra",
           leadTitle: `${formData.requirementType} — ${
@@ -477,7 +503,42 @@ export default function CrmNewCallPage() {
           priority: formData.priority || "Medium"
         };
 
-        await crmService.combinedCallAndLead(payload);
+        const res = await crmService.combinedCallAndLead(payload);
+
+        // Persist extended company details (Website, GSTIN, Company Size, Address) via existing company API
+        const createdCompanyId = res?.companyId;
+        if (createdCompanyId) {
+          try {
+            await crmService.updateCompany(createdCompanyId, {
+              name: formData.companyName.trim(),
+              industry: finalIndustry,
+              companyType:
+                formData.companySize && formData.companySize !== "Select"
+                  ? formData.companySize
+                  : "PRIVATE_LIMITED",
+              website: formData.companyWebsite.trim() || null,
+              gstNumber: formData.gstin.trim() || null,
+              address: formData.address.trim() || null,
+              city: finalCity,
+              state: formData.state || "Maharashtra",
+              phone: formData.phone.trim() || null,
+              email: formData.email.trim() || null,
+              source: finalSource.toLowerCase().replace(/\s+/g, "_")
+            });
+          } catch (compErr) {
+            console.warn("Failed to persist extended company details:", compErr);
+          }
+        }
+
+        // Persist Lead Owner assignment if selected
+        if (res?.id && formData.assignTo) {
+          try {
+            await crmService.bulkAssignLeads([res.id], Number(formData.assignTo));
+          } catch (assignErr) {
+            console.warn("Failed to assign lead owner:", assignErr);
+          }
+        }
+
         showToast("Lead & call recorded successfully!", "success");
         setSuccessInfo({
           title: "Lead Created & Call Saved",
@@ -491,15 +552,6 @@ export default function CrmNewCallPage() {
       showToast(err.message || "Failed to process call workflow", "error");
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleSaveDraft = () => {
-    try {
-      localStorage.setItem("crm_new_lead_draft", JSON.stringify(formData));
-      showToast("Draft saved successfully!", "success");
-    } catch {
-      showToast("Draft saved", "success");
     }
   };
 
@@ -2190,27 +2242,6 @@ export default function CrmNewCallPage() {
                 }}
               >
                 Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveDraft}
-                style={{
-                  padding: "9px 20px",
-                  borderRadius: "8px",
-                  backgroundColor: "#ffffff",
-                  color: "#1E293B",
-                  border: "1px solid #CBD5E1",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px"
-                }}
-              >
-                <Save size={14} color="#64748B" />
-                <span>Save as Draft</span>
               </button>
 
               <button

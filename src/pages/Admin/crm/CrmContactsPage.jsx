@@ -51,14 +51,8 @@ export default function CrmContactsPage() {
         const data = await crmService.getContactsByCompany(selectedCompanyId);
         setContacts(Array.isArray(data) ? data : []);
       } else {
-        // Fetch contacts across all companies
-        const allCompanies = await crmService.getAllCompanies();
-        const contactPromises = (Array.isArray(allCompanies) ? allCompanies : []).map((comp) =>
-          crmService.getContactsByCompany(comp.id).catch(() => [])
-        );
-        const contactArrays = await Promise.all(contactPromises);
-        const aggregated = contactArrays.flat();
-        setContacts(aggregated);
+        const data = await crmService.getAllContacts();
+        setContacts(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error("Failed to load contacts:", err);
