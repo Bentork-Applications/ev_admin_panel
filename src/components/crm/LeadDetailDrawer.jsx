@@ -21,7 +21,10 @@ import {
   Check,
   Tag,
   Save,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle,
+  CheckCircle2,
+  Lock
 } from "lucide-react";
 import { crmService } from "../../services/crmService";
 import { staffService } from "../../services/staffService";
@@ -104,6 +107,10 @@ export const LeadDetailDrawer = ({
   const [isEditing, setIsEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+
+  // Confirmation dialog modal & conversion state
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [convertedOpp, setConvertedOpp] = useState(null);
 
   const fetchLeadDetails = useCallback(async () => {
     if (!leadId) return;
@@ -222,6 +229,8 @@ export const LeadDetailDrawer = ({
 
   if (!isOpen) return null;
 
+  const currentStatus = (lead?.status || "NEW").toUpperCase();
+
   const handleCopyLeadNumber = () => {
     const textToCopy = lead?.leadNumber || `LD-${leadId}`;
     navigator.clipboard?.writeText(textToCopy);
@@ -230,7 +239,37 @@ export const LeadDetailDrawer = ({
     showToast?.(`Copied ${textToCopy} to clipboard`, "info");
   };
 
-  const handleStatusChange = async (newStatus) => {
+  // Status transition with explicit confirmation modal
+  const requestStatusChange = (newStatus) => {
+    const statusLabels = {
+      CONTACTED: "Contacted",
+      QUALIFIED: "Qualified",
+      NURTURE: "Nurture",
+      LOST: "Lost"
+    };
+    const targetLabel = statusLabels[newStatus] || newStatus;
+
+    let warningNote = `This will move the lead from ${currentStatus} to ${targetLabel}.`;
+    if (newStatus === "QUALIFIED") {
+      warningNote = "Marking this lead as Qualified confirms eligibility for Opportunity conversion. Only Qualified leads with an associated company can be converted.";
+    } else if (newStatus === "LOST") {
+      warningNote = "Warning: Marking this lead as Lost is a terminal action. You will not be able to transition or convert this lead once marked as Lost.";
+    }
+
+    setConfirmDialog({
+      title: `Confirm Status Change: ${targetLabel}`,
+      message: `Are you sure you want to change the status of lead "${lead?.title || lead?.leadNumber || `LD-${leadId}`}" to ${targetLabel}?`,
+      warningNote,
+      confirmText: `Yes, Mark as ${targetLabel}`,
+      confirmColor: newStatus === "LOST" ? "#DC2626" : newStatus === "QUALIFIED" ? "#10B981" : "#2563EB",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await executeStatusChange(newStatus);
+      }
+    });
+  };
+
+  const executeStatusChange = async (newStatus) => {
     setUpdating(true);
     try {
       await crmService.updateLeadStatus(leadId, newStatus.toUpperCase());
@@ -241,7 +280,7 @@ export const LeadDetailDrawer = ({
           contactId: lead?.contactId || null,
           activityType: "note",
           subject: `Status changed to ${newStatus.toUpperCase()}`,
-          notes: `Lead status changed from ${(lead?.status || "NEW").toUpperCase()} to ${newStatus.toUpperCase()}`,
+          notes: `Lead status changed from ${currentStatus} to ${newStatus.toUpperCase()}`,
           activityDate: new Date().toISOString()
         });
       } catch (actErr) {
@@ -258,10 +297,35 @@ export const LeadDetailDrawer = ({
     }
   };
 
-  const handleConvert = async () => {
+  // Convert to Opportunity with validation & explicit confirmation
+  const requestConvert = () => {
+    if (currentStatus !== "QUALIFIED") {
+      showToast?.(`Lead must be in QUALIFIED status to convert. Current: ${currentStatus.toLowerCase()}`, "error");
+      return;
+    }
+    if (!lead?.companyId && !lead?.companyName) {
+      showToast?.("Lead must have an associated company to convert to an opportunity", "error");
+      return;
+    }
+
+    setConfirmDialog({
+      title: "Convert Lead to Opportunity",
+      message: `Are you sure you want to convert lead "${lead?.title || lead?.leadNumber || `LD-${leadId}`}" to a Sales Opportunity?`,
+      warningNote: `This will create an active Opportunity linked to "${lead?.companyName || "the associated company"}" and set this lead to Converted in your sales pipeline.`,
+      confirmText: "Yes, Convert to Opportunity",
+      confirmColor: "#10B981",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await executeConvert();
+      }
+    });
+  };
+
+  const executeConvert = async () => {
     setUpdating(true);
     try {
       const opp = await crmService.convertLeadToOpportunity(leadId);
+      setConvertedOpp(opp);
       try {
         await crmService.logActivity({
           leadId,
@@ -269,7 +333,7 @@ export const LeadDetailDrawer = ({
           contactId: lead?.contactId || null,
           activityType: "note",
           subject: "Converted to Opportunity",
-          notes: `Lead converted to Opportunity ${opp?.opportunityNumber || ""}`,
+          notes: `Lead converted to Opportunity ${opp?.opportunityNumber || opp?.id || ""}`,
           activityDate: new Date().toISOString()
         });
       } catch (actErr) {
@@ -285,6 +349,9 @@ export const LeadDetailDrawer = ({
       setUpdating(false);
     }
   };
+
+  const handleStatusChange = requestStatusChange;
+  const handleConvert = requestConvert;
 
   // Start Edit mode
   const handleStartEdit = () => {
@@ -370,8 +437,6 @@ export const LeadDetailDrawer = ({
     }
   };
 
-  const currentStatus = (lead?.status || "NEW").toUpperCase();
-
   // Dynamic Product Interests derived from lead title or tags
   const productInterests = useMemo(() => {
     if (!lead) return [];
@@ -456,11 +521,25 @@ export const LeadDetailDrawer = ({
   // Stepper helper
   const getStepStatus = (stepName) => {
     const s = currentStatus.toLowerCase();
-    if (s === stepName.toLowerCase()) return "current";
-    if (stepName === "new") return "done";
-    if (stepName === "contacted" && ["contacted", "qualified", "opportunity", "converted"].includes(s)) return "done";
-    if (stepName === "qualified" && ["qualified", "opportunity", "converted"].includes(s)) return "done";
-    if (stepName === "opportunity" && ["opportunity", "converted"].includes(s)) return "done";
+    if (s === "lost") return "lost";
+
+    if (stepName === "new") {
+      return s === "new" ? "current" : "done";
+    }
+    if (stepName === "contacted") {
+      if (s === "new") return "pending";
+      if (s === "contacted") return "current";
+      return ["qualified", "opportunity", "converted"].includes(s) ? "done" : "pending";
+    }
+    if (stepName === "qualified") {
+      if (["new", "contacted", "nurture"].includes(s)) return "pending";
+      if (s === "qualified") return "current";
+      return ["opportunity", "converted"].includes(s) ? "done" : "pending";
+    }
+    if (stepName === "opportunity") {
+      if (["opportunity", "converted"].includes(s)) return "done";
+      return "pending";
+    }
     return "pending";
   };
 
@@ -642,7 +721,12 @@ export const LeadDetailDrawer = ({
                       width: "18px",
                       height: "18px",
                       borderRadius: "50%",
-                      backgroundColor: getStepStatus("new") === "done" ? "#10B981" : "#CBD5E1",
+                      backgroundColor:
+                        getStepStatus("new") === "done"
+                          ? "#10B981"
+                          : getStepStatus("new") === "current"
+                          ? "#2563EB"
+                          : "#CBD5E1",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -651,9 +735,22 @@ export const LeadDetailDrawer = ({
                       fontWeight: 700
                     }}
                   >
-                    1
+                    {getStepStatus("new") === "done" ? "✓" : "1"}
                   </span>
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>New</span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: getStepStatus("new") === "current" ? 700 : 600,
+                      color:
+                        getStepStatus("new") === "current"
+                          ? "#1D4ED8"
+                          : getStepStatus("new") === "done"
+                          ? "#059669"
+                          : "#64748B"
+                    }}
+                  >
+                    New
+                  </span>
                 </div>
                 <span style={{ color: "#CBD5E1", fontSize: "12px" }}>→</span>
 
@@ -678,9 +775,22 @@ export const LeadDetailDrawer = ({
                       fontWeight: 700
                     }}
                   >
-                    2
+                    {getStepStatus("contacted") === "done" ? "✓" : "2"}
                   </span>
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Contacted</span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: getStepStatus("contacted") === "current" ? 700 : 600,
+                      color:
+                        getStepStatus("contacted") === "current"
+                          ? "#B45309"
+                          : getStepStatus("contacted") === "done"
+                          ? "#059669"
+                          : "#64748B"
+                    }}
+                  >
+                    Contacted
+                  </span>
                 </div>
                 <span style={{ color: "#CBD5E1", fontSize: "12px" }}>→</span>
 
@@ -692,7 +802,9 @@ export const LeadDetailDrawer = ({
                       height: "18px",
                       borderRadius: "50%",
                       backgroundColor:
-                        getStepStatus("qualified") === "done" || getStepStatus("qualified") === "current"
+                        getStepStatus("qualified") === "done"
+                          ? "#10B981"
+                          : getStepStatus("qualified") === "current"
                           ? "#10B981"
                           : "#CBD5E1",
                       display: "flex",
@@ -703,9 +815,20 @@ export const LeadDetailDrawer = ({
                       fontWeight: 700
                     }}
                   >
-                    ✓
+                    {getStepStatus("qualified") === "done" ? "✓" : "3"}
                   </span>
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#10B981" }}>Qualified</span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: getStepStatus("qualified") === "current" ? 700 : 600,
+                      color:
+                        getStepStatus("qualified") === "current" || getStepStatus("qualified") === "done"
+                          ? "#059669"
+                          : "#64748B"
+                    }}
+                  >
+                    Qualified
+                  </span>
                 </div>
                 <span style={{ color: "#CBD5E1", fontSize: "12px" }}>→</span>
 
@@ -717,8 +840,8 @@ export const LeadDetailDrawer = ({
                       height: "18px",
                       borderRadius: "50%",
                       backgroundColor:
-                        getStepStatus("opportunity") === "done" || getStepStatus("opportunity") === "current"
-                          ? "#3B82F6"
+                        getStepStatus("opportunity") === "done"
+                          ? "#7C3AED"
                           : "#CBD5E1",
                       display: "flex",
                       alignItems: "center",
@@ -728,9 +851,17 @@ export const LeadDetailDrawer = ({
                       fontWeight: 700
                     }}
                   >
-                    4
+                    {getStepStatus("opportunity") === "done" ? "✓" : "4"}
                   </span>
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>Opportunity</span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: getStepStatus("opportunity") === "done" ? 700 : 600,
+                      color: getStepStatus("opportunity") === "done" ? "#6D28D9" : "#64748B"
+                    }}
+                  >
+                    Opportunity
+                  </span>
                 </div>
 
                 <div style={{ borderLeft: "1px solid #E2E8F0", paddingLeft: "10px", display: "flex", gap: "8px" }}>
@@ -755,86 +886,307 @@ export const LeadDetailDrawer = ({
                 </div>
               </div>
 
-              {/* Available Transitions */}
-              <div style={{ marginBottom: "12px" }}>
-                <div style={{ fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "8px" }}>
-                  Available Transitions from {currentStatus.charAt(0) + currentStatus.slice(1).toLowerCase()}
+              {/* Status & Conversion Guidance Banner */}
+              {currentStatus === "CONTACTED" && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    padding: "12px 14px",
+                    backgroundColor: "#FFFBEB",
+                    border: "1px solid #FDE68A",
+                    borderRadius: "10px",
+                    marginBottom: "12px"
+                  }}
+                >
+                  <AlertTriangle size={18} color="#D97706" style={{ flexShrink: 0, marginTop: "2px" }} />
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#92400E", marginBottom: "2px" }}>
+                      Prerequisite Required for Opportunity Conversion
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#B45309", lineHeight: 1.4 }}>
+                      Lead must be in <strong>QUALIFIED</strong> status to convert. Current status is <strong>Contacted</strong>.
+                      Review the lead criteria and click <strong>"✓ Mark as Qualified"</strong> below once verified.
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  {/* Convert to Opportunity */}
-                  {currentStatus !== "CONVERTED" && currentStatus !== "OPPORTUNITY" && (
-                    <button
-                      disabled={updating}
-                      onClick={handleConvert}
+              )}
+
+              {currentStatus === "NEW" && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    padding: "12px 14px",
+                    backgroundColor: "#EFF6FF",
+                    border: "1px solid #BFDBFE",
+                    borderRadius: "10px",
+                    marginBottom: "12px"
+                  }}
+                >
+                  <Info size={18} color="#2563EB" style={{ flexShrink: 0, marginTop: "2px" }} />
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF", marginBottom: "2px" }}>
+                      New Lead: Initial Contact Required
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#1D4ED8", lineHeight: 1.4 }}>
+                      This lead is in <strong>NEW</strong> status. Reach out to the contact and mark as <strong>Contacted</strong> to begin qualification.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentStatus === "QUALIFIED" && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    padding: "12px 14px",
+                    backgroundColor: (!lead?.companyId && !lead?.companyName) ? "#FFFBEB" : "#ECFDF5",
+                    border: `1px solid ${(!lead?.companyId && !lead?.companyName) ? "#FDE68A" : "#A7F3D0"}`,
+                    borderRadius: "10px",
+                    marginBottom: "12px"
+                  }}
+                >
+                  {(!lead?.companyId && !lead?.companyName) ? (
+                    <AlertTriangle size={18} color="#D97706" style={{ flexShrink: 0, marginTop: "2px" }} />
+                  ) : (
+                    <CheckCircle2 size={18} color="#059669" style={{ flexShrink: 0, marginTop: "2px" }} />
+                  )}
+                  <div>
+                    <div
                       style={{
-                        padding: "8px 16px",
-                        borderRadius: "8px",
-                        backgroundColor: "#10B981",
-                        color: "#ffffff",
-                        border: "none",
                         fontSize: "12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px"
+                        fontWeight: 700,
+                        color: (!lead?.companyId && !lead?.companyName) ? "#92400E" : "#065F46",
+                        marginBottom: "2px"
                       }}
                     >
-                      <span>→ Convert to Opportunity</span>
-                    </button>
-                  )}
-
-                  {/* Move to Qualified */}
-                  {currentStatus !== "QUALIFIED" && currentStatus !== "CONVERTED" && (
-                    <button
-                      disabled={updating}
-                      onClick={() => handleStatusChange("QUALIFIED")}
+                      {(!lead?.companyId && !lead?.companyName)
+                        ? "Company Required for Conversion"
+                        : "Lead is Qualified for Opportunity Conversion"}
+                    </div>
+                    <div
                       style={{
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        backgroundColor: "#ECFDF5",
-                        color: "#059669",
-                        border: "1px solid #A7F3D0",
                         fontSize: "12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px"
+                        color: (!lead?.companyId && !lead?.companyName) ? "#B45309" : "#047857",
+                        lineHeight: 1.4
                       }}
                     >
-                      <span>✓ Mark Qualified</span>
-                    </button>
-                  )}
+                      {(!lead?.companyId && !lead?.companyName)
+                        ? "The backend requires an associated company to convert this lead to an opportunity. Please edit this lead to provide a company name first."
+                        : "This lead is qualified and ready to be converted into an active Sales Opportunity."}
+                    </div>
+                  </div>
+                </div>
+              )}
 
-                  {/* Move to Nurture */}
-                  {currentStatus !== "NURTURE" && (
+              {currentStatus === "CONVERTED" && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "12px",
+                    padding: "14px 16px",
+                    backgroundColor: "#F0FDF4",
+                    border: "1px solid #BBF7D0",
+                    borderRadius: "10px",
+                    marginBottom: "12px"
+                  }}
+                >
+                  <CheckCircle size={20} color="#16A34A" style={{ flexShrink: 0, marginTop: "2px" }} />
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#15803D", marginBottom: "2px" }}>
+                      Lead Converted to Opportunity
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#166534", lineHeight: 1.4 }}>
+                      This lead was successfully converted to an Opportunity
+                      {(convertedOpp?.opportunityNumber || lead?.convertedToOpportunityId) && (
+                        <strong> ({convertedOpp?.opportunityNumber || `ID: ${lead.convertedToOpportunityId}`})</strong>
+                      )} and is now tracked in your pipeline.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentStatus === "LOST" && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    padding: "12px 14px",
+                    backgroundColor: "#FEF2F2",
+                    border: "1px solid #FECACA",
+                    borderRadius: "10px",
+                    marginBottom: "12px"
+                  }}
+                >
+                  <AlertTriangle size={18} color="#DC2626" style={{ flexShrink: 0, marginTop: "2px" }} />
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#991B1B", marginBottom: "2px" }}>
+                      Lead Closed as Lost
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#B91C1C", lineHeight: 1.4 }}>
+                      This lead has been closed as Lost. No further transitions or opportunity conversions can be made.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Available Transitions */}
+              {currentStatus !== "CONVERTED" && currentStatus !== "LOST" && (
+                <div style={{ marginBottom: "12px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "8px" }}>
+                    Available Transitions from {currentStatus.charAt(0) + currentStatus.slice(1).toLowerCase()}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {/* Convert to Opportunity Button */}
+                    {currentStatus === "QUALIFIED" ? (
+                      <button
+                        disabled={updating || (!lead?.companyId && !lead?.companyName)}
+                        onClick={requestConvert}
+                        title={(!lead?.companyId && !lead?.companyName) ? "Associate a company name before converting" : "Convert this qualified lead to an opportunity"}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: "8px",
+                          backgroundColor: (!lead?.companyId && !lead?.companyName) ? "#94A3B8" : "#10B981",
+                          color: "#ffffff",
+                          border: "none",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: (!lead?.companyId && !lead?.companyName) ? "not-allowed" : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          boxShadow: (!lead?.companyId && !lead?.companyName) ? "none" : "0 2px 4px rgba(16, 185, 129, 0.2)"
+                        }}
+                      >
+                        <span>→ Convert to Opportunity</span>
+                      </button>
+                    ) : (
+                      <button
+                        disabled={true}
+                        title={`Lead must be in QUALIFIED status to convert. Current status: ${currentStatus.toLowerCase()}`}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          backgroundColor: "#F1F5F9",
+                          color: "#94A3B8",
+                          border: "1px dashed #CBD5E1",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "not-allowed",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}
+                      >
+                        <Lock size={12} color="#94A3B8" />
+                        <span>Convert to Opportunity (Requires Qualified)</span>
+                      </button>
+                    )}
+
+                    {/* NEW -> CONTACTED */}
+                    {currentStatus === "NEW" && (
+                      <button
+                        disabled={updating}
+                        onClick={() => requestStatusChange("CONTACTED")}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          backgroundColor: "#EFF6FF",
+                          color: "#2563EB",
+                          border: "1px solid #BFDBFE",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}
+                      >
+                        <span>📞 Mark as Contacted</span>
+                      </button>
+                    )}
+
+                    {/* CONTACTED -> QUALIFIED */}
+                    {currentStatus === "CONTACTED" && (
+                      <button
+                        disabled={updating}
+                        onClick={() => requestStatusChange("QUALIFIED")}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: "8px",
+                          backgroundColor: "#ECFDF5",
+                          color: "#059669",
+                          border: "1px solid #A7F3D0",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          boxShadow: "0 1px 2px rgba(5, 150, 105, 0.1)"
+                        }}
+                      >
+                        <span>✓ Mark as Qualified</span>
+                      </button>
+                    )}
+
+                    {/* CONTACTED -> NURTURE */}
+                    {currentStatus === "CONTACTED" && (
+                      <button
+                        disabled={updating}
+                        onClick={() => requestStatusChange("NURTURE")}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          backgroundColor: "#F3E8FF",
+                          color: "#7C3AED",
+                          border: "1px solid #DDD6FE",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}
+                      >
+                        <span>⏳ Move to Nurture</span>
+                      </button>
+                    )}
+
+                    {/* NURTURE -> CONTACTED */}
+                    {currentStatus === "NURTURE" && (
+                      <button
+                        disabled={updating}
+                        onClick={() => requestStatusChange("CONTACTED")}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          backgroundColor: "#EFF6FF",
+                          color: "#2563EB",
+                          border: "1px solid #BFDBFE",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}
+                      >
+                        <span>📞 Re-contact Lead</span>
+                      </button>
+                    )}
+
+                    {/* Mark Lost (Allowed from NEW, CONTACTED, QUALIFIED, NURTURE) */}
                     <button
                       disabled={updating}
-                      onClick={() => handleStatusChange("NURTURE")}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        backgroundColor: "#F3E8FF",
-                        color: "#7C3AED",
-                        border: "1px solid #DDD6FE",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px"
-                      }}
-                    >
-                      <span>⏳ Move to Nurture</span>
-                    </button>
-                  )}
-
-                  {/* Mark Lost */}
-                  {currentStatus !== "LOST" && (
-                    <button
-                      disabled={updating}
-                      onClick={() => handleStatusChange("LOST")}
+                      onClick={() => requestStatusChange("LOST")}
                       style={{
                         padding: "8px 14px",
                         borderRadius: "8px",
@@ -851,9 +1203,9 @@ export const LeadDetailDrawer = ({
                     >
                       <span>✕ Mark Lost</span>
                     </button>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Info callout */}
               <div
@@ -871,7 +1223,7 @@ export const LeadDetailDrawer = ({
               >
                 <Info size={16} color="#2563EB" style={{ flexShrink: 0, marginTop: "1px" }} />
                 <span>
-                  All status transitions are recorded in the CRM activity log and persistent across reloads.
+                  All status transitions are confirmed before saving and automatically recorded in the CRM activity history.
                 </span>
               </div>
             </div>
@@ -1456,6 +1808,122 @@ export const LeadDetailDrawer = ({
           </div>
         )}
       </div>
+
+      {/* Confirmation Dialog Modal */}
+      {confirmDialog && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            zIndex: 1400,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px"
+          }}
+          onClick={() => !updating && setConfirmDialog(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "460px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "16px" }}>
+              <div
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "10px",
+                  backgroundColor: confirmDialog.confirmColor === "#DC2626" ? "#FEE2E2" : "#ECFDF5",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                {confirmDialog.confirmColor === "#DC2626" ? (
+                  <AlertTriangle size={22} color="#DC2626" />
+                ) : (
+                  <CheckCircle2 size={22} color={confirmDialog.confirmColor || "#10B981"} />
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                  {confirmDialog.title}
+                </h4>
+                <p style={{ margin: 0, fontSize: "13px", color: "#475569", lineHeight: 1.5 }}>
+                  {confirmDialog.message}
+                </p>
+              </div>
+            </div>
+
+            {confirmDialog.warningNote && (
+              <div
+                style={{
+                  backgroundColor: "#F8FAFC",
+                  borderLeft: "3px solid #3B82F6",
+                  padding: "10px 12px",
+                  borderRadius: "0 8px 8px 0",
+                  marginBottom: "20px",
+                  fontSize: "12px",
+                  color: "#334155",
+                  lineHeight: 1.4
+                }}
+              >
+                {confirmDialog.warningNote}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                disabled={updating}
+                onClick={() => setConfirmDialog(null)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  backgroundColor: "#ffffff",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#475569",
+                  cursor: updating ? "not-allowed" : "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updating}
+                onClick={confirmDialog.onConfirm}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  backgroundColor: confirmDialog.confirmColor || "#10B981",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#ffffff",
+                  cursor: updating ? "not-allowed" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                {updating ? "Processing..." : confirmDialog.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
