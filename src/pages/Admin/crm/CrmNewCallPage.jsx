@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Phone,
@@ -23,9 +23,18 @@ import {
   FileText,
   Download,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Save,
+  Bookmark,
+  Layers,
+  Globe,
+  Users,
+  Edit3
 } from "lucide-react";
 import { crmService } from "../../../services/crmService";
+import { staffService } from "../../../services/staffService";
 import { Toast } from "../../../components/common/Toast";
 import { BulkUploadFeedbackModal } from "../../../components/crm/BulkUploadFeedbackModal";
 
@@ -33,9 +42,47 @@ const PRODUCT_INTEREST_OPTIONS = [
   "EV Battery Pack",
   "BMS",
   "Charging Solution",
-  "BESS",
+  "DC-DC Converter",
   "Connectors",
   "Custom Battery Module"
+];
+
+const INDIAN_STATES = [
+  "Maharashtra",
+  "Delhi",
+  "Karnataka",
+  "Gujarat",
+  "Tamil Nadu",
+  "Telangana",
+  "Uttar Pradesh",
+  "Rajasthan",
+  "West Bengal",
+  "Madhya Pradesh",
+  "Haryana",
+  "Punjab",
+  "Kerala",
+  "Andhra Pradesh",
+  "Bihar",
+  "Odisha",
+  "Other"
+];
+
+const POPULAR_CITIES = {
+  Maharashtra: ["Pune", "Mumbai", "Nagpur", "Nashik", "Aurangabad", "Thane", "Other"],
+  Delhi: ["New Delhi", "North Delhi", "South Delhi", "West Delhi", "East Delhi", "Other"],
+  Karnataka: ["Bengaluru", "Mysuru", "Hubballi", "Mangaluru", "Other"],
+  Gujarat: ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Other"],
+  "Tamil Nadu": ["Chennai", "Coimbatore", "Madurai", "Other"],
+  Telangana: ["Hyderabad", "Warangal", "Other"]
+};
+
+const COMPANY_SIZES = [
+  "Select",
+  "1-10 Employees",
+  "11-50 Employees",
+  "51-200 Employees",
+  "201-500 Employees",
+  "500+ Employees"
 ];
 
 const INDUSTRIES = [
@@ -113,6 +160,7 @@ export default function CrmNewCallPage() {
   const [searching, setSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
   const [searchPhone, setSearchPhone] = useState("");
+  const [searchEmail, setSearchEmail] = useState("");
   const [matchedContact, setMatchedContact] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -146,8 +194,10 @@ export default function CrmNewCallPage() {
 
   // Custom Dropdown values
   const [customIndustry, setCustomIndustry] = useState("");
-  const [customLocation, setCustomLocation] = useState("");
   const [customLeadSource, setCustomLeadSource] = useState("");
+  const [customCity, setCustomCity] = useState("");
+  const [showAdditionalCompanyDetails, setShowAdditionalCompanyDetails] = useState(true);
+  const [staffList, setStaffList] = useState([]);
 
   // Validation errors
   const [errors, setErrors] = useState({});
@@ -160,54 +210,89 @@ export default function CrmNewCallPage() {
     email: "",
     designation: "",
     industry: "Automotive / EV",
+    state: "Maharashtra",
+    city: "Pune",
     location: "Pune, Maharashtra",
     leadSource: "Phone Call",
-    selectedProducts: [],
+    campaignName: "",
+    selectedProducts: ["EV Battery Pack", "BMS"],
+    // Additional Company Details (Optional)
+    companyWebsite: "",
+    gstin: "",
+    address: "",
+    companySize: "Select",
+    // Call Details
     callType: "Inbound",
     callOutcome: "Interested",
     interestLevel: "High",
     requirementType: "Product Enquiry",
     expectedQuantity: "",
     estimatedValue: "",
-    expectedTimeline: "Immediate",
+    expectedTimeline: "Immediate (< 15 days)",
+    currentSolution: "",
     discussionSummary: "",
     callDurationMinutes: "10",
+    // Follow-up
     nextAction: "Send Quotation",
     followUpDate: new Date(Date.now() + 86400000 * 2).toISOString().split("T")[0],
-    assignTo: ""
+    followUpTime: "15:00",
+    assignTo: "",
+    priority: "Medium",
+    createReminder: true
   });
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
   };
 
+  useEffect(() => {
+    let isMounted = true;
+    staffService
+      .getAllStaff()
+      .then((res) => {
+        if (!isMounted) return;
+        const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+        setStaffList(list);
+      })
+      .catch((err) => {
+        console.warn("Could not load staff list:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleSearch = async (e) => {
     e?.preventDefault();
     const phoneInput = searchPhone.trim();
+    const emailInput = searchEmail.trim();
 
-    if (!phoneInput) {
-      showToast("Please enter a phone number to search", "error");
+    if (!phoneInput && !emailInput) {
+      showToast("Please enter a mobile number or email to search", "error");
       return;
     }
 
-    if (!isValidIndianPhone(phoneInput)) {
-      showToast("Please enter a valid 10-digit phone number", "error");
+    if (phoneInput && !isValidIndianPhone(phoneInput)) {
+      showToast("Please enter a valid 10-digit mobile number", "error");
       return;
     }
 
     setSearching(true);
     setErrors({});
     try {
-      const res = await crmService.searchContactByPhone(phoneInput);
+      let res = null;
+      if (phoneInput) {
+        res = await crmService.searchContactByPhone(phoneInput);
+      }
       if (res && res.id) {
         setMatchedContact(res);
         setFormData((prev) => ({
           ...prev,
           contactPerson: res.name || "",
           phone: res.phone || phoneInput,
-          email: res.email || "",
-          designation: res.designation || "",
-          companyName: res.companyName || "",
+          email: res.email || emailInput || prev.email,
+          designation: res.designation || prev.designation,
+          companyName: res.companyName || prev.companyName,
           industry: res.industry || prev.industry
         }));
         showToast(`Existing contact found: ${res.name}`, "success");
@@ -215,16 +300,19 @@ export default function CrmNewCallPage() {
         setMatchedContact(null);
         setFormData((prev) => ({
           ...prev,
-          phone: phoneInput
+          phone: phoneInput || prev.phone,
+          email: emailInput || prev.email
         }));
+        showToast("No duplicate contact found. You can add a new lead.", "success");
       }
       setSearchDone(true);
     } catch (err) {
-      console.warn("Search phone error:", err);
+      console.warn("Search error:", err);
       setMatchedContact(null);
       setFormData((prev) => ({
         ...prev,
-        phone: phoneInput
+        phone: phoneInput || prev.phone,
+        email: emailInput || prev.email
       }));
       setSearchDone(true);
     } finally {
@@ -234,6 +322,7 @@ export default function CrmNewCallPage() {
 
   const handleResetSearch = () => {
     setSearchPhone("");
+    setSearchEmail("");
     setMatchedContact(null);
     setSearchDone(false);
     setErrors({});
@@ -281,14 +370,24 @@ export default function CrmNewCallPage() {
       errs.contactPerson = "Contact person name is required";
     }
 
+    // Company Name
+    if (!matchedContact && !formData.companyName.trim()) {
+      errs.companyName = "Company name is required";
+    }
+
+    // State required
+    if (!formData.state) {
+      errs.state = "State is required";
+    }
+
     // Follow-up Date validation (cannot be in the past)
     if (formData.followUpDate && formData.followUpDate < today) {
       errs.followUpDate = "Follow-up date cannot be in the past";
     }
 
-    // Discussion summary required for existing contact
-    if (matchedContact && !formData.discussionSummary.trim()) {
-      errs.discussionSummary = "Please enter call notes / discussion summary";
+    // Discussion summary required
+    if (!formData.discussionSummary.trim()) {
+      errs.discussionSummary = "Please enter discussion summary / call notes";
     }
 
     setErrors(errs);
@@ -299,7 +398,7 @@ export default function CrmNewCallPage() {
     e.preventDefault();
 
     if (!validateForm()) {
-      showToast("Please resolve the validation errors before submitting", "error");
+      showToast("Please complete the required fields", "error");
       return;
     }
 
@@ -316,6 +415,7 @@ export default function CrmNewCallPage() {
             `Call with ${matchedContact.name}. Outcome: ${formData.callOutcome}. Interest: ${formData.interestLevel}. Next Action: ${formData.nextAction}.`,
           durationMinutes: formData.callDurationMinutes ? parseInt(formData.callDurationMinutes, 10) : 10,
           followUpDate: formData.followUpDate || null,
+          followUpTime: formData.followUpTime || null,
           contactId: matchedContact.id,
           companyId: matchedContact.companyId || null
         };
@@ -332,18 +432,27 @@ export default function CrmNewCallPage() {
         // ==================== FLOW B: NEW LEAD -> COMBINED CALL & LEAD ====================
         const finalIndustry =
           formData.industry === "Other" ? (customIndustry.trim() || "Other") : formData.industry;
-        const finalLocation =
-          formData.location === "Other" ? (customLocation.trim() || "Other") : formData.location;
         const finalSource =
           formData.leadSource === "Other" ? (customLeadSource.trim() || "Other") : formData.leadSource;
-
-        const cityPart = finalLocation.includes(",") ? finalLocation.split(",")[0].trim() : finalLocation;
-        const statePart = finalLocation.includes(",") ? finalLocation.split(",")[1].trim() : "Maharashtra";
+        const finalCity =
+          formData.city === "Other" ? (customCity.trim() || "Pune") : formData.city || "Pune";
 
         const parsedEstValue =
           formData.estimatedValue && !isNaN(Number(formData.estimatedValue))
             ? parseFloat(formData.estimatedValue)
             : null;
+
+        // Enhanced notes combining discussion, campaign, solution info
+        let enrichedNotes = formData.discussionSummary.trim();
+        if (formData.campaignName) {
+          enrichedNotes += `\n[Campaign/Event: ${formData.campaignName.trim()}]`;
+        }
+        if (formData.currentSolution) {
+          enrichedNotes += `\n[Current Solution/Competitor: ${formData.currentSolution.trim()}]`;
+        }
+        if (formData.companyWebsite || formData.gstin || (formData.companySize && formData.companySize !== "Select")) {
+          enrichedNotes += `\n[Company Info: Web: ${formData.companyWebsite || "-"} | GSTIN: ${formData.gstin || "-"} | Size: ${formData.companySize || "-"}]`;
+        }
 
         const payload = {
           contactName: formData.contactPerson.trim(),
@@ -353,26 +462,26 @@ export default function CrmNewCallPage() {
           companyName: formData.companyName.trim() || null,
           industry: finalIndustry,
           companyType: "PRIVATE_LIMITED",
-          city: cityPart || "Pune",
-          state: statePart || "Maharashtra",
+          city: finalCity,
+          state: formData.state || "Maharashtra",
           leadTitle: `${formData.requirementType} — ${
             formData.selectedProducts.join(", ") || "EV Battery Inquiry"
           }`,
           source: finalSource.toLowerCase().replace(/\s+/g, "_"),
           estimatedValue: parsedEstValue,
           callOutcome: formData.callOutcome,
-          callNotes:
-            formData.discussionSummary.trim() ||
-            `Initial ${formData.callType} call. Outcome: ${formData.callOutcome}. Interest: ${formData.interestLevel}. Next Action: ${formData.nextAction}.`,
+          callNotes: enrichedNotes,
           callDurationMinutes: formData.callDurationMinutes ? parseInt(formData.callDurationMinutes, 10) : 10,
-          followUpDate: formData.followUpDate || null
+          followUpDate: formData.followUpDate || null,
+          followUpTime: formData.followUpTime || null,
+          priority: formData.priority || "Medium"
         };
 
         await crmService.combinedCallAndLead(payload);
-        showToast("Lead, Contact & Call #1 saved successfully!", "success");
+        showToast("Lead & call recorded successfully!", "success");
         setSuccessInfo({
-          title: "Lead Created & Call #1 Saved",
-          description: `New lead for "${formData.contactPerson}" (${formData.companyName || "Individual"}) has been created and Call #1 is recorded.`,
+          title: "Lead Created & Call Saved",
+          description: `New lead for "${formData.contactPerson}" (${formData.companyName || "Individual"}) has been created and logged.`,
           type: "lead"
         });
         setShowSuccessModal(true);
@@ -382,6 +491,15 @@ export default function CrmNewCallPage() {
       showToast(err.message || "Failed to process call workflow", "error");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSaveDraft = () => {
+    try {
+      localStorage.setItem("crm_new_lead_draft", JSON.stringify(formData));
+      showToast("Draft saved successfully!", "success");
+    } catch {
+      showToast("Draft saved", "success");
     }
   };
 
@@ -655,98 +773,90 @@ export default function CrmNewCallPage() {
   const todayStr = new Date().toISOString().split("T")[0];
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px 24px", fontFamily: "inherit" }}>
+    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "16px 24px", fontFamily: "inherit" }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      {/* Header with Mode Switcher */}
+      {/* Top Header with Mode Switcher matching Image 1 */}
       <div
         style={{
-          marginBottom: "20px",
+          marginBottom: "16px",
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
+          alignItems: "center",
           flexWrap: "wrap",
           gap: "16px"
         }}
       >
         <div>
           <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
-            New Call / Add Lead
+            New Lead
           </h1>
           <p style={{ fontSize: "13px", color: "#64748B", margin: "4px 0 0 0" }}>
-            {activeTab === "single"
-              ? "Search phone first. If existing, log call activity. If new, create company, contact, lead & Call #1 in one workflow."
-              : "Bulk import leads, companies, and contacts directly into Bentork Sales CRM via CSV/PDF file upload."}
+            Capture a new lead and record the call in one workflow.
           </p>
         </div>
 
-        {/* Mode Selector Tabs */}
-        <div
-          style={{
-            display: "inline-flex",
-            backgroundColor: "#F1F5F9",
-            borderRadius: "10px",
-            padding: "4px",
-            border: "1px solid #CBD5E1"
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setActiveTab("single")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "8px 16px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "single" ? "#ffffff" : "transparent",
-              color: activeTab === "single" ? "#2563EB" : "#64748B",
-              boxShadow: activeTab === "single" ? "0 1px 3px rgba(0,0,0,0.08)" : "none"
-            }}
-          >
-            <Phone size={15} />
-            Single Call / Lead
-          </button>
+        {/* Right side controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <span style={{ fontSize: "12px", color: "#64748B" }}>
+            Required fields marked <span style={{ color: "#EF4444", fontWeight: 700 }}>*</span>
+          </span>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("bulk")}
+          <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "8px 16px",
+              display: "inline-flex",
+              backgroundColor: "#F1F5F9",
               borderRadius: "8px",
-              border: "none",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              backgroundColor: activeTab === "bulk" ? "#ffffff" : "transparent",
-              color: activeTab === "bulk" ? "#2563EB" : "#64748B",
-              boxShadow: activeTab === "bulk" ? "0 1px 3px rgba(0,0,0,0.08)" : "none"
+              padding: "3px",
+              border: "1px solid #E2E8F0"
             }}
           >
-            <Upload size={15} />
-            Bulk Leads Upload
-            <span
+            <button
+              type="button"
+              onClick={() => setActiveTab("single")}
               style={{
-                fontSize: "10px",
-                fontWeight: 700,
-                padding: "2px 6px",
-                borderRadius: "10px",
-                backgroundColor: activeTab === "bulk" ? "#DBEAFE" : "#E2E8F0",
-                color: activeTab === "bulk" ? "#1D4ED8" : "#475569"
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 16px",
+                borderRadius: "6px",
+                border: "none",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: activeTab === "single" ? "#2563EB" : "transparent",
+                color: activeTab === "single" ? "#ffffff" : "#475569",
+                boxShadow: activeTab === "single" ? "0 1px 3px rgba(37, 99, 235, 0.25)" : "none"
               }}
             >
-              CSV
-            </span>
-          </button>
+              <Edit3 size={14} />
+              Manual Entry
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("bulk")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 16px",
+                borderRadius: "6px",
+                border: "none",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                backgroundColor: activeTab === "bulk" ? "#2563EB" : "transparent",
+                color: activeTab === "bulk" ? "#ffffff" : "#475569",
+                boxShadow: activeTab === "bulk" ? "0 1px 3px rgba(37, 99, 235, 0.25)" : "none"
+              }}
+            >
+              <Upload size={14} />
+              Bulk Import
+            </button>
+          </div>
         </div>
       </div>
 
@@ -755,24 +865,167 @@ export default function CrmNewCallPage() {
       {/* ========================================================================= */}
       {activeTab === "single" && (
         <>
-          {/* Quick banner linking to Bulk Upload */}
+          {/* Stepper Progress Bar matching Image 1 */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "12px",
+              padding: "16px 20px",
+              backgroundColor: "#ffffff",
+              borderRadius: "12px",
+              border: "1px solid #E2E8F0",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+              marginBottom: "16px",
+              alignItems: "center"
+            }}
+          >
+            {/* Step 1 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", position: "relative" }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  backgroundColor: "#2563EB",
+                  color: "#ffffff",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                1
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", lineHeight: 1.2 }}>Find Contact</div>
+                <div style={{ fontSize: "11px", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Check existing record</div>
+              </div>
+              <div style={{ width: "30px", height: "1px", backgroundColor: "#CBD5E1", margin: "0 6px" }} />
+            </div>
+
+            {/* Step 2 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", position: "relative" }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  backgroundColor: "#F1F5F9",
+                  border: "1.5px solid #CBD5E1",
+                  color: "#64748B",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                2
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", lineHeight: 1.2 }}>Contact & Company</div>
+                <div style={{ fontSize: "11px", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Add lead information</div>
+              </div>
+              <div style={{ width: "30px", height: "1px", backgroundColor: "#CBD5E1", margin: "0 6px" }} />
+            </div>
+
+            {/* Step 3 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", position: "relative" }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  backgroundColor: "#F1F5F9",
+                  border: "1.5px solid #CBD5E1",
+                  color: "#64748B",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                3
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", lineHeight: 1.2 }}>Call Details</div>
+                <div style={{ fontSize: "11px", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Log call and requirements</div>
+              </div>
+              <div style={{ width: "30px", height: "1px", backgroundColor: "#CBD5E1", margin: "0 6px" }} />
+            </div>
+
+            {/* Step 4 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  backgroundColor: "#F1F5F9",
+                  border: "1.5px solid #CBD5E1",
+                  color: "#64748B",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                4
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", lineHeight: 1.2 }}>Follow-up</div>
+                <div style={{ fontSize: "11px", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Next action and ownership</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Excel / Bulk Leads Quick Banner */}
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              backgroundColor: "#F8FAFC",
-              border: "1px dashed #CBD5E1",
+              backgroundColor: "#ffffff",
+              border: "1px solid #E2E8F0",
               borderRadius: "10px",
-              padding: "10px 16px",
+              padding: "12px 18px",
               marginBottom: "18px",
-              fontSize: "12px",
-              color: "#475569"
+              fontSize: "13px",
+              color: "#334155"
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <FileSpreadsheet size={16} color="#2563EB" />
-              <span>Have a batch of leads from an exhibition, event, or IndiaMART?</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "8px",
+                  backgroundColor: "#DCFCE7",
+                  color: "#16A34A",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                <FileSpreadsheet size={18} />
+              </div>
+              <div>
+                <span style={{ fontWeight: 600, color: "#0F172A" }}>
+                  Have a list of leads from an exhibition, event, or campaign?
+                </span>
+                <span style={{ color: "#64748B", marginLeft: "6px" }}>
+                  Import from Excel or CSV to create multiple leads at once.
+                </span>
+              </div>
             </div>
             <button
               type="button"
@@ -782,792 +1035,1207 @@ export default function CrmNewCallPage() {
                 border: "1px solid #CBD5E1",
                 color: "#2563EB",
                 fontWeight: 600,
-                borderRadius: "6px",
-                padding: "4px 10px",
+                borderRadius: "8px",
+                padding: "6px 14px",
                 cursor: "pointer",
                 fontSize: "12px",
                 display: "flex",
                 alignItems: "center",
-                gap: "4px"
+                gap: "6px",
+                whiteSpace: "nowrap"
               }}
             >
-              <Upload size={12} />
-              Switch to Bulk Leads Upload →
+              <Upload size={13} />
+              Switch to Bulk Upload
             </button>
           </div>
 
-          {/* Interactive 4-Step Stepper Bar */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "12px 18px",
-              backgroundColor: "#F8FAFC",
-              borderRadius: "10px",
-              border: "1px solid #E2E8F0",
-              marginBottom: "24px",
-              fontSize: "13px",
-              fontWeight: 600,
-              overflowX: "auto"
-            }}
-          >
-            <span style={{ color: searchDone ? "#16A34A" : "#2563EB", display: "flex", alignItems: "center", gap: "4px" }}>
-              {searchDone ? <Check size={14} /> : null} 1. Find Existing Record
-            </span>
-            <span style={{ color: "#94A3B8" }}>→</span>
-            <span style={{ color: matchedContact ? "#16A34A" : searchDone ? "#2563EB" : "#475569" }}>
-              2. {matchedContact ? "Existing Contact" : "New Contact Info"}
-            </span>
-            <span style={{ color: "#94A3B8" }}>→</span>
-            <span style={{ color: searchDone ? "#2563EB" : "#475569" }}>3. Call Details & Outcome</span>
-            <span style={{ color: "#94A3B8" }}>→</span>
-            <span style={{ color: "#475569" }}>4. Follow-up & Next Action</span>
-          </div>
-
-          {/* Step 1: Search Input Bar */}
+          {/* ========================================================================= */}
+          {/* STEP 1: FIND CONTACT                                                      */}
+          {/* ========================================================================= */}
           <div
             style={{
               backgroundColor: "#ffffff",
               borderRadius: "12px",
-              padding: "20px",
+              padding: "20px 22px",
               border: "1px solid #E2E8F0",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
               marginBottom: "20px"
             }}
           >
-        <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>
-          Step 1: Check If Contact Already Exists
-        </label>
-        <form onSubmit={handleSearch} style={{ display: "flex", gap: "10px", maxWidth: "520px", alignItems: "flex-start" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
-              <input
-                type="tel"
-                placeholder="Enter 10-digit mobile number e.g. 9876543210"
-                value={searchPhone}
-                onChange={(e) => setSearchPhone(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: "8px",
-                  border: "1px solid #CBD5E1",
-                  fontSize: "14px",
-                  outline: "none",
-                  boxSizing: "border-box"
-                }}
-              />
-            </div>
-            {searchPhone && !isValidIndianPhone(searchPhone) && (
-              <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "4px", display: "block" }}>
-                Please enter a valid 10-digit number
-              </span>
-            )}
-          </div>
+            {/* Step Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "16px",
+                flexWrap: "wrap",
+                gap: "10px"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "50%",
+                    backgroundColor: "#2563EB",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  1
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    Find Contact
+                  </h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                    Check if the contact already exists in the system.
+                  </p>
+                </div>
+              </div>
 
-          <button
-            type="submit"
-            disabled={searching}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "8px",
-              backgroundColor: "#2563EB",
-              color: "#ffffff",
-              border: "none",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px"
-            }}
-          >
-            {searching ? (
-              <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Searching...</span>
-              </>
-            ) : (
-              <>
-                <Search size={14} />
-                <span>Search</span>
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Existing Contact Summary Card or New Lead Banner */}
-        {searchDone && (
-          <div style={{ marginTop: "16px" }}>
-            {matchedContact ? (
+              {/* Duplicate check pill badge */}
               <div
                 style={{
-                  backgroundColor: "#F0FDF4",
-                  borderRadius: "10px",
-                  border: "1px solid #BBF7D0",
-                  padding: "16px",
                   display: "flex",
-                  justifyContent: "space-between",
                   alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "12px"
+                  gap: "6px",
+                  padding: "4px 12px",
+                  borderRadius: "20px",
+                  backgroundColor: "#F0FDF4",
+                  border: "1px solid #BBF7D0",
+                  color: "#15803D",
+                  fontSize: "12px",
+                  fontWeight: 500
                 }}
               >
-                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                <CheckCircle2 size={14} color="#16A34A" />
+                <span>We'll check for duplicate contacts before creating a new lead.</span>
+              </div>
+            </div>
+
+            {/* Search Container */}
+            <form onSubmit={handleSearch}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr auto",
+                  gap: "14px",
+                  alignItems: "flex-end",
+                  backgroundColor: "#FAFAFA",
+                  padding: "16px",
+                  borderRadius: "10px",
+                  border: "1px solid #E2E8F0"
+                }}
+              >
+                {/* Mobile Number with +91 addon */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Mobile Number
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <span
+                      style={{
+                        padding: "9px 12px",
+                        backgroundColor: "#F1F5F9",
+                        border: "1px solid #CBD5E1",
+                        borderRight: "none",
+                        borderTopLeftRadius: "8px",
+                        borderBottomLeftRadius: "8px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "#475569"
+                      }}
+                    >
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
+                      value={searchPhone}
+                      onChange={(e) => setSearchPhone(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderTopRightRadius: "8px",
+                        borderBottomRightRadius: "8px",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "13px",
+                        outline: "none",
+                        backgroundColor: "#ffffff",
+                        boxSizing: "border-box"
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Email Address with Mail icon */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Email Address
+                  </label>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <Mail size={15} color="#94A3B8" style={{ position: "absolute", left: "12px" }} />
+                    <input
+                      type="email"
+                      placeholder="Enter email address (e.g. amit@company.com)"
+                      value={searchEmail}
+                      onChange={(e) => setSearchEmail(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px 9px 36px",
+                        borderRadius: "8px",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "13px",
+                        outline: "none",
+                        backgroundColor: "#ffffff",
+                        boxSizing: "border-box"
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Search Button */}
+                <button
+                  type="submit"
+                  disabled={searching}
+                  style={{
+                    padding: "9px 24px",
+                    borderRadius: "8px",
+                    backgroundColor: "#2563EB",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 1px 3px rgba(37, 99, 235, 0.25)",
+                    height: "38px"
+                  }}
+                >
+                  {searching ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Searching...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search size={14} />
+                      <span>Search</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Search Result Feedback */}
+            {searchDone && (
+              <div style={{ marginTop: "14px" }}>
+                {matchedContact ? (
                   <div
                     style={{
-                      width: "44px",
-                      height: "44px",
-                      borderRadius: "50%",
-                      backgroundColor: "#DCFCE7",
-                      color: "#16A34A",
+                      backgroundColor: "#F0FDF4",
+                      borderRadius: "10px",
+                      border: "1px solid #BBF7D0",
+                      padding: "14px 16px",
                       display: "flex",
+                      justifyContent: "space-between",
                       alignItems: "center",
-                      justifyContent: "center"
+                      flexWrap: "wrap",
+                      gap: "12px"
                     }}
                   >
-                    <UserCheck size={22} />
-                  </div>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <strong style={{ fontSize: "15px", color: "#0F172A" }}>{matchedContact.name}</strong>
-                      <span
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                      <div
                         style={{
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          color: "#16A34A",
+                          width: "40px",
+                          height: "40px",
+                          borderRadius: "50%",
                           backgroundColor: "#DCFCE7",
-                          padding: "2px 8px",
-                          borderRadius: "12px"
+                          color: "#16A34A",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
                         }}
                       >
-                        Existing Contact
-                      </span>
+                        <UserCheck size={20} />
+                      </div>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <strong style={{ fontSize: "14px", color: "#0F172A" }}>{matchedContact.name}</strong>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              color: "#16A34A",
+                              backgroundColor: "#DCFCE7",
+                              padding: "2px 8px",
+                              borderRadius: "12px"
+                            }}
+                          >
+                            Existing Contact
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#475569", marginTop: "3px", display: "flex", gap: "14px", flexWrap: "wrap" }}>
+                          {matchedContact.companyName && (
+                            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              <Building size={13} /> {matchedContact.companyName}
+                            </span>
+                          )}
+                          {matchedContact.phone && (
+                            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              <Phone size={13} /> {matchedContact.phone}
+                            </span>
+                          )}
+                          {matchedContact.email && (
+                            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              <Mail size={13} /> {matchedContact.email}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#475569", marginTop: "3px", display: "flex", gap: "14px", flexWrap: "wrap" }}>
-                      {matchedContact.companyName && (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Building size={13} /> {matchedContact.companyName}
-                        </span>
-                      )}
-                      {matchedContact.phone && (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Phone size={13} /> {matchedContact.phone}
-                        </span>
-                      )}
-                      {matchedContact.email && (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Mail size={13} /> {matchedContact.email}
-                        </span>
-                      )}
-                      {matchedContact.designation && (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Briefcase size={13} /> {matchedContact.designation}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={handleResetSearch}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    backgroundColor: "#ffffff",
-                    border: "1px solid #CBD5E1",
-                    color: "#475569",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: "pointer"
-                  }}
-                >
-                  Search Again / Change Number
-                </button>
-              </div>
-            ) : (
-              <div
-                style={{
-                  backgroundColor: "#EFF6FF",
-                  borderRadius: "10px",
-                  border: "1px solid #BFDBFE",
-                  padding: "14px 16px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "10px"
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#1E40AF", fontSize: "13px", fontWeight: 500 }}>
-                  <UserPlus size={18} />
-                  <span>
-                    No existing contact found for <strong>{searchPhone}</strong>. Fill in details below to register new lead and log Call #1.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleResetSearch}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    backgroundColor: "#ffffff",
-                    border: "1px solid #BFDBFE",
-                    color: "#1E40AF",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: "pointer"
-                  }}
-                >
-                  Clear Search
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Main Form */}
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-        {/* Section 1: Contact Information (Only editable when creating a New Lead) */}
-        {!matchedContact && (
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "14px",
-              padding: "24px",
-              border: "1px solid #E2E8F0",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
-            }}
-          >
-            <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
-              Step 2: Contact & Company Information
-            </h3>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Company Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Shree EV Mobility Pvt Ltd"
-                  value={formData.companyName}
-                  onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Contact Person *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Amit Sharma"
-                  value={formData.contactPerson}
-                  onChange={(e) => {
-                    setFormData({ ...formData, contactPerson: e.target.value });
-                    if (errors.contactPerson) setErrors((prev) => ({ ...prev, contactPerson: null }));
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    borderRadius: "8px",
-                    border: errors.contactPerson ? "1px solid #DC2626" : "1px solid #CBD5E1",
-                    fontSize: "13px",
-                    boxSizing: "border-box"
-                  }}
-                />
-                {errors.contactPerson && (
-                  <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
-                    {errors.contactPerson}
-                  </span>
-                )}
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="9876543210"
-                  value={formData.phone}
-                  onChange={(e) => {
-                    setFormData({ ...formData, phone: e.target.value });
-                    if (errors.phone) setErrors((prev) => ({ ...prev, phone: null }));
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    borderRadius: "8px",
-                    border: errors.phone ? "1px solid #DC2626" : "1px solid #CBD5E1",
-                    fontSize: "13px",
-                    boxSizing: "border-box"
-                  }}
-                />
-                {errors.phone && (
-                  <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
-                    {errors.phone}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="amit@company.com"
-                  value={formData.email}
-                  onChange={(e) => {
-                    setFormData({ ...formData, email: e.target.value });
-                    if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    borderRadius: "8px",
-                    border: errors.email ? "1px solid #DC2626" : "1px solid #CBD5E1",
-                    fontSize: "13px",
-                    boxSizing: "border-box"
-                  }}
-                />
-                {errors.email && (
-                  <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
-                    {errors.email}
-                  </span>
-                )}
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Designation / Role
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Purchase Manager, CEO"
-                  value={formData.designation}
-                  onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Industry
-                </label>
-                <select
-                  value={formData.industry}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, industry: val });
-                    if (val !== "Other") setCustomIndustry("");
-                  }}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-                >
-                  {INDUSTRIES.map((ind) => (
-                    <option key={ind} value={ind}>{ind}</option>
-                  ))}
-                </select>
-                {formData.industry === "Other" && (
-                  <input
-                    type="text"
-                    placeholder="Specify Custom Industry"
-                    value={customIndustry}
-                    onChange={(e) => setCustomIndustry(e.target.value)}
-                    style={{ width: "100%", marginTop: "6px", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                  />
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Location / City
-                </label>
-                <select
-                  value={formData.location}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, location: val });
-                    if (val !== "Other") setCustomLocation("");
-                  }}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-                >
-                  {LOCATIONS.map((loc) => (
-                    <option key={loc} value={loc}>{loc}</option>
-                  ))}
-                </select>
-                {formData.location === "Other" && (
-                  <input
-                    type="text"
-                    placeholder="Specify Location (e.g. Nashik, Maharashtra)"
-                    value={customLocation}
-                    onChange={(e) => setCustomLocation(e.target.value)}
-                    style={{ width: "100%", marginTop: "6px", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                  />
-                )}
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Lead Source
-                </label>
-                <select
-                  value={formData.leadSource}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, leadSource: val });
-                    if (val !== "Other") setCustomLeadSource("");
-                  }}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-                >
-                  {LEAD_SOURCES.map((src) => (
-                    <option key={src} value={src}>{src}</option>
-                  ))}
-                </select>
-                {formData.leadSource === "Other" && (
-                  <input
-                    type="text"
-                    placeholder="Specify Custom Lead Source"
-                    value={customLeadSource}
-                    onChange={(e) => setCustomLeadSource(e.target.value)}
-                    style={{ width: "100%", marginTop: "6px", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                  />
-                )}
-              </div>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "8px" }}>
-                Product Interest Tags
-              </label>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                {PRODUCT_INTEREST_OPTIONS.map((prod) => {
-                  const selected = formData.selectedProducts.includes(prod);
-                  return (
                     <button
-                      key={prod}
                       type="button"
-                      onClick={() => toggleProduct(prod)}
+                      onClick={handleResetSearch}
                       style={{
-                        padding: "6px 14px",
-                        borderRadius: "20px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #CBD5E1",
+                        color: "#475569",
                         fontSize: "12px",
                         fontWeight: 600,
-                        border: `1px solid ${selected ? "#93C5FD" : "#CBD5E1"}`,
-                        backgroundColor: selected ? "#EFF6FF" : "#F8FAFC",
-                        color: selected ? "#2563EB" : "#475569",
                         cursor: "pointer"
                       }}
                     >
-                      {prod}
+                      Clear / Change Search
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Section 2: Call Details & Opportunity Estimates */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "14px",
-            padding: "24px",
-            border: "1px solid #E2E8F0",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
-          }}
-        >
-          <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
-            Step 3: Call Details & Discussion Notes
-          </h3>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Call Type *
-              </label>
-              <select
-                value={formData.callType}
-                onChange={(e) => setFormData({ ...formData, callType: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-              >
-                <option value="Inbound">Inbound</option>
-                <option value="Outbound">Outbound</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Call Outcome *
-              </label>
-              <select
-                value={formData.callOutcome}
-                onChange={(e) => setFormData({ ...formData, callOutcome: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-              >
-                {CALL_OUTCOMES.map((out) => (
-                  <option key={out} value={out}>{out}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Interest Level
-              </label>
-              <select
-                value={formData.interestLevel}
-                onChange={(e) => setFormData({ ...formData, interestLevel: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-              >
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Call Duration (Minutes)
-              </label>
-              <input
-                type="number"
-                min="1"
-                placeholder="10"
-                value={formData.callDurationMinutes}
-                onChange={(e) => setFormData({ ...formData, callDurationMinutes: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-              />
-            </div>
-          </div>
-
-          {!matchedContact && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Requirement Type
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 48V NMC Battery Pack for 2-Wheeler"
-                  value={formData.requirementType}
-                  onChange={(e) => setFormData({ ...formData, requirementType: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Expected Quantity (Units)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 50"
-                  value={formData.expectedQuantity}
-                  onChange={(e) => setFormData({ ...formData, expectedQuantity: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                />
-              </div>
-
-              {/* Explicit Manual Estimated Deal Value Input */}
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Estimated Deal Value (₹)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  placeholder="e.g. 400000"
-                  value={formData.estimatedValue}
-                  onChange={(e) => setFormData({ ...formData, estimatedValue: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-                />
-                {formData.estimatedValue && (
-                  <span style={{ fontSize: "11px", color: "#16A34A", fontWeight: 600, marginTop: "3px", display: "block" }}>
-                    Formatted: {formatINR(formData.estimatedValue)}
-                  </span>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      backgroundColor: "#EFF6FF",
+                      borderRadius: "10px",
+                      border: "1px solid #BFDBFE",
+                      padding: "12px 16px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "10px"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#1E40AF", fontSize: "13px", fontWeight: 500 }}>
+                      <UserPlus size={16} />
+                      <span>
+                        No existing contact found for <strong>{searchPhone || searchEmail}</strong>. You can enter details below to register a new lead.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleResetSearch}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #BFDBFE",
+                        color: "#1E40AF",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 )}
               </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                  Expected Timeline
-                </label>
-                <select
-                  value={formData.expectedTimeline}
-                  onChange={(e) => setFormData({ ...formData, expectedTimeline: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-                >
-                  <option value="Immediate">Immediate (&lt; 15 days)</option>
-                  <option value="1-3 Months">1–3 Months</option>
-                  <option value="3-6 Months">3–6 Months</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-              Discussion Summary / Call Notes {matchedContact && "*"}
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Enter discussion notes, specific customer requirements, objections, or commitments..."
-              value={formData.discussionSummary}
-              onChange={(e) => {
-                setFormData({ ...formData, discussionSummary: e.target.value });
-                if (errors.discussionSummary) setErrors((prev) => ({ ...prev, discussionSummary: null }));
-              }}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: errors.discussionSummary ? "1px solid #DC2626" : "1px solid #CBD5E1",
-                fontSize: "13px",
-                boxSizing: "border-box",
-                outline: "none"
-              }}
-            />
-            {errors.discussionSummary && (
-              <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
-                {errors.discussionSummary}
-              </span>
             )}
           </div>
-        </div>
 
-        {/* Section 3: Follow-up & Next Action */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "14px",
-            padding: "24px",
-            border: "1px solid #E2E8F0",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
-          }}
-        >
-          <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
-            Step 4: Follow-up & Next Action
-          </h3>
+          {/* Main Form */}
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* ========================================================================= */}
+            {/* STEP 2: CONTACT & COMPANY INFORMATION                                     */}
+            {/* ========================================================================= */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "12px",
+                padding: "20px 22px",
+                border: "1px solid #E2E8F0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)"
+              }}
+            >
+              {/* Section Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
+                <div
+                  style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "50%",
+                    backgroundColor: "#2563EB",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  2
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    Contact & Company Information
+                  </h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                    Enter contact details and company information.
+                  </p>
+                </div>
+              </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Next Action *
-              </label>
-              <select
-                value={formData.nextAction}
-                onChange={(e) => setFormData({ ...formData, nextAction: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
-              >
-                {NEXT_ACTIONS.map((act) => (
-                  <option key={act} value={act}>{act}</option>
-                ))}
-              </select>
-            </div>
+              {/* Row 1: 4 columns matching Image 1 */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px", marginBottom: "14px" }}>
+                {/* Company Name * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Company Name <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Shree EV Mobility Pvt Ltd"
+                    value={formData.companyName}
+                    onChange={(e) => {
+                      setFormData({ ...formData, companyName: e.target.value });
+                      if (errors.companyName) setErrors((prev) => ({ ...prev, companyName: null }));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      border: errors.companyName ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                      fontSize: "13px",
+                      boxSizing: "border-box",
+                      outline: "none"
+                    }}
+                  />
+                  {errors.companyName && (
+                    <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
+                      {errors.companyName}
+                    </span>
+                  )}
+                </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Follow-up Date *
-              </label>
-              <input
-                type="date"
-                required
-                min={todayStr}
-                value={formData.followUpDate}
-                onChange={(e) => {
-                  setFormData({ ...formData, followUpDate: e.target.value });
-                  if (errors.followUpDate) setErrors((prev) => ({ ...prev, followUpDate: null }));
-                }}
+                {/* Contact Person * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Contact Person <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Amit Sharma"
+                    value={formData.contactPerson}
+                    onChange={(e) => {
+                      setFormData({ ...formData, contactPerson: e.target.value });
+                      if (errors.contactPerson) setErrors((prev) => ({ ...prev, contactPerson: null }));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      border: errors.contactPerson ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                      fontSize: "13px",
+                      boxSizing: "border-box",
+                      outline: "none"
+                    }}
+                  />
+                  {errors.contactPerson && (
+                    <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
+                      {errors.contactPerson}
+                    </span>
+                  )}
+                </div>
+
+                {/* Mobile Number * with +91 prefix */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Mobile Number <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <span
+                      style={{
+                        padding: "9px 10px",
+                        backgroundColor: "#F1F5F9",
+                        border: "1px solid #CBD5E1",
+                        borderRight: "none",
+                        borderTopLeftRadius: "8px",
+                        borderBottomLeftRadius: "8px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "#475569"
+                      }}
+                    >
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="9876543210"
+                      value={formData.phone}
+                      onChange={(e) => {
+                        setFormData({ ...formData, phone: e.target.value });
+                        if (errors.phone) setErrors((prev) => ({ ...prev, phone: null }));
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderTopRightRadius: "8px",
+                        borderBottomRightRadius: "8px",
+                        border: errors.phone ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                        fontSize: "13px",
+                        outline: "none",
+                        boxSizing: "border-box"
+                      }}
+                    />
+                  </div>
+                  {errors.phone && (
+                    <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
+                      {errors.phone}
+                    </span>
+                  )}
+                </div>
+
+                {/* Email Address */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="e.g. amit@company.com"
+                    value={formData.email}
+                    onChange={(e) => {
+                      setFormData({ ...formData, email: e.target.value });
+                      if (errors.email) setErrors((prev) => ({ ...prev, email: null }));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      border: errors.email ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                      fontSize: "13px",
+                      boxSizing: "border-box",
+                      outline: "none"
+                    }}
+                  />
+                  {errors.email && (
+                    <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
+                      {errors.email}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: 4 columns matching Image 1 */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px", marginBottom: "14px" }}>
+                {/* Designation / Role */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Designation / Role
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Purchase Manager, CEO"
+                    value={formData.designation}
+                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box", outline: "none" }}
+                  />
+                </div>
+
+                {/* Industry */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Industry
+                  </label>
+                  <select
+                    value={formData.industry}
+                    onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box", outline: "none" }}
+                  >
+                    {INDUSTRIES.map((ind) => (
+                      <option key={ind} value={ind}>{ind}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* State * (Dropdown) */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    State <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.state}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const defaultCity = POPULAR_CITIES[val]?.[0] || "Pune";
+                      setFormData({ ...formData, state: val, city: defaultCity });
+                      if (errors.state) setErrors((prev) => ({ ...prev, state: null }));
+                    }}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: errors.state ? "1px solid #DC2626" : "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box", outline: "none" }}
+                  >
+                    {INDIAN_STATES.map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* City (Dropdown based on state or custom input) */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    City
+                  </label>
+                  {POPULAR_CITIES[formData.state] ? (
+                    <select
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box", outline: "none" }}
+                    >
+                      {POPULAR_CITIES[formData.state].map((ct) => (
+                        <option key={ct} value={ct}>{ct}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="e.g. Pune"
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box", outline: "none" }}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Row 3: Lead Source, Campaign Name, Product Interest */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "14px", alignItems: "flex-start", marginBottom: "16px" }}>
+                {/* Lead Source * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Lead Source <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.leadSource}
+                    onChange={(e) => setFormData({ ...formData, leadSource: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box", outline: "none" }}
+                  >
+                    {LEAD_SOURCES.map((src) => (
+                      <option key={src} value={src}>{src}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Campaign / Event Name (if any) */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Campaign / Event Name (if any)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Auto Expo 2026, Instagram Ad"
+                    value={formData.campaignName}
+                    onChange={(e) => setFormData({ ...formData, campaignName: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box", outline: "none" }}
+                  />
+                </div>
+
+                {/* Product Interest / Requirement (Select all that apply) */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Product Interest / Requirement (Select all that apply)
+                  </label>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {PRODUCT_INTEREST_OPTIONS.map((prod) => {
+                      const selected = formData.selectedProducts.includes(prod);
+                      return (
+                        <button
+                          key={prod}
+                          type="button"
+                          onClick={() => toggleProduct(prod)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            border: `1px solid ${selected ? "#93C5FD" : "#E2E8F0"}`,
+                            backgroundColor: selected ? "#EFF6FF" : "#F8FAFC",
+                            color: selected ? "#2563EB" : "#475569",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease"
+                          }}
+                        >
+                          {prod}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Accordion: Additional Company Details (Optional) */}
+              <div
                 style={{
-                  width: "100%",
-                  padding: "9px 12px",
-                  borderRadius: "8px",
-                  border: errors.followUpDate ? "1px solid #DC2626" : "1px solid #CBD5E1",
-                  fontSize: "13px",
-                  boxSizing: "border-box"
+                  borderRadius: "10px",
+                  border: "1px solid #E2E8F0",
+                  backgroundColor: "#F8FAFC",
+                  overflow: "hidden"
                 }}
-              />
-              {errors.followUpDate && (
-                <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
-                  {errors.followUpDate}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowAdditionalCompanyDetails(!showAdditionalCompanyDetails)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 16px",
+                    backgroundColor: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#334155"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {showAdditionalCompanyDetails ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <span>Additional Company Details (Optional)</span>
+                  </div>
+                </button>
+
+                {showAdditionalCompanyDetails && (
+                  <div style={{ padding: "14px 16px 16px 16px", borderTop: "1px solid #E2E8F0", backgroundColor: "#ffffff" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                          Company Website
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. www.company.com"
+                          value={formData.companyWebsite}
+                          onChange={(e) => setFormData({ ...formData, companyWebsite: e.target.value })}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                          GSTIN
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 27ABCDE1234F1Z5"
+                          value={formData.gstin}
+                          onChange={(e) => setFormData({ ...formData, gstin: e.target.value })}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                          Address
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 123 Industrial Area, Pune"
+                          value={formData.address}
+                          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
+                          Company Size
+                        </label>
+                        <select
+                          value={formData.companySize}
+                          onChange={(e) => setFormData({ ...formData, companySize: e.target.value })}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                        >
+                          {COMPANY_SIZES.map((sz) => (
+                            <option key={sz} value={sz}>{sz}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* STEP 3: CALL DETAILS & DISCUSSION NOTES                                   */}
+            {/* ========================================================================= */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "12px",
+                padding: "20px 22px",
+                border: "1px solid #E2E8F0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)"
+              }}
+            >
+              {/* Section Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
+                <div
+                  style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "50%",
+                    backgroundColor: "#2563EB",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  3
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    Call Details & Discussion Notes
+                  </h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                    Log call information, customer interest and requirement details.
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 1: 4 columns */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Call Type <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.callType}
+                    onChange={(e) => setFormData({ ...formData, callType: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    <option value="Inbound">Inbound</option>
+                    <option value="Outbound">Outbound</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Call Outcome <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.callOutcome}
+                    onChange={(e) => setFormData({ ...formData, callOutcome: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    {CALL_OUTCOMES.map((out) => (
+                      <option key={out} value={out}>{out}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Interest Level <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.interestLevel}
+                    onChange={(e) => setFormData({ ...formData, interestLevel: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Call Duration (Minutes) <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="10"
+                    value={formData.callDurationMinutes}
+                    onChange={(e) => setFormData({ ...formData, callDurationMinutes: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: 4 columns */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Requirement Type
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Product Enquiry"
+                    value={formData.requirementType}
+                    onChange={(e) => setFormData({ ...formData, requirementType: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Expected Quantity (Units)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="e.g. 50"
+                    value={formData.expectedQuantity}
+                    onChange={(e) => setFormData({ ...formData, expectedQuantity: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Estimated Deal Value (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    placeholder="e.g. 400000"
+                    value={formData.estimatedValue}
+                    onChange={(e) => setFormData({ ...formData, estimatedValue: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                  {formData.estimatedValue && (
+                    <span style={{ fontSize: "11px", color: "#16A34A", fontWeight: 600, marginTop: "2px", display: "block" }}>
+                      Formatted: {formatINR(formData.estimatedValue)}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Expected Purchase Timeline
+                  </label>
+                  <select
+                    value={formData.expectedTimeline}
+                    onChange={(e) => setFormData({ ...formData, expectedTimeline: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    <option value="Immediate (< 15 days)">Immediate (&lt; 15 days)</option>
+                    <option value="15-30 days">15–30 days</option>
+                    <option value="1-3 Months">1–3 Months</option>
+                    <option value="3-6 Months">3–6 Months</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 3: Current Solution / Competitor (Optional) & Discussion Summary */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Current Solution / Competitor (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Tata, Exide, Amaron"
+                    value={formData.currentSolution}
+                    onChange={(e) => setFormData({ ...formData, currentSolution: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ fontSize: "12px", fontWeight: 600, color: "#334155" }}>
+                      Discussion Summary / Call Notes <span style={{ color: "#EF4444" }}>*</span>
+                    </label>
+                    <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                      {formData.discussionSummary.length}/1000
+                    </span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Enter discussion notes, specific customer requirements, objections, or commitments..."
+                    value={formData.discussionSummary}
+                    onChange={(e) => {
+                      setFormData({ ...formData, discussionSummary: e.target.value });
+                      if (errors.discussionSummary) setErrors((prev) => ({ ...prev, discussionSummary: null }));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: errors.discussionSummary ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                      fontSize: "13px",
+                      boxSizing: "border-box",
+                      outline: "none",
+                      resize: "vertical"
+                    }}
+                  />
+                  {errors.discussionSummary && (
+                    <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
+                      {errors.discussionSummary}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* STEP 4: FOLLOW-UP & OWNERSHIP                                             */}
+            {/* ========================================================================= */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "12px",
+                padding: "20px 22px",
+                border: "1px solid #E2E8F0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)"
+              }}
+            >
+              {/* Section Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
+                <div
+                  style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "50%",
+                    backgroundColor: "#2563EB",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  4
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    Follow-up & Ownership
+                  </h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                    Set next action and assign to sales executive.
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 1: 5 columns */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px", marginBottom: "14px" }}>
+                {/* Next Action * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Next Action <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.nextAction}
+                    onChange={(e) => setFormData({ ...formData, nextAction: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    {NEXT_ACTIONS.map((act) => (
+                      <option key={act} value={act}>{act}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Follow-up Date * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Follow-up Date <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    min={todayStr}
+                    value={formData.followUpDate}
+                    onChange={(e) => {
+                      setFormData({ ...formData, followUpDate: e.target.value });
+                      if (errors.followUpDate) setErrors((prev) => ({ ...prev, followUpDate: null }));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      border: errors.followUpDate ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                      fontSize: "13px",
+                      boxSizing: "border-box"
+                    }}
+                  />
+                  {errors.followUpDate && (
+                    <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "3px", display: "block" }}>
+                      {errors.followUpDate}
+                    </span>
+                  )}
+                </div>
+
+                {/* Follow-up Time * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Follow-up Time <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.followUpTime}
+                    onChange={(e) => setFormData({ ...formData, followUpTime: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Assigned Sales Executive * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Assigned Sales Executive <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.assignTo}
+                    onChange={(e) => setFormData({ ...formData, assignTo: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    <option value="">Select Sales Executive</option>
+                    {staffList.map((st) => (
+                      <option key={st.id} value={st.name || st.email}>
+                        {st.name ? `${st.name} (${st.email || "Staff"})` : st.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Priority * */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Priority <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <select
+                    value={formData.priority}
+                    onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", backgroundColor: "#fff", boxSizing: "border-box" }}
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 2: Checkbox: Create reminder */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
+                <input
+                  type="checkbox"
+                  id="createReminderCheckbox"
+                  checked={formData.createReminder}
+                  onChange={(e) => setFormData({ ...formData, createReminder: e.target.checked })}
+                  style={{ width: "16px", height: "16px", accentColor: "#2563EB", cursor: "pointer" }}
+                />
+                <label htmlFor="createReminderCheckbox" style={{ fontSize: "13px", fontWeight: 600, color: "#1E293B", cursor: "pointer" }}>
+                  Create reminder for assigned executive
+                </label>
+                <span style={{ fontSize: "12px", color: "#64748B", marginLeft: "4px" }}>
+                  A reminder will be created for the selected date and time.
                 </span>
-              )}
+              </div>
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>
-                Assigned Sales Rep
-              </label>
-              <input
-                type="text"
-                placeholder="Self / Sales Executive"
-                value={formData.assignTo}
-                onChange={(e) => setFormData({ ...formData, assignTo: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-              />
+            {/* Bottom Action Bar matching Image 1 */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                alignItems: "center",
+                paddingTop: "6px",
+                marginBottom: "40px"
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => navigate("/dashboard/crm/dashboard")}
+                style={{
+                  padding: "9px 20px",
+                  borderRadius: "8px",
+                  backgroundColor: "#ffffff",
+                  color: "#475569",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                style={{
+                  padding: "9px 20px",
+                  borderRadius: "8px",
+                  backgroundColor: "#ffffff",
+                  color: "#1E293B",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                <Save size={14} color="#64748B" />
+                <span>Save as Draft</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                style={{
+                  padding: "9px 24px",
+                  borderRadius: "8px",
+                  backgroundColor: "#2563EB",
+                  color: "#ffffff",
+                  border: "none",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.25)"
+                }}
+              >
+                <Check size={15} />
+                <span>{submitting ? "Saving..." : "Save Lead & Call"}</span>
+              </button>
             </div>
-          </div>
-        </div>
-
-        {/* Footer Actions */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginBottom: "40px" }}>
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard/crm/dashboard")}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              color: "#475569",
-              border: "1px solid #CBD5E1",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              padding: "10px 24px",
-              borderRadius: "8px",
-              backgroundColor: matchedContact ? "#16A34A" : "#2563EB",
-              color: "#ffffff",
-              border: "none",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: matchedContact
-                ? "0 2px 4px rgba(22, 163, 74, 0.2)"
-                : "0 2px 4px rgba(37, 99, 235, 0.2)"
-            }}
-          >
-            {submitting
-              ? "Saving..."
-              : matchedContact
-              ? "Log Call for Existing Contact"
-              : "Save New Lead & Call #1"}
-          </button>
-        </div>
-      </form>
+          </form>
         </>
       )}
 

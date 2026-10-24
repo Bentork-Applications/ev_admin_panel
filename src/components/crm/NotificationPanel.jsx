@@ -75,13 +75,48 @@ export const NotificationPanel = ({
     }
   }, [isOpen, refreshTrigger, fetchScheduledNotifications]);
 
+  const [dismissedIds, setDismissedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem("crm_dismissed_notifications");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleDismiss = (id, e) => {
+    e?.stopPropagation();
+    const updated = [...dismissedIds, id];
+    setDismissedIds(updated);
+    try {
+      localStorage.setItem("crm_dismissed_notifications", JSON.stringify(updated));
+    } catch (err) {
+      console.warn("Could not save dismissed notifications:", err);
+    }
+  };
+
+  const handleSnooze = async (item, hours = 1, e) => {
+    e?.stopPropagation();
+    try {
+      const now = new Date();
+      now.setHours(now.getHours() + hours);
+      const newDate = now.toISOString().split("T")[0];
+      const newTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      await crmService.rescheduleFollowUp(item.id, newDate, newTime, "Snoozed from reminder center");
+      fetchScheduledNotifications();
+    } catch {
+      handleDismiss(item.id, e);
+    }
+  };
+
   // Filtered list according to tab inside notification panel
   const displayedNotifications = useMemo(() => {
-    if (filter === "overdue") return notifications.filter((n) => n.notificationBucket === "overdue");
-    if (filter === "today") return notifications.filter((n) => n.notificationBucket === "today");
-    if (filter === "upcoming") return notifications.filter((n) => n.notificationBucket === "upcoming");
-    return notifications;
-  }, [filter, notifications]);
+    const active = notifications.filter((n) => !dismissedIds.includes(n.id));
+    if (filter === "overdue") return active.filter((n) => n.notificationBucket === "overdue");
+    if (filter === "today") return active.filter((n) => n.notificationBucket === "today");
+    if (filter === "upcoming") return active.filter((n) => n.notificationBucket === "upcoming");
+    return active;
+  }, [filter, notifications, dismissedIds]);
 
   if (!isOpen) return null;
 
@@ -365,11 +400,46 @@ export const NotificationPanel = ({
                       style={{
                         display: "flex",
                         justifyContent: "flex-end",
-                        gap: "8px",
+                        alignItems: "center",
+                        gap: "6px",
                         marginTop: "10px"
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
+                      <button
+                        onClick={(e) => handleDismiss(item.id, e)}
+                        title="Dismiss reminder"
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          border: "1px solid #E2E8F0",
+                          backgroundColor: "#F8FAFC",
+                          color: "#64748B",
+                          fontSize: "11px",
+                          fontWeight: 500,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Dismiss
+                      </button>
+
+                      <button
+                        onClick={(e) => handleSnooze(item, 1, e)}
+                        title="Snooze for 1 hour"
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          backgroundColor: "#ffffff",
+                          color: "#334155",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Snooze (1h)
+                      </button>
+
                       <button
                         onClick={() => {
                           onReschedule?.(item);

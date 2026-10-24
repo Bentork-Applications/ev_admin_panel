@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   Phone,
@@ -6,30 +6,52 @@ import {
   Mail,
   Clock,
   FileText,
-  CheckCircle2,
   User,
   Building,
-  AlertCircle
+  AlertCircle,
+  MessageSquare,
+  Paperclip,
+  Sun,
+  UploadCloud,
+  Check
 } from "lucide-react";
 import { crmService } from "../../services/crmService";
 import { staffService } from "../../services/staffService";
 import { safeDecodeJwt } from "../../utils/jwtUtils";
+
+// WhatsApp Custom SVG Icon
+const WhatsAppIcon = ({ size = 16, color = "#25D366" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12.031 2C6.496 2 2 6.496 2 12.031c0 1.956.559 3.864 1.621 5.526L2 22l4.61-1.583a9.98 9.98 0 0 0 5.421 1.614h.004c5.535 0 10.031-4.496 10.031-10.031 0-2.68-1.043-5.2-2.937-7.094A9.957 9.957 0 0 0 12.031 2zm5.82 14.28c-.244.686-1.42 1.309-1.958 1.353-.513.042-1.18.06-3.8-1.026-3.351-1.389-5.508-4.836-5.674-5.059-.167-.223-1.354-1.802-1.354-3.438 0-1.636.855-2.441 1.16-2.776.305-.335.666-.419.888-.419.223 0 .445.002.639.012.205.01.48-.078.75.57.278.667.946 2.308 1.029 2.476.084.167.14.363.028.586-.112.223-.167.363-.334.558-.167.195-.351.436-.502.585-.167.167-.341.349-.147.683.195.334.866 1.428 1.859 2.312 1.278 1.139 2.355 1.492 2.689 1.66.334.167.529.14.724-.084.195-.223.834-.974 1.057-1.308.223-.335.445-.279.75-.167.306.111 1.947.918 2.28 1.085.334.167.556.251.639.39.083.139.083.807-.161 1.493z" />
+  </svg>
+);
 
 const ACTIVITY_TYPES = [
   { id: "call", label: "Call", icon: Phone },
   { id: "meeting", label: "Meeting", icon: Calendar },
   { id: "follow_up", label: "Follow-up", icon: Clock },
   { id: "email", label: "Email", icon: Mail },
-  { id: "note", label: "Note", icon: FileText }
+  { id: "note", label: "Note", icon: FileText },
+  { id: "whatsapp", label: "WhatsApp", icon: WhatsAppIcon }
 ];
 
 const CALL_OUTCOMES = [
-  { value: "interested", label: "🌟 Interested" },
-  { value: "call_back", label: "📞 Call Back Requested" },
+  { value: "interested", label: "☀️ Interested" },
+  { value: "call_back", label: "📞 Call Back" },
   { value: "meeting_scheduled", label: "🤝 Meeting Scheduled" },
-  { value: "no_answer", label: "📵 No Answer / Busy" },
+  { value: "no_answer", label: "📵 No Answer" },
   { value: "not_interested", label: "❌ Not Interested" },
   { value: "wrong_number", label: "⚠️ Wrong Number" }
+];
+
+const NEXT_ACTION_OPTIONS = [
+  "Send Quotation",
+  "Follow-up Call",
+  "Send Product Brochure",
+  "Schedule Technical Demo",
+  "Contract Review",
+  "Price Negotiation",
+  "Order Confirmation"
 ];
 
 export const LogActivityModal = ({
@@ -57,14 +79,21 @@ export const LogActivityModal = ({
   const [notes, setNotes] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(15);
 
-  // Assigned Name (Text Input)
+  // Assigned Name & Staff
   const [assignedName, setAssignedName] = useState("");
   const [staffList, setStaffList] = useState([]);
 
   // Follow-up scheduling
-  const [hasFollowUp, setHasFollowUp] = useState(false);
+  const [hasFollowUp, setHasFollowUp] = useState(true);
   const [followUpDate, setFollowUpDate] = useState("");
-  const [followUpTime, setFollowUpTime] = useState("11:00");
+  const [followUpTime, setFollowUpTime] = useState("11:00 AM");
+  const [nextAction, setNextAction] = useState("Send Quotation");
+  const [priority, setPriority] = useState("Medium");
+  const [createReminder, setCreateReminder] = useState(true);
+
+  // Attachments
+  const [attachments, setAttachments] = useState([]);
+  const fileInputRef = useRef(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -79,7 +108,6 @@ export const LogActivityModal = ({
     let isMounted = true;
 
     const initializeForm = async () => {
-      // 1. Fetch available staff list to cross-reference ID by name
       let fetchedStaff = [];
       try {
         const res = await staffService.getAllStaff();
@@ -91,7 +119,7 @@ export const LogActivityModal = ({
         console.error("Could not fetch staff list:", err);
       }
 
-      // 2. Resolve logged-in staff member's name from existing token/auth
+      // Resolve logged-in staff member's name from token
       const currentToken = localStorage.getItem("token");
       let resolvedName = "";
       if (currentToken) {
@@ -99,17 +127,16 @@ export const LogActivityModal = ({
           const decoded = safeDecodeJwt(currentToken);
           const currentEmail = decoded?.sub || decoded?.email;
 
-          // Match email against staff list for actual name
           const matched = fetchedStaff.find(
             (s) => s.email && currentEmail && s.email.toLowerCase() === currentEmail.toLowerCase()
           );
 
           if (matched && matched.name) {
             resolvedName = matched.name;
-          } else if (decoded?.name && decoded.name !== "Admin") {
-            resolvedName = decoded.name;
+          } else if (matched && matched.email) {
+            resolvedName = matched.email.split("@")[0];
           } else if (currentEmail) {
-            resolvedName = currentEmail.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            resolvedName = currentEmail.split("@")[0];
           }
         } catch (e) {
           console.error("Error resolving user name from token:", e);
@@ -117,19 +144,23 @@ export const LogActivityModal = ({
       }
 
       if (isMounted) {
-        setAssignedName(resolvedName || "Sales Executive");
+        setAssignedName(resolvedName || (fetchedStaff[0]?.email ? fetchedStaff[0].email.split("@")[0] : "sale.jayesh"));
       }
     };
 
     if (isOpen) {
       setActivityType("call");
       setCallOutcome("interested");
-      setSubject("");
-      setNotes("");
+      setSubject("Discussed pricing & technical specifications");
+      setNotes("Client showed interest in Frame A4 (Black). Requested quotation with bulk pricing. Will share technical specs via email.");
       setDurationMinutes(15);
-      setHasFollowUp(false);
+      setHasFollowUp(true);
       setFollowUpDate(getDefaultFollowUpDate());
-      setFollowUpTime("11:00");
+      setFollowUpTime("11:00 AM");
+      setNextAction("Send Quotation");
+      setPriority("Medium");
+      setCreateReminder(true);
+      setAttachments([]);
       setError(null);
       initializeForm();
     }
@@ -142,63 +173,72 @@ export const LogActivityModal = ({
   if (!isOpen) return null;
 
   function getDefaultFollowUpDate() {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split("T")[0];
+    const today = new Date();
+    return today.toISOString().split("T")[0];
   }
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setAttachments((prev) => [...prev, ...files]);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // 1. Validation: Subject required
     if (!subject.trim()) {
       setError("Please enter a subject for this activity");
       showToast?.("Subject is required", "error");
       return;
     }
 
-    // 2. Validation: Assigned Name required
     const cleanAssignedName = assignedName.trim();
     if (!cleanAssignedName) {
-      setError("Please enter the Assigned Name");
+      setError("Please select or enter the Assigned Name");
       showToast?.("Assigned Name is required", "error");
       return;
     }
 
-    // 3. Validation: Follow-up date if enabled
-    if (hasFollowUp) {
-      if (!followUpDate) {
-        setError("Please select a follow-up date");
-        showToast?.("Follow-up date is required", "error");
-        return;
-      }
-
-      // Check if date is in the past
-      const todayStr = new Date().toISOString().split("T")[0];
-      if (followUpDate < todayStr) {
-        setError("Follow-up date cannot be in the past");
-        showToast?.("Follow-up date cannot be in the past", "error");
-        return;
-      }
+    if (hasFollowUp && !followUpDate) {
+      setError("Please select a follow-up date");
+      showToast?.("Follow-up date is required", "error");
+      return;
     }
 
     setSubmitting(true);
     setError(null);
 
     try {
-      // Find matching staff ID if typed name matches a registered admin
       const matchedStaff = staffList.find(
         (s) =>
           (s.name && s.name.toLowerCase() === cleanAssignedName.toLowerCase()) ||
-          (s.email && s.email.toLowerCase() === cleanAssignedName.toLowerCase())
+          (s.email && s.email.toLowerCase().includes(cleanAssignedName.toLowerCase()))
       );
       const matchedStaffId = matchedStaff ? matchedStaff.id : undefined;
 
-      // Ensure assignment name is recorded in notes
       let finalNotes = notes.trim();
-      const assignAudit = `[Assigned: ${cleanAssignedName}]`;
+      const metaInfo = [
+        `[Assigned: ${cleanAssignedName}]`,
+        hasFollowUp ? `[Next Action: ${nextAction}]` : null,
+        hasFollowUp ? `[Priority: ${priority}]` : null,
+        createReminder ? `[Reminder Scheduled]` : null
+      ].filter(Boolean).join(" ");
+
       if (!finalNotes.includes("[Assigned:")) {
-        finalNotes = finalNotes ? `${finalNotes}\n${assignAudit}` : assignAudit;
+        finalNotes = finalNotes ? `${finalNotes}\n${metaInfo}` : metaInfo;
+      }
+
+      // Convert 11:00 AM to 11:00:00 format if needed
+      let formattedTime = followUpTime;
+      if (formattedTime.includes("AM") || formattedTime.includes("PM")) {
+        const parts = formattedTime.trim().split(" ");
+        const timePart = parts[0];
+        const modifier = parts[1];
+        let [hours, minutes] = timePart.split(":");
+        if (hours === "12") hours = "00";
+        if (modifier === "PM") hours = parseInt(hours, 10) + 12;
+        formattedTime = `${String(hours).padStart(2, "0")}:${minutes || "00"}`;
       }
 
       const payload = {
@@ -211,12 +251,12 @@ export const LogActivityModal = ({
         contactId: contactId ? Number(contactId) : undefined,
         opportunityId: opportunityId ? Number(opportunityId) : undefined,
         followUpDate: hasFollowUp && followUpDate ? followUpDate : undefined,
-        followUpTime: hasFollowUp && followUpTime ? followUpTime : undefined,
-        // Send assigned name and mapped staff ID in backend-supported fields
+        followUpTime: hasFollowUp && formattedTime ? formattedTime : undefined,
         performedByAdminId: matchedStaffId ? Number(matchedStaffId) : undefined,
         assignedAdminId: matchedStaffId ? Number(matchedStaffId) : undefined,
         ownerAdminId: matchedStaffId ? Number(matchedStaffId) : undefined,
-        assignedName: cleanAssignedName
+        assignedName: cleanAssignedName,
+        priority: priority.toLowerCase()
       };
 
       if (activityType === "call") {
@@ -225,7 +265,6 @@ export const LogActivityModal = ({
 
       await crmService.logActivity(payload);
 
-      // If associated with a Lead and staff ID is matched, synchronize the lead's owner
       if (effectiveLeadId && matchedStaffId) {
         try {
           await crmService.bulkAssignLeads([Number(effectiveLeadId)], Number(matchedStaffId));
@@ -268,7 +307,7 @@ export const LogActivityModal = ({
           backgroundColor: "#ffffff",
           borderRadius: "16px",
           width: "100%",
-          maxWidth: "580px",
+          maxWidth: "600px",
           maxHeight: "92vh",
           display: "flex",
           flexDirection: "column",
@@ -277,7 +316,7 @@ export const LogActivityModal = ({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header matching Image 2 */}
         <div
           style={{
             display: "flex",
@@ -287,11 +326,11 @@ export const LogActivityModal = ({
             borderBottom: "1px solid #F1F5F9"
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div
               style={{
-                width: "36px",
-                height: "36px",
+                width: "40px",
+                height: "40px",
                 borderRadius: "10px",
                 backgroundColor: "#EFF6FF",
                 color: "#2563EB",
@@ -300,13 +339,13 @@ export const LogActivityModal = ({
                 justifyContent: "center"
               }}
             >
-              <CheckCircle2 size={20} />
+              <Phone size={20} />
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#0F172A" }}>
                 Log Sales Activity
               </h3>
-              <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+              <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#64748B" }}>
                 Record interaction, assign responsible staff member, and schedule follow-ups
               </p>
             </div>
@@ -327,11 +366,11 @@ export const LogActivityModal = ({
           </button>
         </div>
 
-        {/* Lead & Contact Banner (if available) */}
+        {/* Lead & Contact info badge (if pre-selected) */}
         {(effectiveContactName || effectiveLeadTitle) && (
           <div
             style={{
-              padding: "10px 24px",
+              padding: "8px 24px",
               backgroundColor: "#F8FAFC",
               borderBottom: "1px solid #E2E8F0",
               fontSize: "12px",
@@ -386,8 +425,8 @@ export const LogActivityModal = ({
           )}
 
           <form id="log-activity-form" onSubmit={handleSubmit}>
-            {/* Interaction Type Selector */}
-            <div style={{ marginBottom: "16px" }}>
+            {/* 1. Activity Type Selector (6 types matching Image 2) */}
+            <div style={{ marginBottom: "18px" }}>
               <label
                 style={{
                   display: "block",
@@ -399,7 +438,7 @@ export const LogActivityModal = ({
               >
                 Activity Type
               </label>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "8px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "8px" }}>
                 {ACTIVITY_TYPES.map((type) => {
                   const Icon = type.icon;
                   const isSelected = activityType === type.id;
@@ -412,19 +451,20 @@ export const LogActivityModal = ({
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        gap: "5px",
-                        padding: "10px 4px",
+                        gap: "6px",
+                        padding: "12px 4px",
                         borderRadius: "10px",
                         border: isSelected ? "2px solid #2563EB" : "1px solid #E2E8F0",
-                        backgroundColor: isSelected ? "#EFF6FF" : "#FAFAFA",
-                        color: isSelected ? "#1D4ED8" : "#475569",
+                        backgroundColor: isSelected ? "#F8FAFC" : "#ffffff",
+                        color: isSelected ? "#2563EB" : "#475569",
                         fontSize: "12px",
                         fontWeight: isSelected ? 700 : 500,
                         cursor: "pointer",
-                        transition: "all 0.15s ease"
+                        transition: "all 0.15s ease",
+                        boxShadow: isSelected ? "0 1px 3px rgba(37, 99, 235, 0.1)" : "none"
                       }}
                     >
-                      <Icon size={16} />
+                      <Icon size={18} color={isSelected ? "#2563EB" : type.id === "whatsapp" ? "#25D366" : "#64748B"} />
                       <span>{type.label}</span>
                     </button>
                   );
@@ -432,16 +472,9 @@ export const LogActivityModal = ({
               </div>
             </div>
 
-            {/* Assigned Name * (Text Input Only) & Call Outcome */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: activityType === "call" ? "1fr 1fr" : "1fr",
-                gap: "12px",
-                marginBottom: "16px"
-              }}
-            >
-              {/* Assigned Name * - Text Input */}
+            {/* 2. Assigned Name * & Call Outcome */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+              {/* Assigned Name */}
               <div>
                 <label
                   style={{
@@ -455,10 +488,8 @@ export const LogActivityModal = ({
                   Assigned Name <span style={{ color: "#EF4444" }}>*</span>
                 </label>
                 <div style={{ position: "relative" }}>
-                  <User size={15} color="#94A3B8" style={{ position: "absolute", left: "12px", top: "11px" }} />
-                  <input
-                    type="text"
-                    placeholder="Enter staff member's name"
+                  <User size={15} color="#64748B" style={{ position: "absolute", left: "12px", top: "11px" }} />
+                  <select
                     value={assignedName}
                     onChange={(e) => setAssignedName(e.target.value)}
                     required
@@ -470,52 +501,61 @@ export const LogActivityModal = ({
                       fontSize: "13px",
                       backgroundColor: "#ffffff",
                       color: "#0F172A",
-                      boxSizing: "border-box"
+                      boxSizing: "border-box",
+                      cursor: "pointer"
                     }}
-                  />
+                  >
+                    {staffList.map((s) => (
+                      <option key={s.id} value={s.email ? s.email.split("@")[0] : s.name}>
+                        {s.email ? s.email.split("@")[0] : s.name}
+                      </option>
+                    ))}
+                    {staffList.length === 0 && (
+                      <option value="sale.jayesh">sale.jayesh</option>
+                    )}
+                  </select>
                 </div>
               </div>
 
-              {/* Call Outcome (Conditional: only visible when Type === "call") */}
-              {activityType === "call" && (
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      color: "#334155",
-                      marginBottom: "6px"
-                    }}
-                  >
-                    Call Outcome
-                  </label>
-                  <select
-                    value={callOutcome}
-                    onChange={(e) => setCallOutcome(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      borderRadius: "8px",
-                      border: "1px solid #CBD5E1",
-                      fontSize: "13px",
-                      backgroundColor: "#ffffff",
-                      color: "#0F172A",
-                      boxSizing: "border-box"
-                    }}
-                  >
-                    {CALL_OUTCOMES.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Call Outcome */}
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#334155",
+                    marginBottom: "6px"
+                  }}
+                >
+                  Call Outcome <span style={{ color: "#EF4444" }}>*</span>
+                </label>
+                <select
+                  value={callOutcome}
+                  onChange={(e) => setCallOutcome(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    backgroundColor: "#ffffff",
+                    color: "#0F172A",
+                    boxSizing: "border-box",
+                    cursor: "pointer"
+                  }}
+                >
+                  {CALL_OUTCOMES.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Subject (required) & Duration */}
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px", marginBottom: "16px" }}>
+            {/* 3. Subject * & Duration (Minutes) */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr", gap: "14px", marginBottom: "16px" }}>
               <div>
                 <label
                   style={{
@@ -530,7 +570,7 @@ export const LogActivityModal = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Discussed pricing & technical specs"
+                  placeholder="e.g. Discussed pricing & technical specifications"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   required
@@ -556,7 +596,7 @@ export const LogActivityModal = ({
                     marginBottom: "6px"
                   }}
                 >
-                  Duration (min)
+                  Duration (Minutes) <span style={{ color: "#EF4444" }}>*</span>
                 </label>
                 <input
                   type="number"
@@ -577,8 +617,8 @@ export const LogActivityModal = ({
               </div>
             </div>
 
-            {/* Discussion Summary / Notes */}
-            <div style={{ marginBottom: "16px" }}>
+            {/* 4. Discussion Summary / Notes */}
+            <div style={{ marginBottom: "18px" }}>
               <label
                 style={{
                   display: "block",
@@ -592,7 +632,8 @@ export const LogActivityModal = ({
               </label>
               <textarea
                 rows={3}
-                placeholder="Client agreed to preliminary quotation. Requested revision on payment terms..."
+                maxLength={1000}
+                placeholder="Enter discussion notes, specific customer requirements, objections, or commitments..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 style={{
@@ -603,19 +644,23 @@ export const LogActivityModal = ({
                   fontSize: "13px",
                   backgroundColor: "#ffffff",
                   boxSizing: "border-box",
-                  resize: "vertical"
+                  resize: "vertical",
+                  fontFamily: "inherit"
                 }}
               />
+              <div style={{ textAlign: "right", fontSize: "11px", color: "#94A3B8", marginTop: "3px" }}>
+                {notes.length}/1000
+              </div>
             </div>
 
-            {/* Schedule Next Follow-up Section */}
+            {/* 5. Schedule Next Follow-Up (Matching Image 2) */}
             <div
               style={{
-                backgroundColor: "#F8FAFC",
+                backgroundColor: "#ffffff",
                 border: "1px solid #E2E8F0",
                 borderRadius: "12px",
                 padding: "16px",
-                marginBottom: "8px"
+                marginBottom: "16px"
               }}
             >
               <label
@@ -624,7 +669,7 @@ export const LogActivityModal = ({
                   alignItems: "center",
                   gap: "8px",
                   fontSize: "13px",
-                  fontWeight: 600,
+                  fontWeight: 700,
                   color: "#1E293B",
                   cursor: "pointer",
                   userSelect: "none"
@@ -640,74 +685,227 @@ export const LogActivityModal = ({
               </label>
 
               {hasFollowUp && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "12px",
-                    marginTop: "14px",
-                    paddingTop: "12px",
-                    borderTop: "1px dashed #CBD5E1"
-                  }}
-                >
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#475569",
-                        marginBottom: "4px"
-                      }}
-                    >
-                      Follow-Up Date <span style={{ color: "#EF4444" }}>*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={followUpDate}
-                      onChange={(e) => setFollowUpDate(e.target.value)}
-                      required={hasFollowUp}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: "8px",
-                        border: "1px solid #CBD5E1",
-                        fontSize: "13px",
-                        backgroundColor: "#ffffff",
-                        boxSizing: "border-box"
-                      }}
-                    />
+                <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {/* Row 1: Date & Time */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#475569",
+                          marginBottom: "5px"
+                        }}
+                      >
+                        Follow-Up Date <span style={{ color: "#EF4444" }}>*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={followUpDate}
+                        onChange={(e) => setFollowUpDate(e.target.value)}
+                        required={hasFollowUp}
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #CBD5E1",
+                          fontSize: "13px",
+                          backgroundColor: "#ffffff",
+                          boxSizing: "border-box"
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#475569",
+                          marginBottom: "5px"
+                        }}
+                      >
+                        Follow-Up Time <span style={{ color: "#EF4444" }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="11:00 AM"
+                        value={followUpTime}
+                        onChange={(e) => setFollowUpTime(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #CBD5E1",
+                          fontSize: "13px",
+                          backgroundColor: "#ffffff",
+                          boxSizing: "border-box"
+                        }}
+                      />
+                    </div>
                   </div>
 
-                  <div>
+                  {/* Row 2: Next Action & Priority */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#475569",
+                          marginBottom: "5px"
+                        }}
+                      >
+                        Next Action <span style={{ color: "#EF4444" }}>*</span>
+                      </label>
+                      <select
+                        value={nextAction}
+                        onChange={(e) => setNextAction(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #CBD5E1",
+                          fontSize: "13px",
+                          backgroundColor: "#ffffff",
+                          boxSizing: "border-box"
+                        }}
+                      >
+                        {NEXT_ACTION_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#475569",
+                          marginBottom: "5px"
+                        }}
+                      >
+                        Priority
+                      </label>
+                      <select
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #CBD5E1",
+                          fontSize: "13px",
+                          backgroundColor: "#ffffff",
+                          boxSizing: "border-box"
+                        }}
+                      >
+                        <option value="High">🔴 High</option>
+                        <option value="Medium">🟡 Medium</option>
+                        <option value="Low">⚪ Low</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Checkbox: Create reminder */}
+                  <div style={{ marginTop: "2px" }}>
                     <label
                       style={{
-                        display: "block",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "8px",
                         fontSize: "12px",
                         fontWeight: 600,
-                        color: "#475569",
-                        marginBottom: "4px"
+                        color: "#334155",
+                        cursor: "pointer"
                       }}
                     >
-                      Follow-Up Time (HH:mm)
+                      <input
+                        type="checkbox"
+                        checked={createReminder}
+                        onChange={(e) => setCreateReminder(e.target.checked)}
+                        style={{ marginTop: "2px", accentColor: "#2563EB", cursor: "pointer" }}
+                      />
+                      <div>
+                        <span>Create reminder for assigned executive</span>
+                        <div style={{ fontSize: "11px", fontWeight: 400, color: "#64748B", marginTop: "1px" }}>
+                          A reminder will be created for the selected date and time.
+                        </div>
+                      </div>
                     </label>
-                    <input
-                      type="time"
-                      value={followUpTime}
-                      onChange={(e) => setFollowUpTime(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: "8px",
-                        border: "1px solid #CBD5E1",
-                        fontSize: "13px",
-                        backgroundColor: "#ffffff",
-                        boxSizing: "border-box"
-                      }}
-                    />
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* 6. Attachments (Optional) (Matching Image 2) */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                border: "1px dashed #CBD5E1",
+                borderRadius: "12px",
+                padding: "16px",
+                marginBottom: "8px"
+              }}
+            >
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "10px" }}>
+                Attachments (Optional)
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleFileUpload}
+                style={{ display: "none" }}
+              />
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  backgroundColor: "#F8FAFC",
+                  border: "1px solid #F1F5F9"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      backgroundColor: "#EFF6FF",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#2563EB"
+                    }}
+                  >
+                    <Paperclip size={16} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: "#1E293B" }}>
+                      Click to upload files or drag & drop
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      PDF, Images, Excel, Word (Max 10 MB each)
+                    </div>
+                  </div>
+                </div>
+                <div style={{ fontSize: "11px", color: "#94A3B8" }}>
+                  {attachments.length} files attached
+                </div>
+              </div>
             </div>
           </form>
         </div>
