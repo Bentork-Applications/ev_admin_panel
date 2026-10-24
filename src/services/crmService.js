@@ -165,8 +165,101 @@ export const crmService = {
   },
 
   // ==================== ACTIVITIES ====================
-  logActivity: async (activityData) => {
-    return await apiClient.post("/crm/activities/log", activityData);
+  logActivity: async (activityData = {}) => {
+    // 1. Normalize activity type (call, meeting, email, follow_up, note)
+    const rawType = (activityData.activityType || "").toLowerCase().trim();
+    let activityType = "note";
+    let extraPrefix = "";
+
+    if (["call", "meeting", "email", "follow_up", "note"].includes(rawType)) {
+      activityType = rawType;
+    } else if (rawType === "whatsapp") {
+      activityType = "note";
+      extraPrefix = "[WhatsApp] ";
+    }
+
+    // 2. Format subject & notes
+    const rawSubject = (activityData.subject || "").trim();
+    const subject = rawSubject || `${activityType.charAt(0).toUpperCase() + activityType.slice(1)} Activity`;
+    let notes = (activityData.notes || "").trim();
+    if (extraPrefix && !notes.startsWith(extraPrefix)) {
+      notes = `${extraPrefix}${notes}`;
+    }
+
+    // 3. Clean numeric entity IDs (must be positive integer, else omit)
+    const cleanId = (val) => {
+      const num = Number(val);
+      return Number.isInteger(num) && num > 0 ? num : undefined;
+    };
+
+    const leadId = cleanId(activityData.leadId);
+    const companyId = cleanId(activityData.companyId);
+    const contactId = cleanId(activityData.contactId);
+    const opportunityId = cleanId(activityData.opportunityId);
+
+    // 4. Sanitize durationMinutes
+    let durationMinutes = undefined;
+    if (activityData.durationMinutes !== undefined && activityData.durationMinutes !== null && activityData.durationMinutes !== "") {
+      const dur = parseInt(activityData.durationMinutes, 10);
+      if (!isNaN(dur) && dur >= 0) {
+        durationMinutes = dur;
+      }
+    }
+
+    // 5. Sanitize followUpDate (strictly YYYY-MM-DD for backend LocalDate.parse)
+    let followUpDate = undefined;
+    if (activityData.followUpDate) {
+      const rawDateStr = String(activityData.followUpDate).trim();
+      const match = rawDateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match) {
+        followUpDate = match[1];
+      }
+    }
+
+    // 6. Sanitize activityDate (strictly YYYY-MM-DD'T'HH:mm:ss for backend LocalDateTime.parse)
+    // Note: If invalid or not passed, omit so backend defaults safely to LocalDateTime.now()
+    let activityDate = undefined;
+    if (activityData.activityDate) {
+      if (activityData.activityDate instanceof Date) {
+        activityDate = activityData.activityDate.toISOString().split(".")[0];
+      } else if (typeof activityData.activityDate === "string") {
+        const cleanStr = activityData.activityDate.trim().replace("Z", "");
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(cleanStr)) {
+          activityDate = cleanStr;
+        } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+/.test(cleanStr)) {
+          activityDate = cleanStr.split(".")[0];
+        }
+      }
+    }
+
+    // 7. Sanitize callOutcome (only valid if activityType is 'call')
+    let callOutcome = undefined;
+    if (activityType === "call" && activityData.callOutcome) {
+      const outcome = String(activityData.callOutcome).toLowerCase().trim();
+      const validOutcomes = ["interested", "call_back", "meeting_scheduled", "no_answer", "not_interested", "wrong_number"];
+      if (validOutcomes.includes(outcome)) {
+        callOutcome = outcome;
+      } else {
+        callOutcome = "interested";
+      }
+    }
+
+    // Build strict DTO matching backend LogActivityDTO.java
+    const payload = {
+      activityType,
+      subject,
+      ...(notes ? { notes } : {}),
+      ...(callOutcome ? { callOutcome } : {}),
+      ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+      ...(leadId !== undefined ? { leadId } : {}),
+      ...(companyId !== undefined ? { companyId } : {}),
+      ...(contactId !== undefined ? { contactId } : {}),
+      ...(opportunityId !== undefined ? { opportunityId } : {}),
+      ...(followUpDate ? { followUpDate } : {}),
+      ...(activityDate ? { activityDate } : {})
+    };
+
+    return await apiClient.post("/crm/activities/log", payload);
   },
 
   getActivitySummary: async (myOnly = false, adminId = null) => {
@@ -241,7 +334,26 @@ export const crmService = {
 
   // ==================== BULK LEAD ACTIONS & IMPORT ====================
   bulkAssignLeads: async (leadIds, targetOwnerAdminId) => {
-    return await apiClient.post("/crm/leads/bulk-assign", { leadIds, targetOwnerAdminId });
+    // 1. Sanitize and validate lead IDs
+    const rawIds = Array.isArray(leadIds) ? leadIds : [leadIds];
+    const sanitizedLeadIds = rawIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    if (sanitizedLeadIds.length === 0) {
+      throw new Error("At least one valid lead ID is required for assignment.");
+    }
+
+    // 2. Sanitize and validate target owner admin ID
+    const sanitizedOwnerId = Number(targetOwnerAdminId);
+    if (!Number.isInteger(sanitizedOwnerId) || sanitizedOwnerId <= 0) {
+      throw new Error("Please select a valid sales administrator.");
+    }
+
+    return await apiClient.post("/crm/leads/bulk-assign", {
+      leadIds: sanitizedLeadIds,
+      targetOwnerAdminId: sanitizedOwnerId
+    });
   },
 
   bulkTagLeads: async (leadIds, tags) => {

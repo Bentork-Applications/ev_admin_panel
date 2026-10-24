@@ -531,9 +531,10 @@ export default function CrmNewCallPage() {
         }
 
         // Persist Lead Owner assignment if selected
-        if (res?.id && formData.assignTo) {
+        const assignAdminId = Number(formData.assignTo);
+        if (res?.id && Number.isInteger(assignAdminId) && assignAdminId > 0) {
           try {
-            await crmService.bulkAssignLeads([res.id], Number(formData.assignTo));
+            await crmService.bulkAssignLeads([res.id], assignAdminId);
           } catch (assignErr) {
             console.warn("Failed to assign lead owner:", assignErr);
           }

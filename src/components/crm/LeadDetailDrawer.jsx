@@ -280,8 +280,7 @@ export const LeadDetailDrawer = ({
           contactId: lead?.contactId || null,
           activityType: "note",
           subject: `Status changed to ${newStatus.toUpperCase()}`,
-          notes: `Lead status changed from ${currentStatus} to ${newStatus.toUpperCase()}`,
-          activityDate: new Date().toISOString()
+          notes: `Lead status changed from ${currentStatus} to ${newStatus.toUpperCase()}`
         });
       } catch (actErr) {
         console.warn("Failed to log status activity:", actErr);
@@ -333,8 +332,7 @@ export const LeadDetailDrawer = ({
           contactId: lead?.contactId || null,
           activityType: "note",
           subject: "Converted to Opportunity",
-          notes: `Lead converted to Opportunity ${opp?.opportunityNumber || opp?.id || ""}`,
-          activityDate: new Date().toISOString()
+          notes: `Lead converted to Opportunity ${opp?.opportunityNumber || opp?.id || ""}`
         });
       } catch (actErr) {
         console.warn("Failed to log convert activity:", actErr);
@@ -406,8 +404,9 @@ export const LeadDetailDrawer = ({
       }
 
       // 2. Update Lead Owner if changed
-      if (editFormData.ownerAdminId && String(editFormData.ownerAdminId) !== String(lead?.ownerAdminId)) {
-        await crmService.bulkAssignLeads([leadId], Number(editFormData.ownerAdminId));
+      const newOwnerId = Number(editFormData.ownerAdminId);
+      if (Number.isInteger(newOwnerId) && newOwnerId > 0 && String(newOwnerId) !== String(lead?.ownerAdminId)) {
+        await crmService.bulkAssignLeads([leadId], newOwnerId);
       }
 
       // 3. Log an activity note for this edit
@@ -418,8 +417,7 @@ export const LeadDetailDrawer = ({
           contactId: lead?.contactId || null,
           activityType: "note",
           subject: "Lead Details Updated",
-          notes: `Updated lead details. Company: ${editFormData.companyName || "-"}, Contact: ${editFormData.contactName || "-"}, Industry: ${editFormData.industry || "-"}`,
-          activityDate: new Date().toISOString()
+          notes: `Updated lead details. Company: ${editFormData.companyName || "-"}, Contact: ${editFormData.contactName || "-"}, Industry: ${editFormData.industry || "-"}`
         });
       } catch (actErr) {
         console.warn("Could not log edit activity:", actErr);

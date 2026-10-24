@@ -186,6 +186,7 @@ export const LogActivityModal = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
 
     if (!subject.trim()) {
       setError("Please enter a subject for this activity");
@@ -265,9 +266,11 @@ export const LogActivityModal = ({
 
       await crmService.logActivity(payload);
 
-      if (effectiveLeadId && matchedStaffId) {
+      const validLeadId = Number(effectiveLeadId);
+      const validStaffId = Number(matchedStaffId);
+      if (Number.isInteger(validLeadId) && validLeadId > 0 && Number.isInteger(validStaffId) && validStaffId > 0) {
         try {
-          await crmService.bulkAssignLeads([Number(effectiveLeadId)], Number(matchedStaffId));
+          await crmService.bulkAssignLeads([validLeadId], validStaffId);
         } catch (syncErr) {
           console.warn("Could not synchronize lead owner admin:", syncErr);
         }

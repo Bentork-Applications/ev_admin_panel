@@ -262,14 +262,31 @@ export default function CrmLeadsPage() {
   // Bulk Assign Handler
   const handleBulkAssignSubmit = async (e) => {
     e.preventDefault();
-    if (!targetStaffId) {
+    if (assigningLoading) return;
+
+    const sanitizedIds = (selectedIds || [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    if (sanitizedIds.length === 0) {
+      showToast("Please select at least one lead to assign", "error");
+      return;
+    }
+
+    const adminId = Number(targetStaffId);
+    if (!Number.isInteger(adminId) || adminId <= 0) {
       showToast("Please select a sales administrator", "error");
       return;
     }
+
     setAssigningLoading(true);
     try {
-      const res = await crmService.bulkAssignLeads(selectedIds, Number(targetStaffId));
-      showToast(typeof res === "string" ? res : `Successfully assigned ${selectedIds.length} lead(s)`, "success");
+      const res = await crmService.bulkAssignLeads(sanitizedIds, adminId);
+      const successCount = res?.successCount ?? sanitizedIds.length;
+      showToast(
+        typeof res === "string" ? res : `Successfully assigned ${successCount} lead(s)`,
+        "success"
+      );
       setShowBulkAssignModal(false);
       setSelectedIds([]);
       setTargetStaffId("");
