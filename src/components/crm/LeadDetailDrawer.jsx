@@ -24,12 +24,26 @@ import {
   RotateCcw,
   AlertTriangle,
   CheckCircle2,
-  Lock
+  Lock,
+  MessageSquare,
+  Send,
+  FileSpreadsheet,
+  Paperclip,
+  Eye,
+  Download,
+  Film,
+  Image as ImageIcon
 } from "lucide-react";
 import { crmService } from "../../services/crmService";
 import { staffService } from "../../services/staffService";
 import { LeadStatusBadge } from "./CrmBadge";
 import { ActivityTimeline } from "./ActivityTimeline";
+import { LogLeadMessageModal } from "./LogLeadMessageModal";
+import {
+  parseMessageAndAttachments,
+  formatFileSize,
+  getSessionAttachment
+} from "../../utils/crmAttachmentUtils";
 
 const formatINR = (amount) => {
   if (amount == null || amount === "" || isNaN(Number(amount))) return "—";
@@ -111,6 +125,8 @@ export const LeadDetailDrawer = ({
   // Confirmation dialog modal & conversion state
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [convertedOpp, setConvertedOpp] = useState(null);
+  const [showLogMessageModal, setShowLogMessageModal] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState(null);
 
   const fetchLeadDetails = useCallback(async () => {
     if (!leadId) return;
@@ -226,8 +242,6 @@ export const LeadDetailDrawer = ({
       fetchLeadDetails();
     }
   }, [isOpen, leadId, fetchLeadDetails]);
-
-  if (!isOpen) return null;
 
   const currentStatus = (lead?.status || "NEW").toUpperCase();
 
@@ -347,9 +361,6 @@ export const LeadDetailDrawer = ({
       setUpdating(false);
     }
   };
-
-  const handleStatusChange = requestStatusChange;
-  const handleConvert = requestConvert;
 
   // Start Edit mode
   const handleStartEdit = () => {
@@ -516,6 +527,51 @@ export const LeadDetailDrawer = ({
     return rows;
   }, [lead, activities, currentStatus]);
 
+  // Source Excel file name helper (from lead notes, activity metadata, or localStorage)
+  const sourceFileName = useMemo(() => {
+    if (!lead) return "";
+    const match = (lead.notes || "").match(/\[File:\s*([^\]]+)\]/i);
+    if (match && match[1]) return match[1].trim();
+
+    for (const act of activities || []) {
+      const actMatch = (act.notes || act.subject || "").match(/\[File:\s*([^\]]+)\]/i);
+      if (actMatch && actMatch[1]) return actMatch[1].trim();
+    }
+
+    try {
+      const sessions = JSON.parse(localStorage.getItem("crm_excel_imports") || "[]");
+      const phone = String(lead.contactPhone || lead.phone || "").replace(/\D/g, "").slice(-10);
+      if (phone) {
+        const sess = sessions.find((s) => Array.isArray(s.phones) && s.phones.includes(phone));
+        if (sess && sess.fileName) return sess.fileName;
+      }
+    } catch {
+      // ignore
+    }
+    return "";
+  }, [lead, activities]);
+
+  // Chronologically sorted messages recorded for this lead
+  const messageHistory = useMemo(() => {
+    if (!activities || !Array.isArray(activities)) return [];
+    return activities
+      .filter((a) => {
+        const type = (a.activityType || "").toLowerCase();
+        const sub = (a.subject || "").toLowerCase();
+        const not = (a.notes || "").toLowerCase();
+        return (
+          type.includes("whatsapp") ||
+          type.includes("campaign") ||
+          type.includes("email") ||
+          sub.includes("message") ||
+          sub.includes("broadcast") ||
+          not.includes("[file:") ||
+          (type === "note" && (sub.includes("message") || not.includes("message") || not.includes("sent")))
+        );
+      })
+      .sort((a, b) => new Date(a.activityDate || a.createdAt || 0) - new Date(b.activityDate || b.createdAt || 0));
+  }, [activities]);
+
   // Stepper helper
   const getStepStatus = (stepName) => {
     const s = currentStatus.toLowerCase();
@@ -540,6 +596,8 @@ export const LeadDetailDrawer = ({
     }
     return "pending";
   };
+
+  if (!isOpen) return null;
 
   return (
     <div
@@ -1794,6 +1852,391 @@ export const LeadDetailDrawer = ({
               </div>
             </div>
 
+            {/* 4.5 Recorded Message History Section */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                border: "1px solid #E2E8F0",
+                borderRadius: "12px",
+                padding: "16px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)"
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "14px",
+                  flexWrap: "wrap",
+                  gap: "10px"
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <MessageSquare size={16} color="#2563EB" />
+                    <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
+                      Message History
+                    </h4>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        backgroundColor: "#EFF6FF",
+                        color: "#2563EB",
+                        padding: "2px 7px",
+                        borderRadius: "10px"
+                      }}
+                    >
+                      {messageHistory.length}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748B", marginTop: "3px" }}>
+                    <span>Contact: <strong>{lead.contactName || "—"}</strong></span>
+                    <span style={{ margin: "0 6px" }}>•</span>
+                    <span>Mobile: <strong>{lead.contactPhone || lead.phone || "—"}</strong></span>
+                    {sourceFileName && (
+                      <>
+                        <span style={{ margin: "0 6px" }}>•</span>
+                        <span style={{ color: "#059669", fontWeight: 600 }}>File: {sourceFileName}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowLogMessageModal(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 12px",
+                    borderRadius: "8px",
+                    backgroundColor: "#2563EB",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 2px rgba(37, 99, 235, 0.2)"
+                  }}
+                >
+                  <Send size={13} />
+                  <span>+ Record Message</span>
+                </button>
+              </div>
+
+              {messageHistory.length === 0 ? (
+                <div
+                  style={{
+                    padding: "24px 16px",
+                    textAlign: "center",
+                    backgroundColor: "#F8FAFC",
+                    borderRadius: "10px",
+                    border: "1px dashed #CBD5E1"
+                  }}
+                >
+                  <MessageSquare size={22} color="#94A3B8" style={{ margin: "0 auto 6px" }} />
+                  <div style={{ fontSize: "13px", color: "#64748B", fontWeight: 500 }}>
+                    No messages recorded yet for this lead.
+                  </div>
+                  <div style={{ fontSize: "11.5px", color: "#94A3B8", marginTop: "2px" }}>
+                    Click "+ Record Message" to log message content and timestamps.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {messageHistory.map((msg, index) => {
+                    const rawType = (msg.activityType || "note").toLowerCase();
+                    const isWhatsApp = rawType.includes("whatsapp");
+                    const isCampaign = rawType.includes("campaign");
+                    const isEmail = rawType.includes("email");
+
+                    const badgeBg = isWhatsApp ? "#ECFDF5" : isCampaign ? "#FAF5FF" : isEmail ? "#FDF2F8" : "#F1F5F9";
+                    const badgeColor = isWhatsApp ? "#059669" : isCampaign ? "#7E22CE" : isEmail ? "#BE185D" : "#475569";
+                    const badgeBorder = isWhatsApp ? "#A7F3D0" : isCampaign ? "#E9D5FF" : isEmail ? "#FBCFE8" : "#E2E8F0";
+                    const typeLabel = isWhatsApp ? "WhatsApp Outbound" : isCampaign ? "Campaign Message" : isEmail ? "Email" : "Message Note";
+
+                    const msgFileMatch = (msg.notes || msg.subject || "").match(/\[File:\s*([^\]]+)\]/i);
+                    const msgFileName = msgFileMatch ? msgFileMatch[1].trim() : sourceFileName;
+
+                    const { cleanText, attachments: msgAttachments } = parseMessageAndAttachments(msg.notes);
+                    const recipientContact = msg.contactName || lead.contactName || lead.title || "—";
+                    const recipientPhone = msg.contactPhone || lead.contactPhone || lead.phone || "—";
+
+                    return (
+                      <div
+                        key={msg.id || index}
+                        style={{
+                          padding: "14px 16px",
+                          borderRadius: "10px",
+                          backgroundColor: "#F8FAFC",
+                          border: "1px solid #E2E8F0",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "10px"
+                        }}
+                      >
+                        {/* Message Header */}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            flexWrap: "wrap",
+                            gap: "8px"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                backgroundColor: badgeBg,
+                                color: badgeColor,
+                                border: `1px solid ${badgeBorder}`
+                              }}
+                            >
+                              {typeLabel}
+                            </span>
+                            {msg.subject && (
+                              <span style={{ fontSize: "12.5px", fontWeight: 600, color: "#1E293B" }}>
+                                {msg.subject}
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "11.5px", color: "#64748B" }}>
+                            {msgFileName && (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "#059669", fontWeight: 500 }}>
+                                <FileSpreadsheet size={12} />
+                                {msgFileName}
+                              </span>
+                            )}
+                            <span style={{ whiteSpace: "nowrap" }}>
+                              {formatDate(msg.activityDate || msg.createdAt)}
+                            </span>
+                            {msg.performedByAdminName && (
+                              <span style={{ color: "#475569", fontWeight: 500 }}>
+                                by {msg.performedByAdminName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Recipient Details Pill */}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                            fontSize: "11.5px",
+                            color: "#475569",
+                            backgroundColor: "#F1F5F9",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            width: "fit-content"
+                          }}
+                        >
+                          <span>Recipient: <strong style={{ color: "#0F172A" }}>{recipientContact}</strong></span>
+                          <span>•</span>
+                          <span>Mobile: <strong style={{ fontFamily: "monospace", color: "#0F172A" }}>{recipientPhone}</strong></span>
+                        </div>
+
+                        {/* Message Text Body */}
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: "#334155",
+                            lineHeight: "1.55",
+                            backgroundColor: "#ffffff",
+                            padding: "10px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid #E2E8F0",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word"
+                          }}
+                        >
+                          {cleanText || "No message text recorded"}
+                        </div>
+
+                        {/* Attachments Section - ONLY shown if attachments exist for this message */}
+                        {msgAttachments && msgAttachments.length > 0 && (
+                          <div
+                            style={{
+                              backgroundColor: "#ffffff",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: "8px",
+                              padding: "10px 12px"
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                fontSize: "11.5px",
+                                fontWeight: 700,
+                                color: "#334155",
+                                marginBottom: "8px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.03em"
+                              }}
+                            >
+                              <Paperclip size={13} color="#2563EB" />
+                              <span>Attachments ({msgAttachments.length})</span>
+                            </div>
+
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
+                                gap: "8px"
+                              }}
+                            >
+                              {msgAttachments.map((att, attIdx) => {
+                                const cached = getSessionAttachment(att.id);
+                                const effectiveUrl = att.thumbnail || (cached ? cached.objectUrl : null) || att.objectUrl || att.previewUrl;
+                                const isImg = att.category === "image";
+                                const isPdf = att.category === "pdf";
+                                const isVid = att.category === "video";
+                                const isDoc = att.category === "document";
+
+                                const handleAction = () => {
+                                  if (isImg) {
+                                    setPreviewAttachment({ ...att, effectiveUrl });
+                                  } else if (cached?.objectUrl || att.objectUrl) {
+                                    const urlToOpen = cached?.objectUrl || att.objectUrl;
+                                    const link = document.createElement("a");
+                                    link.href = urlToOpen;
+                                    link.download = att.name;
+                                    link.target = "_blank";
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                  } else {
+                                    showToast?.(
+                                      `Attachment "${att.name}" (${formatFileSize(att.size)}) is recorded in CRM message audit trail. Full external cloud storage endpoint is pending backend integration.`,
+                                      "info"
+                                    );
+                                  }
+                                };
+
+                                return (
+                                  <div
+                                    key={att.id || attIdx}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      padding: "8px 10px",
+                                      borderRadius: "8px",
+                                      border: "1px solid #E2E8F0",
+                                      backgroundColor: "#F8FAFC",
+                                      gap: "8px"
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+                                      {isImg && effectiveUrl ? (
+                                        <div
+                                          onClick={handleAction}
+                                          style={{
+                                            width: "36px",
+                                            height: "36px",
+                                            borderRadius: "6px",
+                                            overflow: "hidden",
+                                            flexShrink: 0,
+                                            cursor: "pointer",
+                                            border: "1px solid #CBD5E1",
+                                            backgroundColor: "#E2E8F0"
+                                          }}
+                                          title="Click to view full image"
+                                        >
+                                          <img
+                                            src={effectiveUrl}
+                                            alt={att.name}
+                                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <div
+                                          style={{
+                                            width: "32px",
+                                            height: "32px",
+                                            borderRadius: "6px",
+                                            backgroundColor: isPdf ? "#FEF2F2" : isDoc ? "#ECFDF5" : isVid ? "#F5F3FF" : "#F1F5F9",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            flexShrink: 0
+                                          }}
+                                        >
+                                          {isPdf && <FileText size={16} color="#DC2626" />}
+                                          {isDoc && <FileSpreadsheet size={16} color="#059669" />}
+                                          {isVid && <Film size={16} color="#7C3AED" />}
+                                          {!isPdf && !isDoc && !isVid && <FileText size={16} color="#64748B" />}
+                                        </div>
+                                      )}
+
+                                      <div style={{ overflow: "hidden" }}>
+                                        <div
+                                          style={{
+                                            fontSize: "12px",
+                                            fontWeight: 600,
+                                            color: "#1E293B",
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            maxWidth: "130px"
+                                          }}
+                                          title={att.name}
+                                        >
+                                          {att.name}
+                                        </div>
+                                        <div style={{ fontSize: "10.5px", color: "#64748B" }}>
+                                          {formatFileSize(att.size)}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={handleAction}
+                                      style={{
+                                        border: "none",
+                                        backgroundColor: "#EFF6FF",
+                                        color: "#2563EB",
+                                        padding: "4px 8px",
+                                        borderRadius: "6px",
+                                        fontSize: "11px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        flexShrink: 0
+                                      }}
+                                      title={isImg ? "View image" : "Open or download file"}
+                                    >
+                                      {isImg ? <Eye size={12} /> : <Download size={12} />}
+                                      <span>{isImg ? "View" : isPdf ? "Open" : "Get"}</span>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* 5. Activity Timeline */}
             <ActivityTimeline
               activities={activities}
@@ -1806,6 +2249,29 @@ export const LeadDetailDrawer = ({
           </div>
         )}
       </div>
+
+      {/* Log Message Modal for this Lead */}
+      {showLogMessageModal && lead && (
+        <LogLeadMessageModal
+          isOpen={showLogMessageModal}
+          onClose={() => setShowLogMessageModal(false)}
+          selectedLeads={[
+            {
+              id: lead.id,
+              contactName: lead.contactName || lead.title,
+              contactPhone: lead.contactPhone || lead.phone,
+              companyName: lead.companyName,
+              companyId: lead.companyId,
+              contactId: lead.contactId
+            }
+          ]}
+          onSuccess={() => {
+            fetchLeadDetails();
+            showToast?.("Message recorded successfully", "success");
+          }}
+          showToast={showToast}
+        />
+      )}
 
       {/* Confirmation Dialog Modal */}
       {confirmDialog && (
@@ -1917,6 +2383,148 @@ export const LeadDetailDrawer = ({
                 }}
               >
                 {updating ? "Processing..." : confirmDialog.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox / Attachment Preview Modal */}
+      {previewAttachment && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.85)",
+            backdropFilter: "blur(6px)",
+            zIndex: 1450,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px"
+          }}
+          onClick={() => setPreviewAttachment(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              maxWidth: "720px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "hidden",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
+              display: "flex",
+              flexDirection: "column"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1px solid #E2E8F0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                backgroundColor: "#F8FAFC"
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
+                  {previewAttachment.name}
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#64748B", marginTop: "2px" }}>
+                  {(previewAttachment.category || "").toUpperCase()} • {formatFileSize(previewAttachment.size)}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#94A3B8",
+                  cursor: "pointer",
+                  padding: "6px",
+                  borderRadius: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div
+              style={{
+                padding: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#0F172A",
+                overflowY: "auto",
+                maxHeight: "70vh"
+              }}
+            >
+              {previewAttachment.category === "image" ? (
+                <img
+                  src={previewAttachment.effectiveUrl || previewAttachment.thumbnail}
+                  alt={previewAttachment.name}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "65vh",
+                    borderRadius: "8px",
+                    objectFit: "contain"
+                  }}
+                />
+              ) : previewAttachment.category === "video" && previewAttachment.effectiveUrl ? (
+                <video
+                  controls
+                  autoPlay
+                  src={previewAttachment.effectiveUrl}
+                  style={{ maxWidth: "100%", maxHeight: "65vh", borderRadius: "8px" }}
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: "30px", color: "#F8FAFC" }}>
+                  <FileText size={48} color="#94A3B8" style={{ margin: "0 auto 12px" }} />
+                  <div style={{ fontSize: "14px", fontWeight: 600 }}>{previewAttachment.name}</div>
+                  <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "4px" }}>
+                    {formatFileSize(previewAttachment.size)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: "12px 20px",
+                borderTop: "1px solid #E2E8F0",
+                display: "flex",
+                justifyContent: "flex-end",
+                backgroundColor: "#F8FAFC",
+                gap: "10px"
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  backgroundColor: "#ffffff",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  color: "#475569",
+                  cursor: "pointer"
+                }}
+              >
+                Close
               </button>
             </div>
           </div>

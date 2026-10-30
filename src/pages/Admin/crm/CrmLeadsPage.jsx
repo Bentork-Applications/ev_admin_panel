@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   Search,
   Plus,
@@ -27,7 +27,8 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Mail,
-  Phone
+  Phone,
+  MessageSquare
 } from "lucide-react";
 import { crmService } from "../../../services/crmService";
 import { staffService } from "../../../services/staffService";
@@ -36,6 +37,7 @@ import { LeadStatusBadge } from "../../../components/crm/CrmBadge";
 import { LeadDetailDrawer } from "../../../components/crm/LeadDetailDrawer";
 import { LeadSummaryCards } from "../../../components/crm/LeadSummaryCards";
 import { BulkLeadUploadModal } from "../../../components/crm/BulkLeadUploadModal";
+import { LogLeadMessageModal } from "../../../components/crm/LogLeadMessageModal";
 
 const SUB_VIEWS = [
   { id: "all", label: "All leads" },
@@ -97,6 +99,9 @@ const getFollowUpInfo = (lead) => {
 
 export default function CrmLeadsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -134,6 +139,38 @@ export default function CrmLeadsPage() {
   // Modals & Drawers
   const [selectedLeadId, setSelectedLeadId] = useState(null);
 
+  // Read URL query params and navigation state (e.g. from Companies & Contacts navigation)
+  useEffect(() => {
+    const leadIdParam = searchParams.get("leadId") || location.state?.selectedLeadId;
+    if (leadIdParam) {
+      setSelectedLeadId(Number(leadIdParam));
+    }
+    const companyParam = searchParams.get("company") || searchParams.get("search") || location.state?.searchQuery || location.state?.companyName;
+    if (companyParam) {
+      setSearchQuery(companyParam);
+    }
+    const subViewParam = searchParams.get("view") || location.state?.subView;
+    if (subViewParam && ["all", "my", "indiamart", "unassigned", "duplicates"].includes(subViewParam)) {
+      setActiveSubView(subViewParam);
+    }
+  }, [searchParams, location.state]);
+
+  const handleOpenLeadDrawer = useCallback((id) => {
+    setSelectedLeadId(id);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("leadId", String(id));
+    setSearchParams(newParams, { replace: false });
+  }, [searchParams, setSearchParams]);
+
+  const handleCloseLeadDrawer = useCallback(() => {
+    setSelectedLeadId(null);
+    if (searchParams.has("leadId")) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete("leadId");
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   // IndiaMART sync state
   const [syncingIndiaMart, setSyncingIndiaMart] = useState(false);
 
@@ -150,6 +187,10 @@ export default function CrmLeadsPage() {
 
   // Bulk CSV Upload Modal state
   const [showCsvModal, setShowCsvModal] = useState(false);
+
+  // Message Logging Modal state
+  const [showBulkLogMessageModal, setShowBulkLogMessageModal] = useState(false);
+  const [leadToLogMessage, setLeadToLogMessage] = useState(null);
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -1346,6 +1387,32 @@ export default function CrmLeadsPage() {
         </button>
 
         <button
+          onClick={() => {
+            if (selectedIds.length === 0) {
+              showToast("Please select at least one lead to record message for", "error");
+              return;
+            }
+            setShowBulkLogMessageModal(true);
+          }}
+          style={{
+            padding: "7px 14px",
+            borderRadius: "6px",
+            backgroundColor: selectedIds.length > 0 ? "#EFF6FF" : "#F8FAFC",
+            border: selectedIds.length > 0 ? "1px solid #93C5FD" : "1px solid #CBD5E1",
+            fontSize: "12.5px",
+            fontWeight: 600,
+            color: selectedIds.length > 0 ? "#1D4ED8" : "#64748B",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px"
+          }}
+        >
+          <MessageSquare size={14} />
+          <span>Log Message {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}</span>
+        </button>
+
+        <button
           onClick={() => setShowCsvModal(true)}
           style={{
             padding: "7px 14px",
@@ -1689,22 +1756,45 @@ export default function CrmLeadsPage() {
                       </td>
 
                       {/* Actions */}
-                      <td style={{ padding: "12px 14px", textAlign: "right" }}>
-                        <button
-                          onClick={() => setSelectedLeadId(lead.id)}
-                          style={{
-                            padding: "4px 10px",
-                            borderRadius: "6px",
-                            backgroundColor: "#F1F5F9",
-                            color: "#2563EB",
-                            border: "1px solid #CBD5E1",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            cursor: "pointer"
-                          }}
-                        >
-                          View
-                        </button>
+                      <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                          <button
+                            onClick={() => setLeadToLogMessage(lead)}
+                            title="Log message history for this lead"
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              backgroundColor: "#EFF6FF",
+                              color: "#2563EB",
+                              border: "1px solid #BFDBFE",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px"
+                            }}
+                          >
+                            <MessageSquare size={13} />
+                            <span>Message</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenLeadDrawer(lead.id)}
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              backgroundColor: "#F1F5F9",
+                              color: "#0F172A",
+                              border: "1px solid #CBD5E1",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer"
+                            }}
+                          >
+                            View
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2204,8 +2294,35 @@ export default function CrmLeadsPage() {
         <LeadDetailDrawer
           leadId={selectedLeadId}
           isOpen={!!selectedLeadId}
-          onClose={() => setSelectedLeadId(null)}
+          onClose={handleCloseLeadDrawer}
           onLeadUpdated={fetchLeads}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Bulk Message Log Modal */}
+      {showBulkLogMessageModal && (
+        <LogLeadMessageModal
+          isOpen={showBulkLogMessageModal}
+          onClose={() => setShowBulkLogMessageModal(false)}
+          selectedLeads={leads.filter((l) => selectedIds.includes(l.id))}
+          onSuccess={() => {
+            fetchLeads();
+            setSelectedIds([]);
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Single Row Message Log Modal */}
+      {leadToLogMessage && (
+        <LogLeadMessageModal
+          isOpen={!!leadToLogMessage}
+          onClose={() => setLeadToLogMessage(null)}
+          selectedLeads={[leadToLogMessage]}
+          onSuccess={() => {
+            fetchLeads();
+          }}
           showToast={showToast}
         />
       )}

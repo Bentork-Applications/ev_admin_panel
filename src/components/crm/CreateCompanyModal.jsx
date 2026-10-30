@@ -1,16 +1,31 @@
 import React, { useState, useEffect } from "react";
-import { X, Building2, MapPin, Phone, Mail, Globe, FileText } from "lucide-react";
+import { X, Building2, MapPin, Phone, Mail, Globe, FileText, AlertCircle } from "lucide-react";
 import { crmService } from "../../services/crmService";
 
 const COMPANY_TYPES = [
   { id: "PRIVATE_LIMITED", label: "Private Limited" },
   { id: "PUBLIC_LIMITED", label: "Public Limited" },
+  { id: "LLP", label: "LLP" },
   { id: "PARTNERSHIP", label: "Partnership" },
   { id: "PROPRIETORSHIP", label: "Proprietorship" },
-  { id: "LLP", label: "LLP" },
   { id: "DEALER", label: "Dealer / Distributor" },
   { id: "OEM", label: "OEM Manufacturer" },
+  { id: "FLEET_OPERATOR", label: "Fleet Operator / Logistics" },
+  { id: "END_USER", label: "End User" },
   { id: "OTHER", label: "Other" }
+];
+
+const LEAD_SOURCES = [
+  { id: "website", label: "Website Inquiry" },
+  { id: "referral", label: "Referral / Client" },
+  { id: "phone_call", label: "Phone Call / Cold Outreach" },
+  { id: "indiamart", label: "IndiaMART" },
+  { id: "exhibition", label: "Exhibition / Trade Fair" },
+  { id: "walk_in", label: "Walk-In" },
+  { id: "social_media", label: "Social Media / LinkedIn" },
+  { id: "whatsapp_campaign", label: "WhatsApp Campaign" },
+  { id: "campaign_import", label: "Campaign Import" },
+  { id: "direct", label: "Direct / Other" }
 ];
 
 export const CreateCompanyModal = ({
@@ -37,8 +52,10 @@ export const CreateCompanyModal = ({
   });
   const [customCompanyType, setCustomCompanyType] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState(null);
 
   useEffect(() => {
+    setFormError(null);
     if (companyToEdit) {
       const isPredefined = COMPANY_TYPES.some(
         (t) => t.id !== "OTHER" && t.id === companyToEdit.companyType
@@ -85,9 +102,28 @@ export const CreateCompanyModal = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError(null);
     if (!formData.name.trim()) {
+      setFormError("Please enter company name");
       showToast?.("Please enter company name", "error");
       return;
+    }
+
+    if (formData.phone && formData.phone.trim().length > 0) {
+      const cleanPhone = formData.phone.trim().replace(/[\s\-()]/g, "");
+      if (cleanPhone.length < 7) {
+        setFormError("Company phone number must be at least 7 digits");
+        showToast?.("Company phone number must be at least 7 digits", "error");
+        return;
+      }
+    }
+
+    if (formData.email && formData.email.trim().length > 0) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+        setFormError("Please enter a valid email address");
+        showToast?.("Please enter a valid email address", "error");
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -108,7 +144,9 @@ export const CreateCompanyModal = ({
       onClose();
     } catch (err) {
       console.error("Error saving company:", err);
-      showToast?.(err.message || "Failed to save company", "error");
+      const msg = err.message || "Failed to save company";
+      setFormError(msg);
+      showToast?.(msg, "error");
     } finally {
       setSubmitting(false);
     }
@@ -191,6 +229,25 @@ export const CreateCompanyModal = ({
         </div>
 
         <form onSubmit={handleSubmit} style={{ padding: "20px 24px", overflowY: "auto", flex: 1 }}>
+          {formError && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                backgroundColor: "#FEF2F2",
+                border: "1px solid #FECACA",
+                color: "#DC2626",
+                fontSize: "12.5px",
+                marginBottom: "14px"
+              }}
+            >
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{formError}</span>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "12px", marginBottom: "14px" }}>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
@@ -340,24 +397,49 @@ export const CreateCompanyModal = ({
             </div>
           </div>
 
-          <div style={{ marginBottom: "14px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
-              Website
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. https://apexev.com"
-              value={formData.website}
-              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-              style={{
-                width: "100%",
-                padding: "9px 12px",
-                borderRadius: "8px",
-                border: "1px solid #D1D5DB",
-                fontSize: "13px",
-                boxSizing: "border-box"
-              }}
-            />
+          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "12px", marginBottom: "14px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
+                Website
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. https://apexev.com"
+                value={formData.website}
+                onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #D1D5DB",
+                  fontSize: "13px",
+                  boxSizing: "border-box"
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
+                Lead / Account Source
+              </label>
+              <select
+                value={formData.source}
+                onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #D1D5DB",
+                  fontSize: "13px",
+                  backgroundColor: "#fff"
+                }}
+              >
+                {LEAD_SOURCES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div style={{ marginBottom: "14px" }}>

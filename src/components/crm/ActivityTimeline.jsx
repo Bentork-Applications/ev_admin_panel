@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { Plus, Phone, Calendar, Mail, Clock, FileText, User } from "lucide-react";
+import { Plus, Phone, Calendar, Mail, Clock, FileText, User, Paperclip } from "lucide-react";
 import { ActivityTypeBadge } from "./CrmBadge";
 import { LogActivityModal } from "./LogActivityModal";
+import { parseMessageAndAttachments, formatFileSize } from "../../utils/crmAttachmentUtils";
 
 export const ActivityTimeline = ({
   activities = [],
@@ -215,19 +216,51 @@ export const ActivityTimeline = ({
                 </div>
               )}
 
-              {/* Notes */}
-              {item.notes && (
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: "#4B5563",
-                    lineHeight: 1.5,
-                    whiteSpace: "pre-wrap"
-                  }}
-                >
-                  {item.notes}
-                </div>
-              )}
+              {/* Notes & Attachments */}
+              {item.notes && (() => {
+                const { cleanText, attachments } = parseMessageAndAttachments(item.notes);
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {cleanText && (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#4B5563",
+                          lineHeight: 1.5,
+                          whiteSpace: "pre-wrap"
+                        }}
+                      >
+                        {cleanText}
+                      </div>
+                    )}
+                    {attachments && attachments.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "2px" }}>
+                        {attachments.map((att, attIdx) => (
+                          <span
+                            key={att.id || attIdx}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "2px 8px",
+                              backgroundColor: "#F1F5F9",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              color: "#1E293B",
+                              fontWeight: 500
+                            }}
+                          >
+                            <Paperclip size={11} color="#2563EB" />
+                            <span>{att.name}</span>
+                            <span style={{ color: "#64748B", fontSize: "10px" }}>({formatFileSize(att.size)})</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Footer / Follow-up / Performed By */}
               <div

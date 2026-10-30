@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   X,
   Building2,
@@ -16,7 +17,10 @@ import {
   CheckCircle,
   Clock,
   Edit2,
-  Trash2
+  Trash2,
+  ExternalLink,
+  PhoneCall,
+  AlertTriangle
 } from "lucide-react";
 import { crmService } from "../../services/crmService";
 import { LeadStatusBadge, OpportunityStageBadge, QuotationStatusBadge } from "./CrmBadge";
@@ -24,6 +28,7 @@ import { ActivityTimeline } from "./ActivityTimeline";
 import { CreateContactModal } from "./CreateContactModal";
 import { CreateCompanyModal } from "./CreateCompanyModal";
 import { CreateOpportunityModal } from "./CreateOpportunityModal";
+import { LogActivityModal } from "./LogActivityModal";
 
 export const Company360Drawer = ({
   companyId,
@@ -32,6 +37,7 @@ export const Company360Drawer = ({
   onCompanyUpdated,
   showToast
 }) => {
+  const navigate = useNavigate();
   const [data360, setData360] = useState(null);
   const [activeTab, setActiveTab] = useState("overview"); // overview, contacts, leads, opportunities, quotations, activities
   const [loading, setLoading] = useState(true);
@@ -39,6 +45,58 @@ export const Company360Drawer = ({
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [showEditCompanyModal, setShowEditCompanyModal] = useState(false);
   const [showCreateOppModal, setShowCreateOppModal] = useState(false);
+  const [showLogCallModal, setShowLogCallModal] = useState(false);
+  const [targetContactForCall, setTargetContactForCall] = useState(null);
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+  const [deactivatingLoading, setDeactivatingLoading] = useState(false);
+
+  const formatSource = (src) => {
+    if (!src) return "Direct / Offline";
+    const map = {
+      indiamart: "IndiaMART",
+      phone_call: "Phone Call / Cold Outreach",
+      website: "Website Inquiry",
+      referral: "Referral",
+      exhibition: "Exhibition / Trade Fair",
+      walk_in: "Walk-In",
+      social_media: "Social Media / LinkedIn",
+      whatsapp_campaign: "WhatsApp Campaign",
+      campaign_import: "Campaign Import",
+      direct: "Direct / Offline"
+    };
+    return map[src.toLowerCase()] || src.replace(/_/g, " ");
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "—";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      return d.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      });
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  const handleDeactivate = async () => {
+    setDeactivatingLoading(true);
+    try {
+      await crmService.deactivateCompany(companyId);
+      showToast?.("Company deactivated successfully", "success");
+      setShowDeactivateConfirm(false);
+      await fetch360Data();
+      onCompanyUpdated?.();
+    } catch (err) {
+      console.error("Failed to deactivate company:", err);
+      showToast?.(err.message || "Failed to deactivate company", "error");
+    } finally {
+      setDeactivatingLoading(false);
+    }
+  };
 
   const fetch360Data = useCallback(async () => {
     if (!companyId) return;
@@ -174,6 +232,28 @@ export const Company360Drawer = ({
               <Edit2 size={13} />
               <span>Edit</span>
             </button>
+            {company?.active !== false && (
+              <button
+                onClick={() => setShowDeactivateConfirm(true)}
+                title="Deactivate Company"
+                style={{
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  color: "#DC2626",
+                  cursor: "pointer",
+                  padding: "6px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}
+              >
+                <Trash2 size={13} />
+                <span>Deactivate</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               style={{
@@ -283,19 +363,56 @@ export const Company360Drawer = ({
                       </div>
                       <div>
                         <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Phone</span>
-                        <span style={{ color: "#111827" }}>{company.phone || "—"}</span>
+                        {company.phone ? (
+                          <a href={`tel:${company.phone}`} style={{ color: "#111827", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                            <Phone size={11} color="#10B981" />
+                            <span>{company.phone}</span>
+                          </a>
+                        ) : (
+                          <span style={{ color: "#9CA3AF" }}>—</span>
+                        )}
                       </div>
                       <div>
                         <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Email</span>
-                        <span style={{ color: "#111827" }}>{company.email || "—"}</span>
+                        {company.email ? (
+                          <a href={`mailto:${company.email}`} style={{ color: "#2563EB", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                            <Mail size={11} color="#2563EB" />
+                            <span>{company.email}</span>
+                          </a>
+                        ) : (
+                          <span style={{ color: "#9CA3AF" }}>—</span>
+                        )}
                       </div>
                       <div>
                         <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Website</span>
-                        <span style={{ color: "#111827" }}>{company.website || "—"}</span>
+                        {company.website ? (
+                          <a
+                            href={company.website.startsWith("http") ? company.website : `https://${company.website}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "#2563EB", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          >
+                            <span>{company.website}</span>
+                            <ExternalLink size={11} />
+                          </a>
+                        ) : (
+                          <span style={{ color: "#9CA3AF" }}>—</span>
+                        )}
                       </div>
                       <div>
                         <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Account Owner</span>
-                        <span style={{ color: "#111827" }}>{company.ownerAdminName || "Unassigned"}</span>
+                        <span style={{ color: "#111827", fontWeight: 600 }}>{company.ownerAdminName || "Unassigned"}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Discovery / Lead Source</span>
+                        <span style={{ color: "#0F172A", fontWeight: 600 }}>{formatSource(company.source)}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Created / Last Updated</span>
+                        <span style={{ color: "#64748B", fontSize: "12px" }}>
+                          {formatDate(company.createdAt)}
+                          {company.updatedAt && ` • Updated ${formatDate(company.updatedAt)}`}
+                        </span>
                       </div>
                       <div style={{ gridColumn: "span 2" }}>
                         <span style={{ color: "#6B7280", fontSize: "11px", display: "block" }}>Full Address</span>
@@ -364,7 +481,8 @@ export const Company360Drawer = ({
                             padding: "14px",
                             display: "flex",
                             justifyContent: "space-between",
-                            alignItems: "center"
+                            alignItems: "center",
+                            gap: "12px"
                           }}
                         >
                           <div>
@@ -379,11 +497,47 @@ export const Company360Drawer = ({
                             <div style={{ fontSize: "12px", color: "#6B7280", marginTop: "2px" }}>
                               {ct.designation || "Executive"}
                             </div>
-                            <div style={{ display: "flex", gap: "14px", marginTop: "6px", fontSize: "12px", color: "#374151" }}>
-                              {ct.phone && <span>📞 {ct.phone}</span>}
-                              {ct.email && <span>✉️ {ct.email}</span>}
+                            <div style={{ display: "flex", gap: "14px", marginTop: "6px", fontSize: "12px", color: "#374151", flexWrap: "wrap" }}>
+                              {ct.phone && (
+                                <a href={`tel:${ct.phone}`} style={{ color: "#0F172A", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                  <Phone size={12} color="#10B981" />
+                                  <span>{ct.phone}</span>
+                                </a>
+                              )}
+                              {ct.email && (
+                                <a href={`mailto:${ct.email}`} style={{ color: "#2563EB", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                  <Mail size={12} color="#2563EB" />
+                                  <span>{ct.email}</span>
+                                </a>
+                              )}
                             </div>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTargetContactForCall(ct);
+                              setShowLogCallModal(true);
+                            }}
+                            title="Log Call Activity"
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "6px",
+                              backgroundColor: "#ECFDF5",
+                              border: "1px solid #A7F3D0",
+                              color: "#059669",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              flexShrink: 0
+                            }}
+                          >
+                            <PhoneCall size={12} />
+                            <span>Log Call</span>
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -394,9 +548,39 @@ export const Company360Drawer = ({
               {/* TAB 3: LEADS */}
               {activeTab === "leads" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                  <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#111827" }}>
-                    Associated Leads ({leads.length})
-                  </h4>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                    <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#111827" }}>
+                      Associated Leads ({leads.length})
+                    </h4>
+                    {company && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          navigate(`/dashboard/crm/leads?company=${encodeURIComponent(company.name)}&companyId=${company.id}`, {
+                            state: { companyId: company.id, companyName: company.name, searchQuery: company.name }
+                          });
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          padding: "5px 10px",
+                          borderRadius: "6px",
+                          backgroundColor: "#ECFDF5",
+                          color: "#059669",
+                          border: "1px solid #A7F3D0",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer"
+                        }}
+                        title="Open filtered CRM Leads page for this company"
+                      >
+                        <ExternalLink size={12} />
+                        <span>View in Leads Page</span>
+                      </button>
+                    )}
+                  </div>
 
                   {leads.length === 0 ? (
                     <div style={{ padding: "32px", textAlign: "center", color: "#6B7280", backgroundColor: "#F9FAFB", borderRadius: "10px" }}>
@@ -407,21 +591,44 @@ export const Company360Drawer = ({
                       {leads.map((ld) => (
                         <div
                           key={ld.id}
+                          onClick={() => {
+                            onClose();
+                            navigate(`/dashboard/crm/leads?leadId=${ld.id}`, {
+                              state: { selectedLeadId: ld.id, companyId: company?.id, companyName: company?.name }
+                            });
+                          }}
                           style={{
                             backgroundColor: "#ffffff",
                             border: "1px solid #E5E7EB",
                             borderRadius: "10px",
-                            padding: "14px"
+                            padding: "14px",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease"
                           }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = "#10B981";
+                            e.currentTarget.style.boxShadow = "0 2px 8px rgba(16, 185, 129, 0.12)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = "#E5E7EB";
+                            e.currentTarget.style.boxShadow = "none";
+                          }}
+                          title="Click to view lead details in CRM Leads page"
                         >
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                             <div>
-                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#10B981" }}>{ld.leadNumber}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span style={{ fontSize: "11px", fontWeight: 700, color: "#10B981" }}>{ld.leadNumber}</span>
+                                <ExternalLink size={11} color="#64748B" />
+                              </div>
                               <h5 style={{ margin: "2px 0 0 0", fontSize: "14px", fontWeight: 600, color: "#111827" }}>
                                 {ld.title}
                               </h5>
                             </div>
-                            <LeadStatusBadge status={ld.status} />
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <LeadStatusBadge status={ld.status} />
+                              <span style={{ fontSize: "11px", color: "#2563EB", fontWeight: 600 }}>Open →</span>
+                            </div>
                           </div>
                           <div style={{ display: "flex", gap: "16px", marginTop: "8px", fontSize: "12px", color: "#6B7280" }}>
                             <span>Est: ₹{ld.estimatedValue ? Number(ld.estimatedValue).toLocaleString("en-IN") : "0"}</span>
@@ -613,6 +820,102 @@ export const Company360Drawer = ({
             }}
             showToast={showToast}
           />
+        )}
+
+        {/* Log Activity Modal */}
+        {showLogCallModal && (
+          <LogActivityModal
+            isOpen={showLogCallModal}
+            onClose={() => {
+              setShowLogCallModal(false);
+              setTargetContactForCall(null);
+            }}
+            contactId={targetContactForCall?.id}
+            companyId={companyId}
+            onActivityLogged={() => {
+              showToast?.("Activity logged successfully", "success");
+              fetch360Data();
+            }}
+            showToast={showToast}
+          />
+        )}
+
+        {/* Deactivate Company Confirmation Dialog */}
+        {showDeactivateConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              backdropFilter: "blur(4px)",
+              zIndex: 1400,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px"
+            }}
+            onClick={() => !deactivatingLoading && setShowDeactivateConfirm(false)}
+          >
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "14px",
+                maxWidth: "420px",
+                width: "100%",
+                padding: "24px",
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px", color: "#DC2626" }}>
+                <AlertTriangle size={24} />
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                  Deactivate Company?
+                </h3>
+              </div>
+              <p style={{ fontSize: "13px", color: "#475569", margin: "0 0 16px 0", lineHeight: 1.5 }}>
+                Are you sure you want to deactivate <strong>"{company?.name}"</strong>?
+                This account will be marked inactive in the CRM directory.
+              </p>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowDeactivateConfirm(false)}
+                  disabled={deactivatingLoading}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: "8px",
+                    border: "1px solid #CBD5E1",
+                    backgroundColor: "#ffffff",
+                    color: "#374151",
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeactivate}
+                  disabled={deactivatingLoading}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "none",
+                    backgroundColor: "#DC2626",
+                    color: "#ffffff",
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    cursor: deactivatingLoading ? "not-allowed" : "pointer",
+                    opacity: deactivatingLoading ? 0.7 : 1
+                  }}
+                >
+                  {deactivatingLoading ? "Deactivating..." : "Yes, Deactivate"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

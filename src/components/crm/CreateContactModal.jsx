@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { X, UserPlus, Phone, Mail, Building, Tag } from "lucide-react";
+import { X, UserPlus, Phone, Mail, Building, Tag, AlertCircle } from "lucide-react";
 import { crmService } from "../../services/crmService";
 
 export const CreateContactModal = ({
   isOpen,
   onClose,
-  companyId,
-  companyName,
+  companyId: propCompanyId,
+  companyName: propCompanyName,
   onContactSaved,
   showToast
 }) => {
@@ -14,30 +14,84 @@ export const CreateContactModal = ({
   const [designation, setDesignation] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = useState(propCompanyId ? String(propCompanyId) : "");
+  const [companiesList, setCompaniesList] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
   const [isPrimary, setIsPrimary] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  React.useEffect(() => {
+    if (propCompanyId) {
+      setSelectedCompanyId(String(propCompanyId));
+    }
+  }, [propCompanyId]);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      setName("");
+      setDesignation("");
+      setPhone("");
+      setEmail("");
+      setIsPrimary(false);
+      setFormError(null);
+      setSelectedCompanyId(propCompanyId ? String(propCompanyId) : "");
+      return;
+    }
+
+    // Load companies list if companyId is not fixed
+    if (!propCompanyId) {
+      const loadCompanies = async () => {
+        setLoadingCompanies(true);
+        try {
+          const data = await crmService.getAllCompanies();
+          setCompaniesList(Array.isArray(data) ? data : []);
+        } catch (err) {
+          console.warn("Failed to load companies for contact modal:", err);
+        } finally {
+          setLoadingCompanies(false);
+        }
+      };
+      loadCompanies();
+    }
+  }, [isOpen, propCompanyId]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError(null);
     if (!name.trim()) {
+      setFormError("Please enter contact name");
       showToast?.("Please enter contact name", "error");
       return;
     }
     if (!phone.trim()) {
+      setFormError("Please enter phone number");
       showToast?.("Please enter phone number", "error");
+      return;
+    }
+    const cleanPhone = phone.trim().replace(/[\s\-()]/g, "");
+    if (cleanPhone.length < 10) {
+      setFormError("Phone number must have at least 10 digits");
+      showToast?.("Phone number must have at least 10 digits", "error");
+      return;
+    }
+    if (email && email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setFormError("Please enter a valid email address");
+      showToast?.("Please enter a valid email address", "error");
       return;
     }
 
     setSubmitting(true);
     try {
+      const finalCompanyId = propCompanyId || selectedCompanyId;
       const payload = {
         name: name.trim(),
         phone: phone.trim(),
         email: email.trim() || null,
         designation: designation.trim() || null,
-        companyId: companyId ? Number(companyId) : null,
+        companyId: finalCompanyId ? Number(finalCompanyId) : null,
         isPrimary
       };
 
@@ -47,7 +101,9 @@ export const CreateContactModal = ({
       onClose();
     } catch (err) {
       console.error("Error creating contact:", err);
-      showToast?.(err.message || "Failed to create contact", "error");
+      const msg = err.message || "Failed to create contact";
+      setFormError(msg);
+      showToast?.(msg, "error");
     } finally {
       setSubmitting(false);
     }
@@ -108,7 +164,7 @@ export const CreateContactModal = ({
                 Add Contact Person
               </h3>
               <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6B7280" }}>
-                {companyName ? `Linked to ${companyName}` : "New contact entry"}
+                {propCompanyName ? `Linked to ${propCompanyName}` : "New contact entry"}
               </p>
             </div>
           </div>
@@ -127,6 +183,54 @@ export const CreateContactModal = ({
         </div>
 
         <form onSubmit={handleSubmit} style={{ padding: "20px 24px" }}>
+          {formError && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                backgroundColor: "#FEF2F2",
+                border: "1px solid #FECACA",
+                color: "#DC2626",
+                fontSize: "12.5px",
+                marginBottom: "14px"
+              }}
+            >
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{formError}</span>
+            </div>
+          )}
+          {/* Company Selection Dropdown when not fixed by prop */}
+          {!propCompanyId && (
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
+                Associated Company
+              </label>
+              <select
+                value={selectedCompanyId}
+                onChange={(e) => setSelectedCompanyId(e.target.value)}
+                disabled={loadingCompanies}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #D1D5DB",
+                  fontSize: "13px",
+                  backgroundColor: "#fff"
+                }}
+              >
+                <option value="">{loadingCompanies ? "Loading companies..." : "-- Select Company (Optional) --"}</option>
+                {companiesList.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.city ? `(${c.city})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div style={{ marginBottom: "14px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
               Full Name *

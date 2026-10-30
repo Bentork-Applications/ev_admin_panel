@@ -54,6 +54,10 @@ export const crmService = {
     return await apiClient.get("/crm/companies/all");
   },
 
+  getAllCompaniesPaged: async (page = 0, size = 20) => {
+    return await apiClient.get(`/crm/companies/all?paged=true&page=${page}&size=${size}`);
+  },
+
   getCompanyById: async (id) => {
     return await apiClient.get(`/crm/companies/${id}`);
   },
@@ -171,11 +175,10 @@ export const crmService = {
     let activityType = "note";
     let extraPrefix = "";
 
-    if (["call", "meeting", "email", "follow_up", "note"].includes(rawType)) {
+    if (["call", "meeting", "email", "follow_up", "note", "whatsapp_outbound", "whatsapp_inbound", "campaign_message"].includes(rawType)) {
       activityType = rawType;
     } else if (rawType === "whatsapp") {
-      activityType = "note";
-      extraPrefix = "[WhatsApp] ";
+      activityType = "whatsapp_outbound";
     }
 
     // 2. Format subject & notes
